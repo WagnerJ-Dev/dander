@@ -1,0 +1,27 @@
+# Metadata spine: this one file feeds the transform engine AND the catalog aspects AND the
+# semantic/agent registry. Keep it the single source of truth for this model.
+model: stg_greenhouse__candidates
+description: Cleaned Greenhouse candidates, one row per candidate.
+owner: data-eng
+materialization: view
+source_system: greenhouse
+sensitivity: pii            # candidate PII — treat accordingly (steering/01-security.md)
+
+columns:
+  - name: candidate_id
+    type: STRING
+    description: Greenhouse candidate id (kept as STRING).
+  - name: first_name
+    type: STRING
+    description: Candidate given name.
+  - name: last_name
+    type: STRING
+    description: Candidate family name.
+  - name: updated_at
+    type: TIMESTAMP
+    description: Last update timestamp from Greenhouse (UTC).
+
+tests:
+  - column: candidate_id
+    not_null: true
+    unique: true

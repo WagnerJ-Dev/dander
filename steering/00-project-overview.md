@@ -25,7 +25,7 @@ Informatica, and a customizable stand-in for dbt/SQLMesh transformation.
 | Module | Responsibility |
 |---|---|
 | **Security** | GCP Secret Manager backing store; pluggable auth **strategy** per system (OAuth2 client-creds / JWT, OAuth1 TBA, API-key/basic). Token caching + refresh + **audit logging** of credential access. |
-| **Generic Ingestion** | Each source is a **config object** (base URL, auth ref, endpoints, pagination, incremental cursor, field mappings). Rate limiting/backoff per source. JSON-Schema-inferred type casting to BigQuery types with per-field overrides. |
+| **Ingestion (hybrid)** | Each source is a **config object** (base URL, auth ref, endpoints, pagination, incremental cursor, field mappings). Standard REST sources run on **dlt**; enterprise sources (Workday/NetSuite/Xactly) use hand-rolled `EnterpriseSource` extractors. Both behind the `Source` interface. Rate limiting/backoff per source; inferred type casting to BigQuery types with per-field overrides. |
 | **BigQuery Writer** | Multiple write patterns: SCD1 (MERGE), SCD2 (versioned rows), daily snapshot (partitioned append), incremental (watermark). Storage Write API vs load jobs per workload. |
 | **Transform** | dbt-replacement: Jinja2 `ref()` templating → parsed dependency DAG → topological execution. Materializations reuse the Writer patterns. Generic tests (not-null/unique/accepted-values/relationships). One YAML per model feeds SQL + Dataplex catalog aspects + semantic registry. |
 | **Bootstrap CLI** | pip-installable; wraps **Terraform** to provision Secret Manager, service accounts + least-privilege IAM (Workload Identity Federation), a compute target (Cloud Run jobs), and BigQuery datasets. Provider-abstracted for future AWS/Azure. |
@@ -58,6 +58,10 @@ blocking gate on any public release, separate from engineering readiness.
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-07-09 — **Ingestion = hybrid** — dlt for standard REST sources (pagination/retry/incremental/schema-evolution/BQ-load); hand-rolled `EnterpriseSource` for Workday/NetSuite/Xactly where dlt's generics fall short. Both implement the `Source` interface so downstream layers are path-agnostic.
+- 2026-07-09 — **Transform = own engine** — Jinja2 `ref()` → sqlglot DAG → topological execution + generic tests, reusing the writer's materializations. Ownership/customization was the original motivation; the metadata spine is native to it; avoids the Fivetran-consolidation risk of dbt/SQLMesh.
+- 2026-07-09 — **Stack = Python 3.12** (app + Typer CLI), **BigQuery SQL** (transforms), **Terraform/HCL** (infra), **YAML** (config). Package: src-layout, hatchling build, uv-managed.
+- 2026-07-09 — **Project skeleton scaffolded** — interface-first stubs across all modules; implementations tracked as tickets and built by the workforce.
 - 2026-07-09 — **Orchestration = automated Workflow** (`.claude/workflows/feature.js`) — user wants hands-off fan-out of the product→design→code→review loop.
 - 2026-07-09 — **Tickets = local markdown** under `tickets/` — git-trackable, no external deps.
 - 2026-07-09 — **IaC = Terraform (HCL)** — mature multi-cloud providers; adding a cloud later is a new module, not a rewrite.
