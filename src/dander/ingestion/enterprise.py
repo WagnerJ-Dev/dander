@@ -7,10 +7,12 @@ enterprise source subclasses this. See the auth strategy table in ``steering/01-
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dander.ingestion.source import Source
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 
 class EnterpriseSource(Source):
@@ -20,4 +22,6 @@ class EnterpriseSource(Source):
         raise NotImplementedError("DANDER: infer schema for the concrete enterprise source")
 
     def extract(self, endpoint: str, *, since: str | None = None) -> Iterator[Mapping[str, Any]]:
-        raise NotImplementedError("DANDER: implement auth + pagination + extraction for this source")
+        raise NotImplementedError(
+            "DANDER: implement auth + pagination + extraction for this source"
+        )

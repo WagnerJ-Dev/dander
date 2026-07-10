@@ -7,10 +7,12 @@ drive it from ``SourceConfig``.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dander.ingestion.source import Source
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 
 class DltRestSource(Source):
@@ -20,4 +22,6 @@ class DltRestSource(Source):
         raise NotImplementedError("DANDER: infer schema via dlt from a sample response")
 
     def extract(self, endpoint: str, *, since: str | None = None) -> Iterator[Mapping[str, Any]]:
-        raise NotImplementedError("DANDER: build a dlt rest_api source from SourceConfig and yield rows")
+        raise NotImplementedError(
+            "DANDER: build a dlt rest_api source from SourceConfig and yield rows"
+        )

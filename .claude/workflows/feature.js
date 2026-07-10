@@ -9,6 +9,46 @@ export const meta = {
   ],
 }
 
+// ── Role adoption ─────────────────────────────────────────────────────
+// Custom agents in .claude/agents/ only register at SESSION STARTUP, so a workflow launched in the
+// same session (or in a headless/cron run) can't reference them by agentType. To stay portable,
+// every stage runs on the built-in `general-purpose` agent and ADOPTS its role by reading the
+// matching .claude/agents/<role>.md definition (single source of truth). The model tier that would
+// come from the agent's frontmatter is passed explicitly here instead.
+const ROLE_FILE = {
+  product: '.claude/agents/product.md',
+  design: '.claude/agents/design.md',
+  'code-python': '.claude/agents/code-python.md',
+  'code-sql': '.claude/agents/code-sql.md',
+  'code-terraform': '.claude/agents/code-terraform.md',
+  'pr-review': '.claude/agents/pr-review.md',
+  documentation: '.claude/agents/documentation.md',
+}
+const ROLE_MODEL = {
+  product: 'opus',
+  design: 'opus',
+  'pr-review': 'opus',
+  'code-python': 'sonnet',
+  'code-sql': 'sonnet',
+  'code-terraform': 'sonnet',
+  documentation: 'sonnet',
+}
+
+function runAgent(role, task, opts) {
+  const options = opts || {}
+  const prompt =
+    `You are acting as the "${role}" agent for the Dander project. FIRST read ${ROLE_FILE[role]} and ` +
+    `fully adopt the role, constraints, and steering files it specifies (read those too). THEN carry ` +
+    `out this task exactly:\n\n${task}`
+  return agent(prompt, {
+    agentType: 'general-purpose',
+    model: ROLE_MODEL[role],
+    label: options.label,
+    phase: options.phase,
+    schema: options.schema,
+  })
+}
+
 // The feature request arrives as `args` (a string, or {request: "..."}).
 const request =
   typeof args === 'string' ? args : args && args.request ? args.request : ''
@@ -21,8 +61,8 @@ if (!request) {
 // How many review rounds before we give up looping a ticket back to code.
 const MAX_REVIEW_ROUNDS = 3
 
-// component -> which code agent implements it
-const CODE_AGENT = {
+// component -> which code role implements it
+const CODE_ROLE = {
   python: 'code-python',
   sql: 'code-sql',
   terraform: 'code-terraform',
@@ -50,18 +90,6 @@ const TICKETS_SCHEMA = {
   },
 }
 
-const DESIGN_SCHEMA = {
-  type: 'object',
-  required: ['ticket_id', 'approach'],
-  properties: {
-    ticket_id: { type: 'string' },
-    approach: { type: 'string' },
-    interfaces: { type: 'array', items: { type: 'string' } },
-    files_to_touch: { type: 'array', items: { type: 'string' } },
-    notes: { type: 'string' },
-  },
-}
-
 // Order tickets so a ticket's dependencies build before it (depends_on = ticket ids).
 // Cycle-safe: a ticket already being visited is treated as satisfied rather than looping.
 function topoSort(items) {
@@ -83,6 +111,18 @@ function topoSort(items) {
   return order
 }
 
+const DESIGN_SCHEMA = {
+  type: 'object',
+  required: ['ticket_id', 'approach'],
+  properties: {
+    ticket_id: { type: 'string' },
+    approach: { type: 'string' },
+    interfaces: { type: 'array', items: { type: 'string' } },
+    files_to_touch: { type: 'array', items: { type: 'string' } },
+    notes: { type: 'string' },
+  },
+}
+
 const REVIEW_SCHEMA = {
   type: 'object',
   required: ['ticket_id', 'verdict', 'summary'],
@@ -97,12 +137,13 @@ const REVIEW_SCHEMA = {
 
 // ── 1) Product: decompose the request into ticket files ───────────────
 phase('Product')
-const product = await agent(
+const product = await runAgent(
+  'product',
   `A feature request from the user:\n\n${request}\n\n` +
     `Decompose it into the smallest set of independently-implementable tickets. Create each as a ` +
     `markdown file under tickets/ following tickets/TEMPLATE.md and tickets/README.md (status: open, ` +
     `with a correct component and acceptance criteria). Return the ticket list.`,
-  { agentType: 'product', phase: 'Product', schema: TICKETS_SCHEMA }
+  { phase: 'Product', schema: TICKETS_SCHEMA }
 )
 
 const tickets = (product && product.tickets) || []
@@ -116,10 +157,11 @@ log(`Product created ${tickets.length} ticket(s): ${tickets.map((t) => t.id).joi
 phase('Design')
 await parallel(
   tickets.map((t) => () =>
-    agent(
+    runAgent(
+      'design',
       `Produce the technical design for ticket ${t.id} (${t.path}). Read the ticket, apply the ` +
         `steering files, write the design into the ticket's Design section, and set status in-code.`,
-      { agentType: 'design', label: `design:${t.id}`, phase: 'Design', schema: DESIGN_SCHEMA }
+      { label: `design:${t.id}`, phase: 'Design', schema: DESIGN_SCHEMA }
     )
   )
 )
@@ -131,13 +173,14 @@ await parallel(
 phase('Build')
 const results = []
 for (const t of topoSort(tickets)) {
-  const codeAgent = CODE_AGENT[t.component] || 'code-python'
+  const codeRole = CODE_ROLE[t.component] || 'code-python'
 
   // initial implementation
-  await agent(
+  await runAgent(
+    codeRole,
     `Implement ticket ${t.id} (${t.path}) per its Design section and acceptance criteria. Apply all ` +
       `steering files. Record Implementation Notes and set status in-review.`,
-    { agentType: codeAgent, label: `code:${t.id}`, phase: 'Build' }
+    { label: `code:${t.id}`, phase: 'Build' }
   )
 
   // review → (fail → re-implement) loop
@@ -145,19 +188,21 @@ for (const t of topoSort(tickets)) {
   let verdict = null
   while (round < MAX_REVIEW_ROUNDS) {
     round++
-    verdict = await agent(
+    verdict = await runAgent(
+      'pr-review',
       `Review ticket ${t.id} (${t.path}) against its acceptance criteria and the steering files. ` +
         `Inspect the actual changed code. PASS only if fully met with no blocking issues; otherwise ` +
         `FAIL with a concrete numbered addendum. Append to the Review Log and set status accordingly.`,
-      { agentType: 'pr-review', label: `review:${t.id}#${round}`, phase: 'Build', schema: REVIEW_SCHEMA }
+      { label: `review:${t.id}#${round}`, phase: 'Build', schema: REVIEW_SCHEMA }
     )
 
     if (!verdict || verdict.verdict === 'PASS') break
 
-    await agent(
+    await runAgent(
+      codeRole,
       `Ticket ${t.id} (${t.path}) failed review. Address every item in this addendum, update ` +
         `Implementation Notes, and set status in-review:\n\n${verdict.addendum || verdict.summary}`,
-      { agentType: codeAgent, label: `code:${t.id}#${round + 1}`, phase: 'Build' }
+      { label: `code:${t.id}#${round + 1}`, phase: 'Build' }
     )
   }
 

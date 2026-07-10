@@ -52,6 +52,15 @@ request → Product (writes tickets/) → Design (per ticket) → Build[ Code �
 **Run it** (requires explicit opt-in each time — say "use a workflow" / "ultracode"):
 > Run the `feature` workflow with args: `"<describe the feature in plain English>"`.
 
+**Operational notes (learned the hard way):**
+- `.claude/agents/` and `.claude/workflows/` register only at **session startup**. Files created
+  mid-session aren't picked up, so invoke the workflow by **path**
+  (`scriptPath: ".claude/workflows/feature.js"`), not by `name: "feature"`, until the session reloads.
+- For the same reason, the workflow does **not** hard-depend on the custom agent types. Each stage
+  runs on the built-in `general-purpose` agent and *adopts* its role by reading the matching
+  `.claude/agents/<role>.md` file, with the model tier passed explicitly. This also keeps it working
+  in headless/cron runs where custom agents may be absent.
+
 Subagents can't spawn subagents, so this loop is driven from the top by the workflow — that's why
 orchestration lives in a Workflow script, not inside an agent.
 

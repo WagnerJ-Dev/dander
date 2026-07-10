@@ -9,10 +9,12 @@ which path produced the records.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 
 class Endpoint(BaseModel):
@@ -31,7 +33,9 @@ class SourceConfig(BaseModel):
     name: str
     base_url: str
     auth_strategy: str = Field(description="Registered AuthStrategy key, e.g. 'api_key_basic'")
-    auth_ref: str = Field(description="Secret reference the AuthStrategy resolves (never the value)")
+    auth_ref: str = Field(
+        description="Secret reference the AuthStrategy resolves (never the value)"
+    )
     endpoints: list[Endpoint] = Field(default_factory=list)
 
 
@@ -47,4 +51,4 @@ class Source(ABC):
 
     @abstractmethod
     def extract(self, endpoint: str, *, since: str | None = None) -> Iterator[Mapping[str, Any]]:
-        """Yield records for ``endpoint``, optionally bounded by an incremental watermark ``since``."""
+        """Yield records for ``endpoint``, optionally bounded by incremental cursor ``since``."""

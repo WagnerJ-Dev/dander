@@ -16,7 +16,7 @@ app = typer.Typer(
 
 @app.command()
 def init() -> None:
-    """Provision the GCP data platform (Secret Manager, IAM/WIF, Cloud Run, BigQuery) via Terraform."""
+    """Provision the GCP data platform (Secret Manager, IAM/WIF, Cloud Run, BigQuery) via TF."""
     raise NotImplementedError("DANDER: wrap `terraform apply` over infra/ (see infra/README.md)")
 
 
