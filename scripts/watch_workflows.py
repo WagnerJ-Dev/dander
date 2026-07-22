@@ -2,9 +2,9 @@
 """Live monitor for Dander agent workflows (the `feature` orchestration and other runs).
 
 Watches the transcript directories every Workflow run writes under
-``~/.claude/projects/*/subagents/workflows/wf_*`` and renders a live, multi-run dashboard: each
-run's agents, their role/ticket, whether they're running/done, and pass/fail verdicts — refreshing
-in place. Pure stdlib, so it runs with plain ``python3`` (no venv, no deps).
+``~/.claude/projects/<this-repo>/*/subagents/workflows/wf_*`` and renders a live, multi-run
+dashboard: each run's agents, their role/ticket, whether they're running/done, and pass/fail
+verdicts — refreshing in place. Pure stdlib, so it runs with plain ``python3`` (no venv, no deps).
 
 Usage:
     python3 scripts/watch_workflows.py             # live, refresh every 2s, newest 8 runs
@@ -27,8 +27,14 @@ import sys
 import time
 
 HOME = os.path.expanduser("~")
-# `**` matches the project/<session> nesting under projects/ at any depth.
-DEFAULT_GLOB = os.path.join(HOME, ".claude", "projects", "**", "subagents", "workflows")
+# Claude Code slugs a project's ~/.claude/projects/ dir from its absolute repo path by
+# replacing path separators with "-" (e.g. /Users/x/Dev/dander -> -Users-x-Dev-dander). Scope the
+# glob to that one project dir — otherwise it silently sweeps in every other Claude Code project on
+# the machine, including long-dead ones, and their stale run dirs read as "still running" here.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_SLUG = REPO_ROOT.replace(os.sep, "-")
+# `**` matches the <session-id> nesting under the project dir at any depth.
+DEFAULT_GLOB = os.path.join(HOME, ".claude", "projects", PROJECT_SLUG, "**", "subagents", "workflows")
 
 # Consider a run "active" if any transcript changed within this many seconds.
 ACTIVE_WINDOW = 25.0

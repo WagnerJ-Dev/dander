@@ -107,7 +107,7 @@ become available.
 ```
 ```bash
 # headless / scripted, from a terminal:
-claude -p "run the feature workflow with args: <describe the feature>"
+claude -p --permission-mode acceptEdits "run the feature workflow with args: <describe the feature>"
 ```
 
 It writes tickets to `tickets/` (lifecycle `open → in-design → in-code → in-review → done`),
