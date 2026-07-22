@@ -96,6 +96,7 @@ it passes review. See `CLAUDE.md` for the full picture.
 only at **Claude Code startup**. After cloning (or after editing anything under `.claude/`),
 **restart Claude Code in the project root** so `/feature`, the agents, and the `feature` workflow
 become available.
+**Run "/config workflows=true" in a Claude chat window to enable it for that session.**
 
 **Then run it** (any of these — it costs tokens, so each run is an explicit opt-in):
 
