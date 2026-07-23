@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from dander.pipeline.graph import (
     Edge,
+    FieldMapping,
     Node,
     PipelineGraph,
     dump_graph_to_json,
@@ -33,6 +34,13 @@ edges:
     to: n2
     metadata:
       note: full-refresh
+    mappings:
+      - source: candidate_id
+        target: candidate_id
+        metadata:
+          note: primary-key
+      - source: full_name
+        target: name
 """
 
 _JSON_DOC = """
@@ -48,7 +56,15 @@ _JSON_DOC = """
     {"id": "n2", "type": "target", "name": "load_candidates"}
   ],
   "edges": [
-    {"from": "n1", "to": "n2", "metadata": {"note": "full-refresh"}}
+    {
+      "from": "n1",
+      "to": "n2",
+      "metadata": {"note": "full-refresh"},
+      "mappings": [
+        {"source": "candidate_id", "target": "candidate_id", "metadata": {"note": "primary-key"}},
+        {"source": "full_name", "target": "name"}
+      ]
+    }
   ]
 }
 """
@@ -64,6 +80,11 @@ def _assert_expected_graph(graph: PipelineGraph) -> None:
     assert edge.source == "n1"
     assert edge.target == "n2"
     assert edge.metadata == {"note": "full-refresh"}
+    assert len(edge.mappings) == 2
+    assert [m.source for m in edge.mappings] == ["candidate_id", "full_name"]
+    assert [m.target for m in edge.mappings] == ["candidate_id", "name"]
+    assert edge.mappings[0].metadata == {"note": "primary-key"}
+    assert edge.mappings[1].metadata == {}
 
 
 def test_load_multi_node_edge_graph_from_yaml(tmp_path: Path) -> None:
@@ -95,7 +116,7 @@ def test_edge_dump_emits_reserved_keyword_keys_not_attribute_names() -> None:
     """Serializing an `Edge` emits `from`/`to`, never a literal `source`/`target` key."""
     edge = Edge(source="a", target="b")
     dumped = edge.model_dump(by_alias=True)
-    assert dumped == {"from": "a", "to": "b", "metadata": {}}
+    assert dumped == {"from": "a", "to": "b", "metadata": {}, "mappings": [], "join": None}
     assert "source" not in dumped
     assert "target" not in dumped
 
@@ -117,6 +138,91 @@ def test_node_and_edge_defaults_are_independent_empty_containers() -> None:
     edge_b = Edge(source="n2", target="n1")
     edge_a.metadata["mutated"] = True
     assert edge_b.metadata == {}
+
+    mapping_a = FieldMapping(source="f1", target="f2")
+    mapping_b = FieldMapping(source="f2", target="f1")
+    mapping_a.metadata["mutated"] = True
+    assert mapping_b.metadata == {}
+
+
+def test_edge_with_no_mappings_is_unchanged_from_prior_shape() -> None:
+    """A mapping-less edge still has an empty `mappings` list and dumps as before DANDER-5."""
+    edge = Edge(source="n1", target="n2", metadata={"note": "full-refresh"})
+    assert edge.mappings == []
+    dumped = edge.model_dump(by_alias=True)
+    assert dumped == {
+        "from": "n1",
+        "to": "n2",
+        "metadata": {"note": "full-refresh"},
+        "mappings": [],
+        "join": None,
+    }
+
+
+def test_field_mapping_on_disk_keys_are_source_and_target() -> None:
+    """`FieldMapping` round-trips via validate/dump using the stable `source`/`target` keys."""
+    mapping = FieldMapping.model_validate(
+        {"source": "candidate_id", "target": "id", "metadata": {"note": "pk"}}
+    )
+    assert mapping.source == "candidate_id"
+    assert mapping.target == "id"
+    assert mapping.metadata == {"note": "pk"}
+
+    dumped = mapping.model_dump()
+    assert dumped == {
+        "source": "candidate_id",
+        "target": "id",
+        "transformation": None,
+        "metadata": {"note": "pk"},
+    }
+
+
+def test_edge_mappings_preserve_declaration_order(tmp_path: Path) -> None:
+    """Multiple mappings on one edge preserve their declaration order, YAML and JSON alike."""
+    yaml_path = tmp_path / "graph.yaml"
+    yaml_path.write_text(_YAML_DOC)
+    yaml_graph = load_graph_from_yaml(yaml_path)
+
+    json_path = tmp_path / "graph.json"
+    json_path.write_text(_JSON_DOC)
+    json_graph = load_graph_from_json(json_path)
+
+    for graph in (yaml_graph, json_graph):
+        mappings = graph.edges[0].mappings
+        assert [m.source for m in mappings] == ["candidate_id", "full_name"]
+        assert [m.target for m in mappings] == ["candidate_id", "name"]
+
+
+def test_dump_emits_stable_source_target_mapping_keys(tmp_path: Path) -> None:
+    """Dumping an edge with mappings emits the `source`/`target` mapping keys on disk."""
+    graph = PipelineGraph(
+        name="g",
+        nodes=[Node(id="n1", type="task", name="a"), Node(id="n2", type="task", name="b")],
+        edges=[
+            Edge(
+                source="n1",
+                target="n2",
+                mappings=[FieldMapping(source="f1", target="f2")],
+            )
+        ],
+    )
+
+    yaml_path = tmp_path / "graph.yaml"
+    dump_graph_to_yaml(graph, yaml_path)
+    yaml_text = yaml_path.read_text()
+    assert "source: f1" in yaml_text
+    assert "target: f2" in yaml_text
+    # The edge itself still emits from/to, never source/target, at the edge level.
+    assert "from: n1" in yaml_text
+    assert "to: n2" in yaml_text
+
+    json_path = tmp_path / "graph.json"
+    dump_graph_to_json(graph, json_path)
+    json_text = json_path.read_text()
+    assert '"source": "f1"' in json_text
+    assert '"target": "f2"' in json_text
+    assert '"from": "n1"' in json_text
+    assert '"to": "n2"' in json_text
 
 
 def test_yaml_round_trip_is_stable(tmp_path: Path) -> None:

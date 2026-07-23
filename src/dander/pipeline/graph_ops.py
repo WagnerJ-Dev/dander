@@ -1,14 +1,23 @@
 """Derived structure and algorithms over a `PipelineGraph`.
 
 This module is the correctness layer that sits on top of DANDER-2's pure `PipelineGraph` model:
-structural validation (`validate`), a derived adjacency index (`AdjacencyIndex`), and execution
-ordering (`topological_order`). Everything here is a pure, side-effect-free function of a
-`PipelineGraph` — nothing is persisted onto the model, and adjacency is always computed from the
-stored `edges` list, never stored twice (per the decided format in
-`steering/00-project-overview.md`).
+structural validation (`validate`), a derived adjacency index (`AdjacencyIndex`), execution
+ordering (`topological_order`), and field-wiring validation (`validate_field_wiring`, DANDER-8).
+Everything here is a pure, side-effect-free function of a `PipelineGraph` — nothing is persisted
+onto the model, and adjacency/field indexes are always computed from the stored `nodes`/`edges`,
+never stored twice (per the decided format in `steering/00-project-overview.md`).
 
 Kept out of `dander.pipeline.graph` so the model stays a pure value object (SRP) and so algorithms
 depend on the model, never the reverse (DIP) — no import cycle between shape and behavior.
+
+Field-wiring validation (DANDER-8) checks that mappings, transformations, and joins reference
+fields that the graph's nodes actually declare. It is a **companion** to, not a replacement for,
+structural `validate`: `validate_field_wiring` runs `validate` first, so a graph with both a
+structural fault and a field-wiring fault always surfaces the structural error first — the
+field-wiring checks assume unique node ids and resolvable edge endpoints, which only structural
+validation guarantees. Per `steering/01-security.md`, every field-wiring error carries structure
+only (node ids, edge endpoint ids, field names) — never a node's `config`, a field's/edge's
+`metadata`, a field value, or a transformation's expression/constant payload.
 """
 
 from __future__ import annotations
@@ -18,9 +27,13 @@ from typing import TYPE_CHECKING
 
 from dander.pipeline.errors import (
     DanglingEdgeError,
+    DuplicateFieldNameError,
     DuplicateNodeIdError,
+    FieldReferenceKind,
     GraphCycleError,
+    JoinKeyFieldError,
     SelfLoopError,
+    UnknownFieldReferenceError,
 )
 
 if TYPE_CHECKING:
@@ -223,3 +236,178 @@ def topological_order(graph: PipelineGraph) -> list[str]:
     adjacency = AdjacencyIndex.from_graph(graph)
     node_ids = [node.id for node in graph.nodes]
     return _dfs_topological_order(node_ids, adjacency)
+
+
+@dataclass(frozen=True)
+class _FieldIndex:
+    """Derived node-id -> declared-field-name lookup for a `PipelineGraph`.
+
+    Mirrors the `AdjacencyIndex` pattern: a small, frozen, once-built index over the graph's
+    `nodes`. Must be built **after** `_check_duplicate_field_names` has passed — a set-based
+    index would otherwise silently collapse a node's duplicate field names, masking the very
+    condition that check exists to catch. Also assumes node ids are already known-unique (i.e.
+    built after structural `validate`), matching `AdjacencyIndex.from_graph`'s precondition.
+
+    Attributes:
+        _fields_by_node: Node id -> the frozenset of field names that node declares.
+    """
+
+    _fields_by_node: dict[str, frozenset[str]]
+
+    @classmethod
+    def from_graph(cls, graph: PipelineGraph) -> _FieldIndex:
+        """Build a `_FieldIndex` from a graph's `nodes`.
+
+        Args:
+            graph: The pipeline graph to index. Assumes duplicate field names within any single
+                node have already been rejected (see `_check_duplicate_field_names`) and node ids
+                are unique (see `validate`).
+
+        Returns:
+            A `_FieldIndex` with every node id present, mapping to the frozenset of its declared
+            field names (empty if the node declares none).
+        """
+        return cls(
+            _fields_by_node={
+                node.id: frozenset(field.name for field in node.fields) for node in graph.nodes
+            }
+        )
+
+    def has(self, node_id: str, field_name: str) -> bool:
+        """Return whether `node_id` declares a field named `field_name`.
+
+        Args:
+            node_id: The node id to look up.
+            field_name: The field name to check for.
+
+        Returns:
+            `True` if `node_id` is known to this index and declares `field_name`; `False`
+            otherwise (including if `node_id` is unknown to this index).
+        """
+        return field_name in self._fields_by_node.get(node_id, frozenset())
+
+
+def _check_duplicate_field_names(graph: PipelineGraph) -> None:
+    """Raise `DuplicateFieldNameError` if any node declares two fields with the same `name`.
+
+    Runs per node, tracking seen names in declaration order; the first repeat raises. Must run
+    before `_FieldIndex` is built (see `_FieldIndex`).
+    """
+    for node in graph.nodes:
+        seen: set[str] = set()
+        for field in node.fields:
+            if field.name in seen:
+                raise DuplicateFieldNameError(node_id=node.id, field_name=field.name)
+            seen.add(field.name)
+
+
+def _check_mapping_fields(graph: PipelineGraph, index: _FieldIndex) -> None:
+    """Raise `UnknownFieldReferenceError` if a `FieldMapping` references an undeclared field.
+
+    Per edge, per `FieldMapping`: `source` (when not `None` — a derived field has no single
+    source) must resolve on the edge's source node (`MAPPING_SOURCE`); `target` must resolve on
+    the edge's target node (`MAPPING_TARGET`).
+    """
+    for edge in graph.edges:
+        for mapping in edge.mappings:
+            if mapping.source is not None and not index.has(edge.source, mapping.source):
+                raise UnknownFieldReferenceError(
+                    node_id=edge.source,
+                    field_name=mapping.source,
+                    edge=(edge.source, edge.target),
+                    reference_kind=FieldReferenceKind.MAPPING_SOURCE,
+                )
+            if not index.has(edge.target, mapping.target):
+                raise UnknownFieldReferenceError(
+                    node_id=edge.target,
+                    field_name=mapping.target,
+                    edge=(edge.source, edge.target),
+                    reference_kind=FieldReferenceKind.MAPPING_TARGET,
+                )
+
+
+def _check_transformation_fields(graph: PipelineGraph, index: _FieldIndex) -> None:
+    """Raise `UnknownFieldReferenceError` if a transformation input references an undeclared field.
+
+    Per edge, per `FieldMapping` with a `transformation`: each declared input field name in
+    `transformation.inputs` must resolve on the edge's source node. Reference resolution only —
+    the expression/constant payload is never inspected or included in any error message, and a
+    transformation with zero inputs (e.g. a `constant`) is a no-op for this check.
+    """
+    for edge in graph.edges:
+        for mapping in edge.mappings:
+            if mapping.transformation is None:
+                continue
+            for input_field in mapping.transformation.inputs:
+                if not index.has(edge.source, input_field):
+                    raise UnknownFieldReferenceError(
+                        node_id=edge.source,
+                        field_name=input_field,
+                        edge=(edge.source, edge.target),
+                        reference_kind=FieldReferenceKind.TRANSFORMATION_INPUT,
+                    )
+
+
+def _check_join_fields(graph: PipelineGraph, index: _FieldIndex) -> None:
+    """Raise `JoinKeyFieldError` if a join key pair references an undeclared field.
+
+    Per edge with a `join`: each key pair's `left` field must resolve on the edge's source
+    (`from`) node (`JOIN_LEFT`), and `right` must resolve on the edge's target (`to`) node
+    (`JOIN_RIGHT`) — consistent with `JoinSpec`'s left<->from / right<->to convention.
+    """
+    for edge in graph.edges:
+        if edge.join is None:
+            continue
+        for key_index, key_pair in enumerate(edge.join.keys):
+            if not index.has(edge.source, key_pair.left):
+                raise JoinKeyFieldError(
+                    node_id=edge.source,
+                    field_name=key_pair.left,
+                    edge=(edge.source, edge.target),
+                    reference_kind=FieldReferenceKind.JOIN_LEFT,
+                    key_index=key_index,
+                )
+            if not index.has(edge.target, key_pair.right):
+                raise JoinKeyFieldError(
+                    node_id=edge.target,
+                    field_name=key_pair.right,
+                    edge=(edge.source, edge.target),
+                    reference_kind=FieldReferenceKind.JOIN_RIGHT,
+                    key_index=key_index,
+                )
+
+
+def validate_field_wiring(graph: PipelineGraph) -> None:
+    """Validate a `PipelineGraph`'s field-level wiring, on top of its structural correctness.
+
+    Runs the structural gate first, then five field-wiring checks in a fixed order: (1) `validate`
+    (DANDER-3) — node ids unique, no dangling edges, no self-loops, a DAG; (2) field names unique
+    within each node; (3) every `FieldMapping`'s `source`/`target` resolves on the edge's
+    source/target node; (4) every transformation's declared input fields resolve on the edge's
+    source node; (5) every join key pair resolves on the edge's source (left) / target (right)
+    node. Running `validate` first guarantees that on a graph with both a structural fault and a
+    field-wiring fault, the structural error surfaces first — the field-wiring checks assume
+    unique node ids and resolvable edge endpoints. The duplicate-name check runs before the
+    `_FieldIndex` is built so a node's duplicate field names are rejected rather than silently
+    collapsed into one index entry.
+
+    Args:
+        graph: The pipeline graph to validate.
+
+    Raises:
+        DuplicateNodeIdError: Two or more nodes share the same `id`.
+        DanglingEdgeError: An edge references a node id that does not exist.
+        SelfLoopError: An edge's `from` and `to` are the same node.
+        GraphCycleError: The graph contains a cycle.
+        DuplicateFieldNameError: A node declares two fields with the same name.
+        UnknownFieldReferenceError: A mapping's `source`/`target` or a transformation's input
+            references a field the relevant node does not declare.
+        JoinKeyFieldError: A join key pair references a field missing on its joined node (a
+            subclass of `UnknownFieldReferenceError`).
+    """
+    validate(graph)
+    _check_duplicate_field_names(graph)
+    index = _FieldIndex.from_graph(graph)
+    _check_mapping_fields(graph, index)
+    _check_transformation_fields(graph, index)
+    _check_join_fields(graph, index)
