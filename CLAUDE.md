@@ -52,6 +52,18 @@ request → Product (writes tickets/) → Design (per ticket) → Build[ Code �
 **Run it** (requires explicit opt-in each time — say "use a workflow" / "ultracode"):
 > Run the `feature` workflow with args: `"<describe the feature in plain English>"`.
 
+### Resuming on tickets that already exist — the `build` workflow
+
+`.claude/workflows/build.js` runs **Design → Build only**, against tickets that are already sitting
+in `tickets/` (e.g. hand-authored, or written by the Product agent ahead of time, or left mid-loop
+from an interrupted `feature` run). It never invokes Product, so it won't regenerate or duplicate
+tickets. It reads each ticket's frontmatter to skip work already done (has a design → skip Design;
+`status: done` → skip Build entirely), so it's safe to re-run.
+
+> Run the `build` workflow (`scriptPath: ".claude/workflows/build.js"`) with args: an array of
+> ticket ids (e.g. `["DANDER-10", "DANDER-11"]`) to target specific tickets, or omit args to resume
+> every ticket under `tickets/` whose status is not `done`.
+
 **Operational notes (learned the hard way):**
 - `.claude/agents/` and `.claude/workflows/` register only at **session startup**. Files created
   mid-session aren't picked up, so invoke the workflow by **path**

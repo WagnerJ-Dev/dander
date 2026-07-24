@@ -14,6 +14,7 @@ from dander.pipeline.graph import (
     load_graph_from_json,
     load_graph_from_yaml,
 )
+from dander.pipeline.node_config import SourceNodeConfig, TargetNodeConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -73,8 +74,8 @@ _JSON_DOC = """
 def _assert_expected_graph(graph: PipelineGraph) -> None:
     assert graph.name == "candidate_ingest"
     assert [n.id for n in graph.nodes] == ["n1", "n2"]
-    assert graph.nodes[0].config == {"endpoint": "/candidates"}
-    assert graph.nodes[1].config == {}
+    assert graph.nodes[0].config == SourceNodeConfig(endpoint="/candidates")
+    assert graph.nodes[1].config == TargetNodeConfig()
     assert len(graph.edges) == 1
     edge = graph.edges[0]
     assert edge.source == "n1"
@@ -131,6 +132,7 @@ def test_node_and_edge_defaults_are_independent_empty_containers() -> None:
     """Default `config`/`metadata` dicts are fresh per instance (no mutable default args)."""
     node_a = Node(id="n1", type="task", name="a")
     node_b = Node(id="n2", type="task", name="b")
+    assert isinstance(node_a.config, dict)
     node_a.config["mutated"] = True
     assert node_b.config == {}
 
