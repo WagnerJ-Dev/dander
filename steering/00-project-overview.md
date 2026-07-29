@@ -58,6 +58,12 @@ blocking gate on any public release, separate from engineering readiness.
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-07-29 — **First runnable slice = Greenhouse → BigQuery SCD1** — proves the documented
+  low-friction-source path before enterprise connectors; dlt owns REST pagination, Dander owns
+  audited secret resolution, staging-table idempotency, and post-write watermark commits.
+- 2026-07-29 — **Endpoint cursor field and request parameter are distinct** — source responses and
+  request filters can use different names (Greenhouse `updated_at` / `updated_after`), so connector
+  config carries both instead of overloading one ambiguous string.
 - 2026-07-09 — **Ingestion = hybrid** — dlt for standard REST sources (pagination/retry/incremental/schema-evolution/BQ-load); hand-rolled `EnterpriseSource` for Workday/NetSuite/Xactly where dlt's generics fall short. Both implement the `Source` interface so downstream layers are path-agnostic.
 - 2026-07-09 — **Transform = own engine** — Jinja2 `ref()` → sqlglot DAG → topological execution + generic tests, reusing the writer's materializations. Ownership/customization was the original motivation; the metadata spine is native to it; avoids the Fivetran-consolidation risk of dbt/SQLMesh.
 - 2026-07-09 — **Stack = Python 3.12** (app + Typer CLI), **BigQuery SQL** (transforms), **Terraform/HCL** (infra), **YAML** (config). Package: src-layout, hatchling build, uv-managed.

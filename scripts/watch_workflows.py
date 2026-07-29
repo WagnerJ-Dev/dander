@@ -34,15 +34,29 @@ HOME = os.path.expanduser("~")
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECT_SLUG = REPO_ROOT.replace(os.sep, "-")
 # `**` matches the <session-id> nesting under the project dir at any depth.
-DEFAULT_GLOB = os.path.join(HOME, ".claude", "projects", PROJECT_SLUG, "**", "subagents", "workflows")
+DEFAULT_GLOB = os.path.join(
+    HOME,
+    ".claude",
+    "projects",
+    PROJECT_SLUG,
+    "**",
+    "subagents",
+    "workflows",
+)
 
 # Consider a run "active" if any transcript changed within this many seconds.
 ACTIVE_WINDOW = 25.0
 
 C = {
-    "reset": "\033[0m", "dim": "\033[2m", "bold": "\033[1m",
-    "green": "\033[32m", "yellow": "\033[33m", "red": "\033[31m",
-    "cyan": "\033[36m", "blue": "\033[34m", "mag": "\033[35m",
+    "reset": "\033[0m",
+    "dim": "\033[2m",
+    "bold": "\033[1m",
+    "green": "\033[32m",
+    "yellow": "\033[33m",
+    "red": "\033[31m",
+    "cyan": "\033[36m",
+    "blue": "\033[34m",
+    "mag": "\033[35m",
 }
 if not sys.stdout.isatty():
     C = {k: "" for k in C}  # no color when piped
@@ -147,7 +161,7 @@ def summarize_run(run_dir: str, now: float) -> dict:
 
     agents = []
     for t in sorted(transcripts, key=os.path.getmtime):
-        aid = os.path.basename(t)[len("agent-"):-len(".jsonl")]
+        aid = os.path.basename(t)[len("agent-") : -len(".jsonl")]
         role, ticket = label_for(t)
         if aid in results:
             state = "done"
@@ -155,11 +169,15 @@ def summarize_run(run_dir: str, now: float) -> dict:
             state = "run"
         else:
             state = "spawn"
-        agents.append({
-            "role": role or "agent", "ticket": ticket, "state": state,
-            "summary": summarize_result(results.get(aid)) if aid in results else "",
-            "age": now - os.path.getmtime(t),
-        })
+        agents.append(
+            {
+                "role": role or "agent",
+                "ticket": ticket,
+                "state": state,
+                "summary": summarize_result(results.get(aid)) if aid in results else "",
+                "age": now - os.path.getmtime(t),
+            }
+        )
 
     return {
         "id": os.path.basename(run_dir),

@@ -4,14 +4,22 @@
 detail stays inside each module so `aws/`/`azure/` siblings can be added later without changing the
 call sites (mirrors the `SecretStoreProvider` / `ComputeProvider` abstractions in code).
 
-## Modules (planned)
+## Modules
 
 | Module | Provisions |
 |---|---|
-| `modules/bigquery` | `raw` / `staging` / `marts` datasets. **(scaffolded)** |
+| `modules/bigquery` | `raw` / `staging` / `marts` datasets. **Implemented.** |
 | `modules/secret-manager` | Secret entries + access bindings. |
 | `modules/iam` | Least-privilege service accounts + Workload Identity Federation (no long-lived keys). |
 | `modules/compute-run` | Cloud Run jobs that run connectors. |
+
+The root module currently calls only `modules/bigquery`. `dander init` configures the required GCS
+backend, creates a saved plan, and applies that exact plan only after the caller supplies `--apply`
+and confirms interactively. The state bucket must already exist:
+
+```bash
+uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket
+```
 
 ## Rules (see `steering/01-security.md` and `steering/languages/terraform.md`)
 

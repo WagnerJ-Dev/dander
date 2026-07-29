@@ -43,6 +43,10 @@ class Endpoint(BaseModel):
             `CursorStrategy` from a legacy endpoint should call
             `CursorStrategy.from_incremental_cursor(endpoint.incremental_cursor)` rather than
             reading this field directly for new code.
+        cursor_param: Optional request query-parameter name that receives the persisted cursor.
+            Defaults to `incremental_cursor` when omitted. This distinction is necessary for APIs
+            such as Greenhouse, whose response field is `updated_at` while its filter parameter is
+            `updated_after`.
         primary_key: Field name(s) forming this endpoint's business key.
     """
 
@@ -52,6 +56,7 @@ class Endpoint(BaseModel):
     path: str
     pagination: PaginationStrategy = Field(default_factory=NoPagination)
     incremental_cursor: str | None = None
+    cursor_param: str | None = None
     primary_key: list[str] = Field(default_factory=list)
 
     @field_validator("pagination", mode="before")

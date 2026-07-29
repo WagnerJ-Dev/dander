@@ -10,7 +10,8 @@ endpoints:
   - name: candidates
     path: /candidates
     pagination: link_header
-    incremental_cursor: updated_after
+    incremental_cursor: updated_at
+    cursor_param: updated_after
     primary_key: [id]
 
   - name: jobs

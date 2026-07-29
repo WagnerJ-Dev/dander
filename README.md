@@ -80,11 +80,44 @@ uv run ruff check .        # lint
 uv run ruff format .       # auto-format
 uv run mypy                # strict type-check
 uv run pytest              # run the test suite
-uv run dander --help       # the CLI (init / run — stubs for now)
+uv run dander --help       # the CLI (init / run)
 ```
 
 **Green baseline** = `ruff check`, `ruff format --check`, `mypy`, and `pytest` all pass. Keep it
 green; the `pr-review` agent enforces it on every ticket.
+
+## Runnable v0
+
+The first vertical slice runs the low-friction Greenhouse Harvest connector through dlt, stages
+and SCD1-merges each endpoint into BigQuery, then commits its response watermark only after the
+write succeeds.
+
+Validate the connector and inspect its credential-free plan:
+
+```bash
+uv run dander run greenhouse --dry-run --project my-gcp-project
+```
+
+For local development, set `SECRET_GREENHOUSE` in `.env` to the API key. In cloud execution, set
+it to the full Secret Manager resource name; Dander resolves and audits the managed-secret access.
+Then execute:
+
+```bash
+uv run dander run greenhouse --project my-gcp-project
+```
+
+The bootstrap command uses remote GCS Terraform state and plans by default. Applying requires both
+the `--apply` flag and an interactive confirmation:
+
+```bash
+uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket
+uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket --apply
+```
+
+Current v0 limits are explicit: Greenhouse/API-key-basic auth only, SCD1 writes only, whole-endpoint
+batches held in memory, no automatic target-schema evolution, and bootstrap coverage for BigQuery
+datasets only. Transform execution, catalog publication, additional write modes, IAM/WIF, Secret
+Manager provisioning, and Cloud Run jobs remain future slices.
 
 ## The agent workforce & the `/feature` workflow
 
@@ -140,10 +173,11 @@ shows each run's agents with their role, ticket, and live PASS/FAIL verdicts:
 
 ## Status
 
-Early scaffold. Interfaces and structure are in place; module implementations are tracked as
-tickets in `tickets/` and built by the agent workforce via the `feature` workflow. **Not yet
-suitable for production, and not to be open-sourced before internal OSS/legal review** (it touches
-HR/comp and customer data — see `steering/00-project-overview.md`).
+Runnable ingestion v0: the Greenhouse → BigQuery SCD1 path, audited secret resolution, watermark
+state, dry-run planning, and BigQuery Terraform bootstrap are implemented and unit-tested. The
+limits above still make this **unsuitable for production**, and it must not be open-sourced before
+internal OSS/legal review (it touches HR/comp and customer data — see
+`steering/00-project-overview.md`).
 
 ## License
 

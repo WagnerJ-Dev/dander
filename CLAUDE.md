@@ -4,8 +4,9 @@ Open-source, GCP-native EL(T) suite: read from SaaS systems (Salesforce, Workday
 NetSuite, Marketo, Xactly, …) and ingest efficiently + idempotently into **BigQuery**. A
 self-owned replacement for Informatica and a customizable stand-in for dbt/SQLMesh.
 
-> **Status:** governance layer only. No platform code yet — the steering files and agent workforce
-> come first so everything built later inherits our standards.
+> **Status:** runnable Greenhouse → BigQuery ingestion v0. Graph/config foundations, audited secret
+> resolution, dlt extraction, SCD1 loading, watermark state, and guarded BigQuery bootstrap exist;
+> the remaining platform modules are still incremental work.
 
 ## Steering — the contract (read these; they are binding)
 

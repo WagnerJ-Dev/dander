@@ -8,10 +8,12 @@ terraform {
     }
   }
 
-  # Remote state — never commit local state (steering/01-security.md).
-  # Uncomment and set the bucket per environment:
-  # backend "gcs" {
-  #   bucket = "REPLACE_ME-tfstate"
-  #   prefix = "dander/state"
-  # }
+  # Values are supplied by `dander init` via `terraform init -backend-config`; Terraform backends
+  # cannot use input variables.
+  backend "gcs" {}
+}
+
+provider "google" {
+  project = var.project_id
+  region  = var.region
 }
