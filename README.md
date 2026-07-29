@@ -204,13 +204,44 @@ uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-b
 uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket --apply
 ```
 
+### Scheduled public ingestion
+
+The first hosted slice runs the credential-free Greenhouse Job Board connector as a Cloud Run Job.
+Terraform creates separate runtime and scheduler service accounts, grants the runtime write access
+only to the `raw` dataset, and invokes the job daily at 09:00 in `America/New_York`. The schedule
+defaults to paused so a manual execution can be verified before enabling it.
+
+Build for Cloud Run, push the image, and use its immutable digest in a local tfvars file:
+
+```bash
+PROJECT_ID=my-gcp-project
+REGION=us-central1
+IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/dander/dander"
+
+docker build --platform linux/amd64 -t "$IMAGE:dander-25" .
+gcloud auth configure-docker "$REGION-docker.pkg.dev"
+docker push "$IMAGE:dander-25"
+docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:dander-25"
+
+cp infra/sandbox.auto.tfvars.example infra/sandbox.auto.tfvars
+# Fill in the billing account and image digest; keep scheduler_paused = true.
+terraform -chdir=infra plan -out=scheduled.tfplan
+terraform -chdir=infra apply scheduled.tfplan
+gcloud run jobs execute dander-greenhouse-public --region="$REGION" --wait
+```
+
+After the manual run succeeds, set `scheduler_paused = false`, review a fresh saved plan, and apply
+that exact plan. The image repository deletes untagged images after one day and retains the three
+most recent versions. A single Scheduler job is within Google's current three-job monthly free
+allowance, and small Cloud Run executions may fit its free compute allowance, but neither is a
+hard spending cap. The guarded CLI preflight and budget kill switch remain required.
+
 Current v0 limits are explicit: production SCD1 plus sandbox full-replacement writes,
 whole-endpoint batches held in memory, no automatic target-schema evolution, and bootstrap
 coverage for BigQuery datasets only. Public Job Board extraction is a full refresh; it does not
 delete jobs that disappear from a board. The guarded mode verifies budget wiring but does not
 provision or continuously monitor it. Transform execution, catalog publication, additional
-production write modes, IAM/WIF, Secret Manager provisioning, and Cloud Run jobs remain future
-slices.
+production write modes, IAM/WIF, and Secret Manager provisioning remain future slices.
 
 ## The agent workforce & the `/feature` workflow
 

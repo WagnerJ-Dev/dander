@@ -58,6 +58,9 @@ blocking gate on any public release, separate from engineering readiness.
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-07-29 — **The first hosted runtime is a daily, paused-first Cloud Run Job** — the public
+  connector needs no stored credential; separate least-privilege runtime and scheduler identities,
+  an immutable image digest, and bounded image retention minimize both access and cost exposure.
 - 2026-07-29 — **Greenhouse has separate public and private connector paths** — the public Job
   Board connector gives a real, credential-free first run; the canonical private connector uses
   Harvest v3 OAuth client credentials, while v1 remains explicitly legacy only until its announced

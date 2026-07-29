@@ -2,46 +2,45 @@
 
 ## Finished
 
-- Added a credential-free Greenhouse Job Board connector using published jobs.
-- Upgraded canonical private Greenhouse ingestion to Harvest v3 OAuth client credentials.
-- Added audited secret resolution, bearer caching/refresh, response selectors, and dlt auth bridging.
-- Preserved Harvest v1 under an explicitly temporary legacy connector.
-- Kept the live `$5` GCP guard active and billing enabled.
+- Containerized Dander with pinned dependencies and a non-root runtime.
+- Provisioned an Artifact Registry repository, two dedicated identities, and a Cloud Run Job.
+- Enabled the daily 09:00 America/New_York Scheduler job after a manual execution passed.
+- Proved Scheduler OAuth invocation and the guarded BigQuery SCD1 path with 21 distinct jobs.
+- Left the live `$5` billing guard active; Terraform remote state has no drift.
 
 ## Try It
 
 ```bash
-uv run dander run greenhouse_job_board --guarded-free-tier --dry-run \
-  --project dander-sbx-harrison-20260729
+gcloud run jobs execute dander-greenhouse-public \
+  --project=dander-sbx-harrison-20260729 --region=us-central1 --wait
 ```
 
-Remove `--dry-run` after the BigQuery dataset bootstrap to ingest public jobs without a credential.
-Private `greenhouse` runs require Harvest v3 client ID and client secret references.
+The daily schedule is `0 9 * * *` in `America/New_York`. Use
+`gcloud scheduler jobs pause dander-greenhouse-public-daily --location=us-central1` to stop it.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
 - `uv run mypy src tests` — passed in strict mode.
 - `uv run pytest` — 322 passed.
-- Read-only live public extraction — 21 Greenhouse jobs returned.
-- Public and Harvest v3 CLI dry runs — passed without credentials.
+- `terraform fmt -check -recursive`, `terraform validate`, and final no-change plan — passed.
+- Container build/smoke, direct execution, and Scheduler execution — passed; table has 21 unique rows.
 
 ## Decisions
 
-- Public Job Board and private Harvest are distinct connectors and data-access boundaries.
-- Harvest v3 OAuth is canonical; v1 is compatibility-only until its 2026-08-31 shutdown.
-- The dlt adapter applies auth per request so cached tokens can refresh across pagination.
+- Deploy by immutable image digest and retain only three recent images.
+- Keep runtime writes scoped to `raw`; use a separate invoker-only Scheduler identity.
+- Apply paused first, prove a manual run, then enable the daily schedule.
 
 ## Remaining
 
-- Create the GCS Terraform-state bucket and apply the BigQuery bootstrap.
-- Run the public connector through the guarded BigQuery write path.
 - Add Harvest v3 credentials only if Greenhouse account access becomes available.
 - Review or remove default project service accounts with broad Editor grants.
 - Stream/chunk large endpoints and add controlled target-schema evolution.
+- Monitor the first automatic 09:00 run and billing export before expanding frequency or scope.
 
 ## Review First
 
-- `connectors/greenhouse_job_board.yaml`
-- `src/dander/security/oauth.py`
-- `src/dander/ingestion/dlt_backed.py`
+- `infra/modules/scheduled-job/main.tf`
+- `Dockerfile`
+- `README.md`
