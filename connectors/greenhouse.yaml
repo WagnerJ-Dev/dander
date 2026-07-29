@@ -1,20 +1,25 @@
-# Greenhouse Harvest API — a low-friction first connector (API key over HTTP basic auth).
-# The auth VALUE never lives here. `auth_ref` names the secret reference (Secret Manager resource
-# name or env key) that the AuthStrategy resolves at runtime. See steering/01-security.md.
+# Greenhouse Harvest v3 for private recruiting data.
+# Credential values stay in environment variables or GCP Secret Manager.
 name: greenhouse
-base_url: https://harvest.greenhouse.io/v1
-auth_strategy: api_key_basic
-auth_ref: SECRET_GREENHOUSE
+base_url: https://harvest.greenhouse.io/v3
+auth_strategy: oauth2_client_credentials
+auth_refs:
+  client_id: SECRET_GREENHOUSE_CLIENT_ID
+  client_secret: SECRET_GREENHOUSE_CLIENT_SECRET
+auth_options:
+  token_url: https://auth.greenhouse.io/token
 
 endpoints:
   - name: candidates
     path: /candidates
     pagination: link_header
     incremental_cursor: updated_at
-    cursor_param: updated_after
+    cursor_param: updated_at[gt]
     primary_key: [id]
 
   - name: jobs
     path: /jobs
     pagination: link_header
+    incremental_cursor: updated_at
+    cursor_param: updated_at[gt]
     primary_key: [id]

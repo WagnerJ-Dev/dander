@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from dander.ingestion.pagination import NoPagination, PaginationStrategy
 
@@ -48,6 +48,7 @@ class Endpoint(BaseModel):
             such as Greenhouse, whose response field is `updated_at` while its filter parameter is
             `updated_after`.
         primary_key: Field name(s) forming this endpoint's business key.
+        data_selector: Optional JSONPath selecting records from an enveloped response.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -58,6 +59,7 @@ class Endpoint(BaseModel):
     incremental_cursor: str | None = None
     cursor_param: str | None = None
     primary_key: list[str] = Field(default_factory=list)
+    data_selector: str | None = None
 
     @field_validator("pagination", mode="before")
     @classmethod
@@ -137,14 +139,45 @@ class SourceConfig(BaseModel):
     name: str
     base_url: str
     auth_strategy: str = Field(description="Registered AuthStrategy key, e.g. 'api_key_basic'")
-    auth_ref: str = Field(
-        description="Secret reference the AuthStrategy resolves (never the value)"
+    auth_ref: str | None = Field(
+        default=None,
+        description="Single secret reference resolved by simple auth strategies (never the value)",
+    )
+    auth_refs: dict[str, str] = Field(
+        default_factory=dict,
+        description="Named secret references for multi-credential auth strategies",
+    )
+    auth_options: dict[str, str | int | bool] = Field(
+        default_factory=dict,
+        description="Non-secret authentication settings such as an OAuth token URL",
     )
     endpoints: list[Endpoint] = Field(default_factory=list)
     rate_limit: RateLimitConfig | None = Field(
         default=None,
         description="Optional per-source rate-limit/backoff policy; None means unconstrained.",
     )
+
+    @model_validator(mode="after")
+    def _validate_auth_configuration(self) -> SourceConfig:
+        """Require only the references needed by each built-in authentication strategy."""
+        if self.auth_strategy == "none":
+            if self.auth_ref is not None or self.auth_refs:
+                raise ValueError("Unauthenticated sources cannot declare secret references")
+        elif self.auth_strategy == "api_key_basic":
+            if not self.auth_ref:
+                raise ValueError("api_key_basic requires auth_ref")
+        elif self.auth_strategy == "oauth2_client_credentials":
+            missing = {"client_id", "client_secret"} - self.auth_refs.keys()
+            if missing:
+                raise ValueError(
+                    "oauth2_client_credentials requires auth_refs for " + ", ".join(sorted(missing))
+                )
+            token_url = self.auth_options.get("token_url")
+            if not isinstance(token_url, str) or not token_url.startswith("https://"):
+                raise ValueError(
+                    "oauth2_client_credentials requires an HTTPS auth_options.token_url"
+                )
+        return self
 
 
 class Source(ABC):

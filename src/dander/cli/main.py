@@ -13,10 +13,17 @@ from rich.table import Table
 
 from dander.bootstrap import TerraformBootstrap, TerraformBootstrapError
 from dander.core.config import Settings
-from dander.ingestion import DltRestSource, Endpoint, load_source_config
+from dander.ingestion import DltRestSource, Endpoint, SourceConfig, load_source_config
 from dander.runtime import PipelineRunner
 from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafetyError
-from dander.security import ApiKeyBasic, DefaultSecretStore, EnvironmentSecretStore
+from dander.security import (
+    ApiKeyBasic,
+    AuthStrategy,
+    DefaultSecretStore,
+    EnvironmentSecretStore,
+    NoAuth,
+    OAuth2ClientCredentials,
+)
 from dander.state import BigQueryWatermarkStore, SqliteWatermarkStore
 from dander.writer import BigQueryReplaceWriter, BigQueryScd1Writer
 
@@ -121,9 +128,6 @@ def run(
     if not resolved_project:
         raise ClickException("GCP project is required via --project or GCP_PROJECT_ID")
 
-    if config.auth_strategy != "api_key_basic":
-        raise ClickException(f"Unsupported auth strategy for v0: {config.auth_strategy!r}")
-
     if sandbox:
         try:
             SandboxDataset().prepare(resolved_project, resolved_dataset)
@@ -139,7 +143,7 @@ def run(
             raise ClickException(str(error)) from error
 
     secrets = EnvironmentSecretStore() if sandbox else DefaultSecretStore()
-    auth = ApiKeyBasic(secrets, config.auth_ref)
+    auth = _build_auth(config, secrets)
     rest_source = DltRestSource(config, auth)
     result = PipelineRunner(
         source=rest_source,
@@ -174,6 +178,34 @@ def run(
             "yes" if endpoint.committed_cursor is not None else "no",
         )
     console.print(table)
+
+
+def _build_auth(
+    config: SourceConfig,
+    secrets: DefaultSecretStore | EnvironmentSecretStore,
+) -> AuthStrategy:
+    """Construct a supported authentication strategy from validated connector metadata."""
+    if config.auth_strategy == "none":
+        return NoAuth()
+    if config.auth_strategy == "api_key_basic":
+        if config.auth_ref is None:
+            raise ClickException("api_key_basic connector is missing auth_ref")
+        return ApiKeyBasic(secrets, config.auth_ref)
+    if config.auth_strategy == "oauth2_client_credentials":
+        token_url = config.auth_options["token_url"]
+        subject = config.auth_options.get("subject")
+        if not isinstance(token_url, str):
+            raise ClickException("OAuth token_url must be a string")
+        if subject is not None and (isinstance(subject, bool) or not isinstance(subject, int)):
+            raise ClickException("OAuth subject must be an integer Greenhouse user id")
+        return OAuth2ClientCredentials(
+            secrets,
+            client_id_ref=config.auth_refs["client_id"],
+            client_secret_ref=config.auth_refs["client_secret"],
+            token_url=token_url,
+            subject=subject,
+        )
+    raise ClickException(f"Unsupported auth strategy: {config.auth_strategy!r}")
 
 
 def _print_plan(

@@ -2,45 +2,46 @@
 
 ## Finished
 
-- Created isolated GCP project `dander-sbx-harrison-20260729` and linked billing.
-- Created project-scoped `dander-sbx-cap`: $5 USD with 80%/100% current-spend thresholds.
-- Deployed the Pub/Sub/Eventarc billing kill switch in `us-central1`.
-- Simulation produced `simulated-disable`; live mode is active with retries and zero min instances.
-- Added tested, deployable function source and provider-managed subscription support.
+- Added a credential-free Greenhouse Job Board connector using published jobs.
+- Upgraded canonical private Greenhouse ingestion to Harvest v3 OAuth client credentials.
+- Added audited secret resolution, bearer caching/refresh, response selectors, and dlt auth bridging.
+- Preserved Harvest v1 under an explicitly temporary legacy connector.
+- Kept the live `$5` GCP guard active and billing enabled.
 
 ## Try It
 
 ```bash
-uv run dander run greenhouse --guarded-free-tier --dry-run \
+uv run dander run greenhouse_job_board --guarded-free-tier --dry-run \
   --project dander-sbx-harrison-20260729
 ```
 
-The live run still needs a Greenhouse test API key stored in Secret Manager.
+Remove `--dry-run` after the BigQuery dataset bootstrap to ingest public jobs without a credential.
+Private `greenhouse` runs require Harvest v3 client ID and client secret references.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
 - `uv run mypy src tests` — passed in strict mode.
-- `uv run pytest` — 312 passed.
-- Synthetic `$6/$5` event in simulation mode — `simulated-disable`.
-- Live guarded preflight — passed; final billing status remains enabled.
+- `uv run pytest` — 322 passed.
+- Read-only live public extraction — 21 Greenhouse jobs returned.
+- Public and Harvest v3 CLI dry runs — passed without credentials.
 
 ## Decisions
 
-- The live handler is budget-specific, idempotent, retrying, and deployed simulation-first.
-- Runtime identity has billing-project-manager, Eventarc receiver, and log-writer roles.
-- Eventarc alone can invoke the private Cloud Run service.
+- Public Job Board and private Harvest are distinct connectors and data-access boundaries.
+- Harvest v3 OAuth is canonical; v1 is compatibility-only until its 2026-08-31 shutdown.
+- The dlt adapter applies auth per request so cached tokens can refresh across pagination.
 
 ## Remaining
 
-- Add a Greenhouse test key to Secret Manager and run the credentialed ingestion.
 - Create the GCS Terraform-state bucket and apply the BigQuery bootstrap.
+- Run the public connector through the guarded BigQuery write path.
+- Add Harvest v3 credentials only if Greenhouse account access becomes available.
 - Review or remove default project service accounts with broad Editor grants.
 - Stream/chunk large endpoints and add controlled target-schema evolution.
-- Add transform execution and metadata-driven tests/catalog publication.
 
 ## Review First
 
-- `infra/functions/stop_billing/handler.py`
-- `infra/functions/stop_billing/main.py`
-- `src/dander/sandbox.py`
+- `connectors/greenhouse_job_board.yaml`
+- `src/dander/security/oauth.py`
+- `src/dander/ingestion/dlt_backed.py`

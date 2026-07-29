@@ -58,6 +58,10 @@ blocking gate on any public release, separate from engineering readiness.
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-07-29 — **Greenhouse has separate public and private connector paths** — the public Job
+  Board connector gives a real, credential-free first run; the canonical private connector uses
+  Harvest v3 OAuth client credentials, while v1 remains explicitly legacy only until its announced
+  2026-08-31 shutdown.
 - 2026-07-29 — **The cost guard is simulation-first, idempotent, and budget-specific** — malformed
   or unrelated notifications are ignored; deployment proves the trigger without mutation before
   live mode is enabled, and a dedicated service account can only manage project billing and logs.

@@ -8,9 +8,11 @@ behind the shared authentication strategy.
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import httpx
+from dlt.common.configuration.specs.base_configuration import NotResolved, configspec
+from dlt.sources.helpers.rest_client.auth import AuthConfigBase
 from dlt.sources.helpers.rest_client.paginators import (
     BasePaginator,
     HeaderLinkPaginator,
@@ -29,12 +31,12 @@ from dander.ingestion.pagination import (
     PageNumberPagination,
 )
 from dander.ingestion.source import Endpoint, Source, SourceConfig
+from dander.security.base import AuthStrategy  # noqa: TC001  # configspec resolves at runtime
 
 if TYPE_CHECKING:
     from dlt.sources.rest_api.typing import Endpoint as DltEndpoint
     from dlt.sources.rest_api.typing import EndpointResource, RESTAPIConfig
-
-    from dander.security.base import AuthStrategy
+    from requests import PreparedRequest
 
 
 class EndpointNotFoundError(ValueError):
@@ -43,6 +45,26 @@ class EndpointNotFoundError(ValueError):
 
 class UnsupportedPaginationError(ValueError):
     """Raised when dlt cannot represent a declared pagination variation."""
+
+
+@configspec
+class DltAuthAdapter(AuthConfigBase):
+    """Apply Dander's provider-neutral authentication strategy to every dlt request."""
+
+    strategy: Annotated[AuthStrategy, NotResolved()] = None  # type: ignore[assignment]
+
+    def __call__(self, request: PreparedRequest) -> PreparedRequest:
+        """Copy authentication headers from an equivalent httpx request."""
+        if request.url is None:
+            raise ValueError("Cannot authenticate a request without a URL")
+        candidate = httpx.Request(
+            request.method or "GET",
+            request.url,
+            headers={str(key): str(value) for key, value in request.headers.items()},
+        )
+        authenticated = self.strategy.apply(candidate)
+        request.headers.update(dict(authenticated.headers))
+        return request
 
 
 class DltRestSource(Source):
@@ -84,17 +106,10 @@ class DltRestSource(Source):
         """Translate one Dander endpoint into a dlt REST API configuration.
 
         This pure configuration boundary is public so callers can inspect a credential-free plan
-        before execution. The returned object does contain an authorization header when called on
-        an authenticated source and must never be logged.
+        before execution. The returned object contains an authentication adapter for private
+        sources and must never be logged.
         """
         endpoint = self._get_endpoint(endpoint_name)
-        request = self._auth.apply(httpx.Request("GET", self.config.base_url))
-        authorization = request.headers.get("Authorization")
-        if not authorization:
-            raise RuntimeError(
-                f"Authentication strategy did not provide authorization for {self.config.name!r}"
-            )
-
         params: dict[str, Any] = {}
         paginator = self._build_paginator(endpoint, params)
         cursor_param = endpoint.cursor_param or endpoint.incremental_cursor
@@ -105,6 +120,8 @@ class DltRestSource(Source):
             "path": endpoint.path.lstrip("/"),
             "paginator": paginator,
         }
+        if endpoint.data_selector is not None:
+            dlt_endpoint["data_selector"] = endpoint.data_selector
         if params:
             dlt_endpoint["params"] = params
 
@@ -118,7 +135,7 @@ class DltRestSource(Source):
         return {
             "client": {
                 "base_url": f"{self.config.base_url.rstrip('/')}/",
-                "headers": {"Authorization": authorization},
+                "auth": DltAuthAdapter(self._auth),
             },
             "resources": [resource],
         }

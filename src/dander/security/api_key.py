@@ -14,8 +14,9 @@ if TYPE_CHECKING:
 class ApiKeyBasic(AuthStrategy):
     """Apply an API key as the username of an HTTP Basic credential.
 
-    Greenhouse Harvest uses the API key as the username and an empty password. The secret is
-    resolved for each request so no long-lived credential value is stored on the strategy.
+    Legacy Greenhouse Harvest v1 uses the API key as the username and an empty password. The
+    secret is resolved for each request so no long-lived credential value is stored on the
+    strategy.
     """
 
     def apply(self, request: httpx.Request) -> httpx.Request:

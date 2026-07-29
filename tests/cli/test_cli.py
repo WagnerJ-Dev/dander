@@ -31,6 +31,42 @@ def test_greenhouse_dry_run_needs_no_credentials_or_gcp() -> None:
     assert "SCD1" in result.output
 
 
+def test_public_job_board_dry_run_needs_no_credentials() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "greenhouse_job_board",
+            "--dry-run",
+            "--project",
+            "unit-project",
+            "--connectors-dir",
+            str(_REPO_ROOT / "connectors"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "greenhouse_job_board_jobs" in result.output
+
+
+def test_harvest_v3_dry_run_validates_without_credentials() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "greenhouse",
+            "--dry-run",
+            "--project",
+            "unit-project",
+            "--connectors-dir",
+            str(_REPO_ROOT / "connectors"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "greenhouse_candidates" in result.output
+
+
 def test_sandbox_dry_run_declares_replace_mode_without_network() -> None:
     result = CliRunner().invoke(
         app,

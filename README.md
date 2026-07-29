@@ -86,36 +86,51 @@ uv run dander --help       # the CLI (init / run)
 **Green baseline** = `ruff check`, `ruff format --check`, `mypy`, and `pytest` all pass. Keep it
 green; the `pr-review` agent enforces it on every ticket.
 
-## Runnable v0
+## Runnable Greenhouse paths
 
-The first vertical slice runs the low-friction Greenhouse Harvest connector through dlt, stages
-and SCD1-merges each endpoint into BigQuery, then commits its response watermark only after the
-write succeeds.
-
-Validate the connector and inspect its credential-free plan:
+The free first path reads published jobs from Greenhouse's public Job Board API. It uses
+Greenhouse's own board as a live example, needs no Greenhouse account or credential, and exercises
+the same dlt → BigQuery writer path as private connectors:
 
 ```bash
-uv run dander run greenhouse --dry-run --project my-gcp-project
+uv run dander run greenhouse_job_board --dry-run --project my-gcp-project
+uv run dander run greenhouse_job_board --guarded-free-tier --project my-gcp-project
 ```
 
-For local development, set `SECRET_GREENHOUSE` in `.env` to the API key. In cloud execution, set
-it to the full Secret Manager resource name; Dander resolves and audits the managed-secret access.
-Then execute:
+To read another organization's published jobs, copy the connector and replace `greenhouse` in
+`/greenhouse/jobs` with the public board token from its job-board URL. Public GET requests return
+published job data only; they do not expose candidates, applications, or other private records.
+
+The canonical `greenhouse` connector reads private candidates and jobs through Harvest v3. It
+uses OAuth 2.0 client credentials, caches expiring access tokens, and applies the token to every
+paginated request. Export the two credential references locally, or point each environment value
+at a full Secret Manager version resource in cloud execution:
 
 ```bash
+read -r SECRET_GREENHOUSE_CLIENT_ID
+read -rs SECRET_GREENHOUSE_CLIENT_SECRET && printf '\n'
+export SECRET_GREENHOUSE_CLIENT_ID SECRET_GREENHOUSE_CLIENT_SECRET
 uv run dander run greenhouse --project my-gcp-project
 ```
+
+Create Harvest v3 credentials in Greenhouse under **Configure → Dev Center → API Credential
+Management**, choose **Harvest V3 (OAuth)**, and grant only the read scopes for candidates and
+jobs. By default Greenhouse attributes requests to the integration service user associated with
+the credential. An optional integer `auth_options.subject` can select a different Greenhouse user.
+See Greenhouse's [v3 authentication guide](https://harvestdocs.greenhouse.io/docs/authentication).
+
+`greenhouse_harvest_v1_legacy` preserves API-key compatibility during migration only. Greenhouse
+states that Harvest v1/v2 become unavailable after 2026-08-31; new deployments should not use it.
 
 ### Strict $0 BigQuery Sandbox
 
 For evaluation without a billing account, create a
 [BigQuery Sandbox project](https://docs.cloud.google.com/bigquery/docs/sandbox), authenticate
-Application Default Credentials, and keep the Greenhouse API key local:
+Application Default Credentials, then run the public connector:
 
 ```bash
 gcloud auth application-default login
-export SECRET_GREENHOUSE='your-sandbox-greenhouse-api-key'
-uv run dander run greenhouse --sandbox --project my-no-billing-project
+uv run dander run greenhouse_job_board --sandbox --project my-no-billing-project
 ```
 
 `--sandbox` fails closed unless the Cloud Billing API explicitly reports that billing is disabled.
@@ -126,11 +141,11 @@ DML, including `MERGE`. It does not use Secret Manager, GCS, Cloud Run, or other
 free tiers require a billing account. If Cloud Billing returns an authorization/API error, Dander
 does nothing; enable API access or fix the caller's read permission, then retry.
 
-You still need access to a Greenhouse test account/API key for a live extraction. The dry run,
-local tests, and all fake-provider tests need no external credentials:
+The public connector, dry runs, local tests, and all fake-provider tests need no external
+credentials. Harvest v3 still requires access to a Greenhouse customer account:
 
 ```bash
-uv run dander run greenhouse --sandbox --dry-run --project my-no-billing-project
+uv run dander run greenhouse_job_board --sandbox --dry-run --project my-no-billing-project
 ```
 
 ### Billing-linked guarded free tier
@@ -164,7 +179,8 @@ log before switching it to `false`. Provider-managed trigger subscription names 
 Then run:
 
 ```bash
-export SECRET_GREENHOUSE='projects/PROJECT/secrets/greenhouse/versions/latest'
+export SECRET_GREENHOUSE_CLIENT_ID='projects/PROJECT/secrets/greenhouse-client-id/versions/latest'
+export SECRET_GREENHOUSE_CLIENT_SECRET='projects/PROJECT/secrets/greenhouse-client-secret/versions/latest'
 uv run dander run greenhouse --guarded-free-tier --project "$PROJECT_ID"
 ```
 
@@ -188,12 +204,13 @@ uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-b
 uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket --apply
 ```
 
-Current v0 limits are explicit: Greenhouse/API-key-basic auth only, production SCD1 plus sandbox
-full-replacement writes, whole-endpoint batches held in memory, no automatic target-schema
-evolution, and bootstrap coverage for BigQuery datasets only. The guarded mode verifies budget
-wiring but does not provision or continuously monitor it. Transform execution, catalog
-publication, additional production write modes, IAM/WIF, Secret Manager provisioning, and Cloud
-Run jobs remain future slices.
+Current v0 limits are explicit: production SCD1 plus sandbox full-replacement writes,
+whole-endpoint batches held in memory, no automatic target-schema evolution, and bootstrap
+coverage for BigQuery datasets only. Public Job Board extraction is a full refresh; it does not
+delete jobs that disappear from a board. The guarded mode verifies budget wiring but does not
+provision or continuously monitor it. Transform execution, catalog publication, additional
+production write modes, IAM/WIF, Secret Manager provisioning, and Cloud Run jobs remain future
+slices.
 
 ## The agent workforce & the `/feature` workflow
 

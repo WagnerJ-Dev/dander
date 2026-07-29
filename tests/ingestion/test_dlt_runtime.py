@@ -5,10 +5,13 @@ from __future__ import annotations
 from secrets import token_urlsafe
 from typing import TYPE_CHECKING, Any
 
+from dlt.sources.helpers.rest_client.auth import AuthConfigBase
 from dlt.sources.helpers.rest_client.paginators import HeaderLinkPaginator
+from requests import Request
 
-from dander.ingestion.dlt_backed import DltRestSource
+from dander.ingestion.dlt_backed import DltAuthAdapter, DltRestSource
 from dander.ingestion.source import Endpoint, SourceConfig
+from dander.security import NoAuth
 from dander.security.base import AuthStrategy
 
 if TYPE_CHECKING:
@@ -59,7 +62,11 @@ def test_build_config_maps_auth_pagination_cursor_and_key() -> None:
     config = source.build_rest_config("widgets", since="2026-01-01T00:00:00Z")
 
     assert config["client"]["base_url"] == "https://example.test/v1/"
-    assert config["client"]["headers"] == {"Authorization": auth.header}
+    adapter = config["client"]["auth"]
+    assert isinstance(adapter, DltAuthAdapter)
+    assert isinstance(adapter, AuthConfigBase)
+    prepared = Request("GET", "https://example.test/v1/widgets").prepare()
+    assert adapter(prepared).headers["Authorization"] == auth.header
     resource = config["resources"][0]
     assert isinstance(resource, dict)
     assert resource["primary_key"] == ["id"]
@@ -67,6 +74,34 @@ def test_build_config_maps_auth_pagination_cursor_and_key() -> None:
     assert isinstance(endpoint, dict)
     assert isinstance(endpoint["paginator"], HeaderLinkPaginator)
     assert endpoint["params"] == {"updated_after": "2026-01-01T00:00:00Z"}
+
+
+def test_build_config_supports_public_enveloped_response() -> None:
+    config = SourceConfig(
+        name="public",
+        base_url="https://example.test/v1/boards",
+        auth_strategy="none",
+        endpoints=[
+            Endpoint(
+                name="jobs",
+                path="/demo/jobs",
+                data_selector="jobs",
+                primary_key=["id"],
+            )
+        ],
+    )
+
+    rest_config = DltRestSource(config, NoAuth()).build_rest_config("jobs")
+
+    resource = rest_config["resources"][0]
+    assert isinstance(resource, dict)
+    endpoint = resource["endpoint"]
+    assert isinstance(endpoint, dict)
+    assert endpoint["data_selector"] == "jobs"
+    adapter = rest_config["client"]["auth"]
+    assert isinstance(adapter, DltAuthAdapter)
+    prepared = Request("GET", "https://example.test/v1/boards/demo/jobs").prepare()
+    assert "Authorization" not in adapter(prepared).headers
 
 
 class _FakeDltSource:

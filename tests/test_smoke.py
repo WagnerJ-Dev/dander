@@ -21,7 +21,10 @@ def test_write_modes_are_distinct() -> None:
     }
 
 
-def test_source_config_requires_auth_ref() -> None:
+def test_source_config_validates_strategy_specific_auth() -> None:
+    import pytest
+    from pydantic import ValidationError
+
     from dander.ingestion.source import SourceConfig
 
     cfg = SourceConfig(
@@ -32,3 +35,19 @@ def test_source_config_requires_auth_ref() -> None:
     )
     assert cfg.auth_ref == "SECRET_GREENHOUSE"
     assert cfg.endpoints == []
+
+    public = SourceConfig(
+        name="public",
+        base_url="https://example.test",
+        auth_strategy="none",
+    )
+    assert public.auth_ref is None
+
+    with pytest.raises(ValidationError, match="client_secret"):
+        SourceConfig(
+            name="oauth",
+            base_url="https://example.test",
+            auth_strategy="oauth2_client_credentials",
+            auth_refs={"client_id": "CLIENT_ID"},
+            auth_options={"token_url": "https://auth.example.test/token"},
+        )
