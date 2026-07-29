@@ -2,46 +2,45 @@
 
 ## Finished
 
-- Added a fail-closed `dander run --sandbox` path for billing-disabled BigQuery projects.
-- Added DML-free `WRITE_TRUNCATE` table replacement and empty-snapshot cleanup.
-- Added local SQLite cursor state while keeping sandbox extraction as a deterministic full refresh.
-- Kept production SCD1, Secret Manager, BigQuery state, and Terraform behavior unchanged.
-- Added billing, dataset ordering, writer, state, runtime, and CLI tests.
+- Added `dander run --guarded-free-tier` for billing-linked production-path testing.
+- Preflight requires billing enabled and a project-scoped USD budget no greater than $5.
+- Preflight requires 80%/100% current-spend thresholds plus conventional Pub/Sub wiring.
+- Kept the strict no-billing sandbox and unguarded production composition unchanged.
+- Documented free allowances, trial behavior, delayed billing, shutdown, and recovery risks.
 
 ## Try It
 
 ```bash
-gcloud auth application-default login
-export SECRET_GREENHOUSE='your-test-api-key'
-uv run dander run greenhouse --sandbox --project my-no-billing-project
+uv run dander run greenhouse --guarded-free-tier --dry-run --project my-project
 ```
 
-Use `--dry-run` first if no Greenhouse test credential is available.
+After deploying the documented budget handler, omit `--dry-run` and point
+`SECRET_GREENHOUSE` at its Secret Manager version.
 
 ## Checks
 
-- `uv lock` and `uv sync --extra dev` — passed with uv 0.12.0.
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
 - `uv run mypy src tests` — passed in strict mode.
-- `uv run pytest` — 301 passed.
-- CLI help and sandbox dry-run smoke checks — passed.
+- `uv run pytest` — 308 passed.
+- CLI help and guarded-mode dry-run smoke checks — passed.
+- `git diff --check` — passed.
 
 ## Decisions
 
-- Strict sandbox execution requires an explicit billing-disabled API response.
-- Sandbox loads fully replace tables and never use a stored cursor to filter extraction.
-- Local SQLite state is diagnostic; the production SCD1 path remains separate.
+- Budgets and kill switches are guardrails, never described as guaranteed caps.
+- Guarded mode verifies configuration before any credentials or source activity.
+- Passing guarded preflight uses the existing production SCD1 and managed-state path.
 
 ## Remaining
 
-- Run a live BigQuery Sandbox integration test with user-owned ADC and a Greenhouse test key.
+- Deploy and test the kill-switch handler in a dedicated disposable GCP project.
+- Run live strict-sandbox and guarded-mode integrations with user-owned credentials.
 - Stream/chunk large endpoints and add controlled target-schema evolution.
 - Add transform execution and metadata-driven tests/catalog publication.
-- Add SCD2/snapshot/incremental production writers.
-- Provision least-privilege IAM/WIF and Cloud Run for the production path.
+- Provision least-privilege IAM/WIF and Cloud Run for production.
 
 ## Review First
 
-- `src/dander/runtime.py`
 - `src/dander/sandbox.py`
+- `src/dander/cli/main.py`
 - `src/dander/writer/bigquery.py`

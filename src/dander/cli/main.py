@@ -15,7 +15,7 @@ from dander.bootstrap import TerraformBootstrap, TerraformBootstrapError
 from dander.core.config import Settings
 from dander.ingestion import DltRestSource, Endpoint, load_source_config
 from dander.runtime import PipelineRunner
-from dander.sandbox import SandboxDataset, SandboxSafetyError
+from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafetyError
 from dander.security import ApiKeyBasic, DefaultSecretStore, EnvironmentSecretStore
 from dander.state import BigQueryWatermarkStore, SqliteWatermarkStore
 from dander.writer import BigQueryReplaceWriter, BigQueryScd1Writer
@@ -87,6 +87,12 @@ def run(
         "--sandbox",
         help="Require billing disabled and use no-DML, full-refresh sandbox storage.",
     ),
+    guarded_free_tier: bool = typer.Option(
+        False,
+        "--guarded-free-tier",
+        help="Require billing plus a <=$5 budget guard before using the production GCP path.",
+    ),
+    budget_name: str = typer.Option("dander-sbx-cap", "--budget-name", hidden=True),
     state_path: Path = typer.Option(Path(".dander/state.db"), hidden=True),  # noqa: B008
 ) -> None:
     """Extract a configured source, write it, then commit endpoint watermarks."""
@@ -99,6 +105,8 @@ def run(
     settings = Settings()
     resolved_project = project or settings.gcp_project_id
     resolved_dataset = dataset or settings.bq_dataset_raw
+    if sandbox and guarded_free_tier:
+        raise ClickException("--sandbox and --guarded-free-tier are mutually exclusive")
 
     if dry_run:
         _print_plan(
@@ -107,6 +115,7 @@ def run(
             resolved_dataset,
             config.endpoints,
             sandbox=sandbox,
+            guarded_free_tier=guarded_free_tier,
         )
         return
     if not resolved_project:
@@ -118,6 +127,14 @@ def run(
     if sandbox:
         try:
             SandboxDataset().prepare(resolved_project, resolved_dataset)
+        except SandboxSafetyError as error:
+            raise ClickException(str(error)) from error
+    elif guarded_free_tier:
+        try:
+            GuardedFreeTierVerifier().require_guarded(
+                resolved_project,
+                budget_name=budget_name,
+            )
         except SandboxSafetyError as error:
             raise ClickException(str(error)) from error
 
@@ -166,6 +183,7 @@ def _print_plan(
     endpoints: Sequence[Endpoint],
     *,
     sandbox: bool = False,
+    guarded_free_tier: bool = False,
 ) -> None:
     """Render a credential-free execution plan."""
     table = Table(title=f"Dander dry run: {source}")
@@ -174,7 +192,12 @@ def _print_plan(
     table.add_column("Mode")
     for endpoint in endpoints:
         name = endpoint.name
-        mode = "REPLACE (sandbox)" if sandbox else "SCD1"
+        if sandbox:
+            mode = "REPLACE (sandbox)"
+        elif guarded_free_tier:
+            mode = "SCD1 (guarded billing)"
+        else:
+            mode = "SCD1"
         table.add_row(str(name), f"{project or '<unset>'}.{dataset}.{source}_{name}", mode)
     console.print(table)
 

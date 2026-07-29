@@ -133,6 +133,50 @@ local tests, and all fake-provider tests need no external credentials:
 uv run dander run greenhouse --sandbox --dry-run --project my-no-billing-project
 ```
 
+### Billing-linked guarded free tier
+
+To exercise the real Secret Manager, BigQuery `MERGE`, and BigQuery watermark path, link a billing
+account and configure a project-scoped budget. Google currently provides monthly free usage for
+[the first 10 GiB of BigQuery storage and 1 TiB of analysis](https://cloud.google.com/bigquery/pricing),
+[six active Secret Manager versions and 10,000 accesses](https://cloud.google.com/secret-manager/pricing),
+and bounded [Cloud Run compute and request usage](https://cloud.google.com/run/pricing). These are
+usage allowances, not a promise that the project cannot incur charges.
+
+Create the project-scoped budget (the project filter is important):
+
+```bash
+gcloud billing budgets create \
+  --billing-account="$BILLING_ACCOUNT_ID" \
+  --display-name="dander-sbx-cap" \
+  --budget-amount=5.00USD \
+  --filter-projects="projects/$PROJECT_ID" \
+  --threshold-rule=percent=0.8,basis=current-spend \
+  --threshold-rule=percent=1.0,basis=current-spend \
+  --notifications-rule-pubsub-topic="projects/$PROJECT_ID/topics/dander-stop-billing"
+```
+
+Follow Google's
+[programmatic notification setup](https://docs.cloud.google.com/billing/docs/how-to/budgets-programmatic-notifications)
+and [billing-disable tutorial](https://docs.cloud.google.com/billing/docs/how-to/disable-billing-with-notifications)
+to deploy the handler, using the topic and subscription name `dander-stop-billing`. Then run:
+
+```bash
+export SECRET_GREENHOUSE='projects/PROJECT/secrets/greenhouse/versions/latest'
+uv run dander run greenhouse --guarded-free-tier --project "$PROJECT_ID"
+```
+
+Before reading the secret or extracting data, Dander requires billing enabled, the named
+project-scoped USD budget at or below $5, 80% and 100% current-spend thresholds, the expected
+Pub/Sub topic, and its expected subscription. This verifies configuration metadata; it cannot
+prove the subscriber's code or runtime health. Google says budgets do not cap spending,
+notifications are emitted several times daily, and charges can arrive after billing is detached.
+The kill switch can stop services and make resources unrecoverable. Set the budget below the
+actual amount you could tolerate and use a dedicated disposable project.
+
+New users may instead use the [$300/90-day Free Trial](https://docs.cloud.google.com/free/docs/free-cloud-features).
+While the account remains a Free Trial account, Google says usage is not charged to the payment
+method; manually upgrading makes overages beyond remaining credit and free allowances billable.
+
 The bootstrap command uses remote GCS Terraform state and plans by default. Applying requires both
 the `--apply` flag and an interactive confirmation:
 
@@ -143,7 +187,8 @@ uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-b
 
 Current v0 limits are explicit: Greenhouse/API-key-basic auth only, production SCD1 plus sandbox
 full-replacement writes, whole-endpoint batches held in memory, no automatic target-schema
-evolution, and bootstrap coverage for BigQuery datasets only. Transform execution, catalog
+evolution, and bootstrap coverage for BigQuery datasets only. The guarded mode verifies budget
+wiring but does not provision or continuously monitor it. Transform execution, catalog
 publication, additional production write modes, IAM/WIF, Secret Manager provisioning, and Cloud
 Run jobs remain future slices.
 
@@ -201,11 +246,11 @@ shows each run's agents with their role, ticket, and live PASS/FAIL verdicts:
 
 ## Status
 
-Runnable ingestion v0: the Greenhouse → BigQuery production SCD1 path and strict no-billing
-sandbox path, audited secret resolution, watermark state, dry-run planning, and BigQuery Terraform
-bootstrap are implemented and unit-tested. The limits above still make this **unsuitable for
-production**, and it must not be open-sourced before internal OSS/legal review (it touches HR/comp
-and customer data — see
+Runnable ingestion v0: the Greenhouse → BigQuery production SCD1 path, strict no-billing sandbox,
+and billing-linked guarded preflight, plus audited secret resolution, watermark state, dry-run
+planning, and BigQuery Terraform bootstrap are implemented and unit-tested. The limits above still
+make this **unsuitable for production**, and it must not be open-sourced before internal OSS/legal
+review (it touches HR/comp and customer data — see
 `steering/00-project-overview.md`).
 
 ## License

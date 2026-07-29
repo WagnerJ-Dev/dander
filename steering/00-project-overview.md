@@ -58,6 +58,10 @@ blocking gate on any public release, separate from engineering readiness.
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-07-29 — **Billing-linked testing gets a fail-closed guardrail preflight, not a “hard cap”**
+  — the production SCD1/Secret Manager path may run only after Dander observes billing enabled, a
+  project-scoped budget no greater than $5, 80%/100% thresholds, and conventional Pub/Sub wiring;
+  billing latency and subscriber health remain explicit residual risks.
 - 2026-07-29 — **Strict $0 sandbox = billing-disabled BigQuery + full replacement + local state**
   — BigQuery Sandbox disallows DML, so this explicitly non-production mode verifies billing is
   disabled before creating anything, uses load jobs instead of `MERGE`, and never resumes from its

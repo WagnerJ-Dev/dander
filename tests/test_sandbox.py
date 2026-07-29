@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from dander.sandbox import GcpBillingVerifier, SandboxDataset, SandboxSafetyError
+from dander.sandbox import (
+    GcpBillingVerifier,
+    GuardedFreeTierVerifier,
+    SandboxDataset,
+    SandboxSafetyError,
+)
 
 
 class _Response:
@@ -26,6 +31,17 @@ class _Session:
         if isinstance(self._response, Exception):
             raise self._response
         return self._response
+
+
+class _SequenceSession:
+    def __init__(self, responses: list[_Response]) -> None:
+        self._responses = iter(responses)
+        self.urls: list[str] = []
+
+    def get(self, url: str, *, timeout: float) -> _Response:
+        assert timeout == 15.0
+        self.urls.append(url)
+        return next(self._responses)
 
 
 class _Verifier:
@@ -96,3 +112,85 @@ def test_failed_billing_check_prevents_dataset_creation() -> None:
         environment.prepare("unit-project", "raw")
 
     assert events == ["verify:unit-project"]
+
+
+def _billing(*, enabled: bool = True) -> _Response:
+    return _Response(
+        200,
+        {
+            "billingEnabled": enabled,
+            "billingAccountName": "billingAccounts/ABC-123",
+        },
+    )
+
+
+def _budget(
+    *,
+    amount: str = "5",
+    topic: str = "projects/unit-project/topics/dander-stop-billing",
+) -> _Response:
+    return _Response(
+        200,
+        {
+            "budgets": [
+                {
+                    "displayName": "dander-sbx-cap",
+                    "amount": {
+                        "specifiedAmount": {
+                            "currencyCode": "USD",
+                            "units": amount,
+                        }
+                    },
+                    "thresholdRules": [
+                        {"thresholdPercent": 0.8, "spendBasis": "CURRENT_SPEND"},
+                        {"thresholdPercent": 1.0, "spendBasis": "CURRENT_SPEND"},
+                    ],
+                    "notificationsRule": {"pubsubTopic": topic},
+                }
+            ]
+        },
+    )
+
+
+def _subscription(*, attached: bool = True) -> _Response:
+    subscriptions = ["projects/unit-project/subscriptions/dander-stop-billing"] if attached else []
+    return _Response(200, {"subscriptions": subscriptions})
+
+
+def test_guarded_free_tier_accepts_complete_five_dollar_guard() -> None:
+    session = _SequenceSession([_billing(), _budget(), _subscription()])
+
+    GuardedFreeTierVerifier(session).require_guarded("unit-project")
+
+    assert "scope=projects/unit-project" in session.urls[1]
+    assert session.urls[2].endswith(
+        "projects/unit-project/topics/dander-stop-billing/subscriptions?pageSize=100"
+    )
+
+
+@pytest.mark.parametrize(
+    ("billing", "budget", "subscription", "message"),
+    [
+        (_billing(enabled=False), _budget(), _subscription(), "not enabled"),
+        (_billing(), _budget(amount="6"), _subscription(), "no greater than"),
+        (
+            _billing(),
+            _budget(topic="projects/unit-project/topics/wrong"),
+            _subscription(),
+            "must publish",
+        ),
+        (_billing(), _budget(), _subscription(attached=False), "kill-switch subscription"),
+    ],
+)
+def test_guarded_free_tier_fails_closed(
+    billing: _Response,
+    budget: _Response,
+    subscription: _Response,
+    message: str,
+) -> None:
+    verifier = GuardedFreeTierVerifier(
+        _SequenceSession([billing, budget, subscription]),
+    )
+
+    with pytest.raises(SandboxSafetyError, match=message):
+        verifier.require_guarded("unit-project")

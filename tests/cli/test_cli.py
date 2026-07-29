@@ -48,3 +48,43 @@ def test_sandbox_dry_run_declares_replace_mode_without_network() -> None:
 
     assert result.exit_code == 0, result.output
     assert "REPLACE (sandbox)" in result.output
+
+
+def test_guarded_free_tier_dry_run_declares_production_mode_without_network() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "greenhouse",
+            "--guarded-free-tier",
+            "--dry-run",
+            "--project",
+            "unit-project",
+            "--connectors-dir",
+            str(_REPO_ROOT / "connectors"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "SCD1 (guarded billing)" in result.output
+
+
+def test_billing_modes_are_mutually_exclusive() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "greenhouse",
+            "--sandbox",
+            "--guarded-free-tier",
+            "--dry-run",
+            "--project",
+            "unit-project",
+            "--connectors-dir",
+            str(_REPO_ROOT / "connectors"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.exception is not None
+    assert "mutually exclusive" in str(result.exception)
