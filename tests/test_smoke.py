@@ -12,7 +12,13 @@ def test_package_version() -> None:
 def test_write_modes_are_distinct() -> None:
     from dander.writer.base import WriteMode
 
-    assert {m.value for m in WriteMode} == {"scd1", "scd2", "snapshot", "incremental"}
+    assert {m.value for m in WriteMode} == {
+        "scd1",
+        "scd2",
+        "snapshot",
+        "incremental",
+        "replace",
+    }
 
 
 def test_source_config_requires_auth_ref() -> None:

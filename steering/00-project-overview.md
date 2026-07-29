@@ -58,6 +58,10 @@ blocking gate on any public release, separate from engineering readiness.
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-07-29 — **Strict $0 sandbox = billing-disabled BigQuery + full replacement + local state**
+  — BigQuery Sandbox disallows DML, so this explicitly non-production mode verifies billing is
+  disabled before creating anything, uses load jobs instead of `MERGE`, and never resumes from its
+  diagnostic SQLite cursor. Terraform, Secret Manager, GCS, and Cloud Run stay out of this mode.
 - 2026-07-29 — **First runnable slice = Greenhouse → BigQuery SCD1** — proves the documented
   low-friction-source path before enterprise connectors; dlt owns REST pagination, Dander owns
   audited secret resolution, staging-table idempotency, and post-write watermark commits.

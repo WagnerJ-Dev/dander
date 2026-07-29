@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from dander.writer import BigQueryScd1Writer, BigQueryWriteError, WriteTarget
+from dander.writer import BigQueryReplaceWriter, BigQueryScd1Writer, BigQueryWriteError, WriteTarget
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -32,6 +32,7 @@ class _Client:
         self.destination = ""
         self.queries: list[str] = []
         self.deleted: list[str] = []
+        self.write_disposition: str | None = None
 
     def load_table_from_json(
         self,
@@ -41,6 +42,7 @@ class _Client:
         job_config: bigquery.LoadJobConfig,
     ) -> _Job:
         assert job_config.autodetect
+        self.write_disposition = job_config.write_disposition
         self.loaded_rows = [dict(row) for row in json_rows]
         self.destination = destination
         return _Job(error=self.load_error)
@@ -109,3 +111,26 @@ def test_staging_table_is_cleaned_after_load_failure() -> None:
         writer.write([{"id": "one"}], _target())
 
     assert client.deleted == [client.destination]
+
+
+def test_replace_writer_uses_direct_truncate_load_without_queries() -> None:
+    client = _Client()
+    writer = BigQueryReplaceWriter(project="unit-project", client=client)
+
+    affected = writer.write([{"id": "one"}, {"id": "two"}], _target())
+
+    assert affected == 2
+    assert client.destination == "unit-project.raw.example_widgets"
+    assert client.write_disposition == "WRITE_TRUNCATE"
+    assert client.queries == []
+    assert client.deleted == []
+
+
+def test_replace_writer_deletes_stale_table_for_empty_snapshot() -> None:
+    client = _Client()
+    writer = BigQueryReplaceWriter(project="unit-project", client=client)
+
+    assert writer.write([], _target()) == 0
+
+    assert client.deleted == ["unit-project.raw.example_widgets"]
+    assert client.queries == []

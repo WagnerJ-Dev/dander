@@ -29,3 +29,22 @@ def test_greenhouse_dry_run_needs_no_credentials_or_gcp() -> None:
     assert "greenhouse_candidates" in result.output
     assert "greenhouse_jobs" in result.output
     assert "SCD1" in result.output
+
+
+def test_sandbox_dry_run_declares_replace_mode_without_network() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "greenhouse",
+            "--sandbox",
+            "--dry-run",
+            "--project",
+            "unit-project",
+            "--connectors-dir",
+            str(_REPO_ROOT / "connectors"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "REPLACE (sandbox)" in result.output

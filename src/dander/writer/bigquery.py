@@ -1,4 +1,4 @@
-"""Idempotent BigQuery SCD1 writer."""
+"""Idempotent BigQuery SCD1 and full-replacement writers."""
 
 from __future__ import annotations
 
@@ -124,6 +124,53 @@ class BigQueryScd1Writer(WritePattern):
             )
         finally:
             self._client.delete_table(staging_id, not_found_ok=True)
+
+
+class BigQueryReplaceWriter(WritePattern):
+    """Replace a table using only BigQuery load and table-management APIs."""
+
+    mode = WriteMode.REPLACE
+
+    def __init__(self, *, project: str, client: _BigQueryClient | None = None) -> None:
+        self._project = _validated_identifier(project, "project", allow_dash=True)
+        self._client = client or cast("_BigQueryClient", bigquery.Client(project=project))
+
+    def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
+        """Replace the target without SQL or DML, including clearing an empty snapshot."""
+        target_id = _target_id(target)
+        if target.project != self._project:
+            raise BigQueryWriteError(
+                f"Writer project {self._project!r} does not match target project {target.project!r}"
+            )
+
+        rows = [dict(record) for record in records]
+        if not rows:
+            self._client.delete_table(target_id, not_found_ok=True)
+            return 0
+
+        columns = tuple(rows[0])
+        if not columns:
+            raise BigQueryWriteError("Cannot write records with no columns")
+        for column in columns:
+            _validated_identifier(column, "column")
+        expected_columns = set(columns)
+        for index, row in enumerate(rows):
+            if set(row) != expected_columns:
+                raise BigQueryWriteError(
+                    f"Record {index} has a different column set from the first record"
+                )
+
+        load_config = bigquery.LoadJobConfig(
+            autodetect=True,
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        )
+        self._client.load_table_from_json(
+            rows,
+            target_id,
+            job_config=load_config,
+        ).result()
+        return len(rows)
 
 
 def _validated_identifier(value: str, label: str, *, allow_dash: bool = False) -> str:

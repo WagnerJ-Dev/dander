@@ -106,6 +106,33 @@ Then execute:
 uv run dander run greenhouse --project my-gcp-project
 ```
 
+### Strict $0 BigQuery Sandbox
+
+For evaluation without a billing account, create a
+[BigQuery Sandbox project](https://docs.cloud.google.com/bigquery/docs/sandbox), authenticate
+Application Default Credentials, and keep the Greenhouse API key local:
+
+```bash
+gcloud auth application-default login
+export SECRET_GREENHOUSE='your-sandbox-greenhouse-api-key'
+uv run dander run greenhouse --sandbox --project my-no-billing-project
+```
+
+`--sandbox` fails closed unless the Cloud Billing API explicitly reports that billing is disabled.
+It creates the raw dataset without Terraform, resolves secrets from the environment only, replaces
+each destination through a `WRITE_TRUNCATE` load job, and stores observed cursors in
+`.dander/state.db`. Every sandbox run is a full refresh because BigQuery Sandbox does not support
+DML, including `MERGE`. It does not use Secret Manager, GCS, Cloud Run, or other services whose
+free tiers require a billing account. If Cloud Billing returns an authorization/API error, Dander
+does nothing; enable API access or fix the caller's read permission, then retry.
+
+You still need access to a Greenhouse test account/API key for a live extraction. The dry run,
+local tests, and all fake-provider tests need no external credentials:
+
+```bash
+uv run dander run greenhouse --sandbox --dry-run --project my-no-billing-project
+```
+
 The bootstrap command uses remote GCS Terraform state and plans by default. Applying requires both
 the `--apply` flag and an interactive confirmation:
 
@@ -114,10 +141,11 @@ uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-b
 uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket --apply
 ```
 
-Current v0 limits are explicit: Greenhouse/API-key-basic auth only, SCD1 writes only, whole-endpoint
-batches held in memory, no automatic target-schema evolution, and bootstrap coverage for BigQuery
-datasets only. Transform execution, catalog publication, additional write modes, IAM/WIF, Secret
-Manager provisioning, and Cloud Run jobs remain future slices.
+Current v0 limits are explicit: Greenhouse/API-key-basic auth only, production SCD1 plus sandbox
+full-replacement writes, whole-endpoint batches held in memory, no automatic target-schema
+evolution, and bootstrap coverage for BigQuery datasets only. Transform execution, catalog
+publication, additional production write modes, IAM/WIF, Secret Manager provisioning, and Cloud
+Run jobs remain future slices.
 
 ## The agent workforce & the `/feature` workflow
 
@@ -173,10 +201,11 @@ shows each run's agents with their role, ticket, and live PASS/FAIL verdicts:
 
 ## Status
 
-Runnable ingestion v0: the Greenhouse → BigQuery SCD1 path, audited secret resolution, watermark
-state, dry-run planning, and BigQuery Terraform bootstrap are implemented and unit-tested. The
-limits above still make this **unsuitable for production**, and it must not be open-sourced before
-internal OSS/legal review (it touches HR/comp and customer data — see
+Runnable ingestion v0: the Greenhouse → BigQuery production SCD1 path and strict no-billing
+sandbox path, audited secret resolution, watermark state, dry-run planning, and BigQuery Terraform
+bootstrap are implemented and unit-tested. The limits above still make this **unsuitable for
+production**, and it must not be open-sourced before internal OSS/legal review (it touches HR/comp
+and customer data — see
 `steering/00-project-overview.md`).
 
 ## License

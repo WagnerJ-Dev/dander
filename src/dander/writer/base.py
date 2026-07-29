@@ -23,6 +23,7 @@ class WriteMode(StrEnum):
     SCD2 = "scd2"  # versioned rows (valid_from / valid_to / is_current)
     SNAPSHOT = "snapshot"  # partitioned, append-only
     INCREMENTAL = "incremental"  # watermark-bounded append/merge
+    REPLACE = "replace"  # full-table replacement through a load job
 
 
 @dataclass(frozen=True)

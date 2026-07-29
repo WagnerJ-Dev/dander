@@ -15,9 +15,10 @@ from dander.bootstrap import TerraformBootstrap, TerraformBootstrapError
 from dander.core.config import Settings
 from dander.ingestion import DltRestSource, Endpoint, load_source_config
 from dander.runtime import PipelineRunner
-from dander.security import ApiKeyBasic, DefaultSecretStore
-from dander.state import BigQueryWatermarkStore
-from dander.writer import BigQueryScd1Writer
+from dander.sandbox import SandboxDataset, SandboxSafetyError
+from dander.security import ApiKeyBasic, DefaultSecretStore, EnvironmentSecretStore
+from dander.state import BigQueryWatermarkStore, SqliteWatermarkStore
+from dander.writer import BigQueryReplaceWriter, BigQueryScd1Writer
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -81,8 +82,14 @@ def run(
         "--dry-run",
         help="Validate config and print the execution plan without credentials or network calls.",
     ),
+    sandbox: bool = typer.Option(
+        False,
+        "--sandbox",
+        help="Require billing disabled and use no-DML, full-refresh sandbox storage.",
+    ),
+    state_path: Path = typer.Option(Path(".dander/state.db"), hidden=True),  # noqa: B008
 ) -> None:
-    """Extract a configured source, SCD1-merge it, then commit endpoint watermarks."""
+    """Extract a configured source, write it, then commit endpoint watermarks."""
     if not _SOURCE_NAME.fullmatch(source):
         raise typer.BadParameter("Source names may contain only letters, numbers, '_' and '-'")
 
@@ -94,7 +101,13 @@ def run(
     resolved_dataset = dataset or settings.bq_dataset_raw
 
     if dry_run:
-        _print_plan(config.name, resolved_project, resolved_dataset, config.endpoints)
+        _print_plan(
+            config.name,
+            resolved_project,
+            resolved_dataset,
+            config.endpoints,
+            sandbox=sandbox,
+        )
         return
     if not resolved_project:
         raise ClickException("GCP project is required via --project or GCP_PROJECT_ID")
@@ -102,18 +115,33 @@ def run(
     if config.auth_strategy != "api_key_basic":
         raise ClickException(f"Unsupported auth strategy for v0: {config.auth_strategy!r}")
 
-    secrets = DefaultSecretStore()
+    if sandbox:
+        try:
+            SandboxDataset().prepare(resolved_project, resolved_dataset)
+        except SandboxSafetyError as error:
+            raise ClickException(str(error)) from error
+
+    secrets = EnvironmentSecretStore() if sandbox else DefaultSecretStore()
     auth = ApiKeyBasic(secrets, config.auth_ref)
     rest_source = DltRestSource(config, auth)
     result = PipelineRunner(
         source=rest_source,
-        writer=BigQueryScd1Writer(project=resolved_project),
-        watermarks=BigQueryWatermarkStore(
-            project=resolved_project,
-            dataset=resolved_dataset,
+        writer=(
+            BigQueryReplaceWriter(project=resolved_project)
+            if sandbox
+            else BigQueryScd1Writer(project=resolved_project)
+        ),
+        watermarks=(
+            SqliteWatermarkStore(state_path)
+            if sandbox
+            else BigQueryWatermarkStore(
+                project=resolved_project,
+                dataset=resolved_dataset,
+            )
         ),
         project=resolved_project,
         dataset=resolved_dataset,
+        resume_from_watermark=not sandbox,
     ).run()
 
     table = Table(title=f"Dander run {result.run_id}")
@@ -136,6 +164,8 @@ def _print_plan(
     project: str,
     dataset: str,
     endpoints: Sequence[Endpoint],
+    *,
+    sandbox: bool = False,
 ) -> None:
     """Render a credential-free execution plan."""
     table = Table(title=f"Dander dry run: {source}")
@@ -144,7 +174,8 @@ def _print_plan(
     table.add_column("Mode")
     for endpoint in endpoints:
         name = endpoint.name
-        table.add_row(str(name), f"{project or '<unset>'}.{dataset}.{source}_{name}", "SCD1")
+        mode = "REPLACE (sandbox)" if sandbox else "SCD1"
+        table.add_row(str(name), f"{project or '<unset>'}.{dataset}.{source}_{name}", mode)
     console.print(table)
 
 

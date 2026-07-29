@@ -53,12 +53,14 @@ class PipelineRunner:
         watermarks: WatermarkStore,
         project: str,
         dataset: str,
+        resume_from_watermark: bool = True,
     ) -> None:
         self._source = source
         self._writer = writer
         self._watermarks = watermarks
         self._project = project
         self._dataset = dataset
+        self._resume_from_watermark = resume_from_watermark
 
     def run(self) -> PipelineRunResult:
         """Run every configured endpoint and commit each cursor after its successful write."""
@@ -81,7 +83,7 @@ class PipelineRunner:
         source_name = self._source.config.name
         cursor = (
             self._watermarks.get(source_name, endpoint.name)
-            if endpoint.incremental_cursor
+            if endpoint.incremental_cursor and self._resume_from_watermark
             else None
         )
         records = list(self._source.extract(endpoint.name, since=cursor))

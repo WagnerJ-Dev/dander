@@ -2,45 +2,46 @@
 
 ## Finished
 
-- Built the Greenhouse → BigQuery runnable v0 on `codex/dander-v0`.
-- Added audited environment/Secret Manager resolution and API-key basic auth.
-- Added dlt extraction, idempotent SCD1 staging/MERGE, and post-write BigQuery watermarks.
-- Added credential-free `dander run --dry-run` and guarded Terraform plan/apply bootstrap.
-- Added 13 runtime tests and corrected the pre-existing Ruff baseline failure.
+- Added a fail-closed `dander run --sandbox` path for billing-disabled BigQuery projects.
+- Added DML-free `WRITE_TRUNCATE` table replacement and empty-snapshot cleanup.
+- Added local SQLite cursor state while keeping sandbox extraction as a deterministic full refresh.
+- Kept production SCD1, Secret Manager, BigQuery state, and Terraform behavior unchanged.
+- Added billing, dataset ordering, writer, state, runtime, and CLI tests.
 
 ## Try It
 
 ```bash
-uv run dander run greenhouse --dry-run --project my-gcp-project
+gcloud auth application-default login
+export SECRET_GREENHOUSE='your-test-api-key'
+uv run dander run greenhouse --sandbox --project my-no-billing-project
 ```
 
-Set `SECRET_GREENHOUSE` locally or to a Secret Manager resource, then omit `--dry-run`.
+Use `--dry-run` first if no Greenhouse test credential is available.
 
 ## Checks
 
-- `uv sync --python 3.12 --extra dev` — passed.
+- `uv lock` and `uv sync --extra dev` — passed with uv 0.12.0.
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
-- `uv run mypy` — passed.
-- `uv run pytest` — 288 passed.
-- CLI help and Greenhouse dry-run smoke checks — passed.
-- Terraform 1.9.8 `fmt -check`, `init -backend=false`, and `validate` — passed.
+- `uv run mypy src tests` — passed in strict mode.
+- `uv run pytest` — 301 passed.
+- CLI help and sandbox dry-run smoke checks — passed.
 
 ## Decisions
 
-- First runtime slice is Greenhouse/API-key-basic → BigQuery SCD1.
-- Response cursor field and request cursor parameter are modeled separately.
-- Terraform uses remote GCS state and never applies without explicit confirmation.
+- Strict sandbox execution requires an explicit billing-disabled API response.
+- Sandbox loads fully replace tables and never use a stored cursor to filter extraction.
+- Local SQLite state is diagnostic; the production SCD1 path remains separate.
 
 ## Remaining
 
+- Run a live BigQuery Sandbox integration test with user-owned ADC and a Greenhouse test key.
 - Stream/chunk large endpoints and add controlled target-schema evolution.
-- Add transform execution and metadata-driven data tests/catalog publication.
-- Add SCD2/snapshot/incremental writers.
-- Provision Secret Manager, least-privilege IAM/WIF, and Cloud Run jobs.
-- Run a credentialed sandbox integration test before any production claim.
+- Add transform execution and metadata-driven tests/catalog publication.
+- Add SCD2/snapshot/incremental production writers.
+- Provision least-privilege IAM/WIF and Cloud Run for the production path.
 
 ## Review First
 
 - `src/dander/runtime.py`
-- `src/dander/ingestion/dlt_backed.py`
+- `src/dander/sandbox.py`
 - `src/dander/writer/bigquery.py`

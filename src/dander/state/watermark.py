@@ -7,6 +7,7 @@ re-pulling or corrupting data. Backed by BigQuery or Firestore. See ``steering/0
 from __future__ import annotations
 
 import re
+import sqlite3
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -14,6 +15,7 @@ from google.cloud import bigquery
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
+    from pathlib import Path
 
 
 class WatermarkStore(ABC):
@@ -125,3 +127,38 @@ class BigQueryWatermarkStore(WatermarkStore):
             "CLUSTER BY source_name, entity_name"
         ).result()
         self._table_ready = True
+
+
+class SqliteWatermarkStore(WatermarkStore):
+    """Persist local sandbox cursors in a small SQLite database."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self._path) as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS watermarks ("
+                "source TEXT NOT NULL, "
+                "entity TEXT NOT NULL, "
+                "cursor TEXT NOT NULL, "
+                "PRIMARY KEY (source, entity)"
+                ")"
+            )
+
+    def get(self, source: str, entity: str) -> str | None:
+        """Return a locally recorded cursor, if present."""
+        with sqlite3.connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT cursor FROM watermarks WHERE source = ? AND entity = ?",
+                (source, entity),
+            ).fetchone()
+        return str(row[0]) if row else None
+
+    def set(self, source: str, entity: str, cursor: str) -> None:
+        """Insert or replace a local cursor atomically."""
+        with sqlite3.connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO watermarks (source, entity, cursor) VALUES (?, ?, ?) "
+                "ON CONFLICT(source, entity) DO UPDATE SET cursor = excluded.cursor",
+                (source, entity, cursor),
+            )

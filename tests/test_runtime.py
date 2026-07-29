@@ -16,7 +16,12 @@ if TYPE_CHECKING:
 
 
 class _Source(Source):
-    def __init__(self, events: list[str]) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        expected_since: str | None = "2026-01-01T00:00:00Z",
+    ) -> None:
         super().__init__(
             SourceConfig(
                 name="example",
@@ -34,13 +39,14 @@ class _Source(Source):
             )
         )
         self._events = events
+        self._expected_since = expected_since
 
     def discover(self) -> Mapping[str, Any]:
         return {}
 
     def extract(self, endpoint: str, *, since: str | None = None) -> Iterator[Mapping[str, Any]]:
         assert endpoint == "widgets"
-        assert since == "2026-01-01T00:00:00Z"
+        assert since == self._expected_since
         self._events.append("extract")
         yield {"id": "one", "updated_at": "2026-01-02T00:00:00Z"}
         yield {"id": "two", "updated_at": "2026-01-03T00:00:00Z"}
@@ -112,3 +118,21 @@ def test_runner_does_not_advance_cursor_when_write_fails() -> None:
 
     assert events == ["get", "extract", "write"]
     assert watermarks.committed is None
+
+
+def test_full_refresh_ignores_existing_cursor_but_records_observed_cursor() -> None:
+    events: list[str] = []
+    watermarks = _Watermarks(events)
+    runner = PipelineRunner(
+        source=_Source(events, expected_since=None),
+        writer=_Writer(events),
+        watermarks=watermarks,
+        project="unit-project",
+        dataset="raw",
+        resume_from_watermark=False,
+    )
+
+    runner.run()
+
+    assert events == ["extract", "write", "set"]
+    assert watermarks.committed == "2026-01-03T00:00:00Z"
