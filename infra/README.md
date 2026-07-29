@@ -9,6 +9,7 @@ call sites (mirrors the `SecretStoreProvider` / `ComputeProvider` abstractions i
 | Module | Provisions |
 |---|---|
 | `modules/bigquery` | `raw` / `staging` / `marts` datasets. **Implemented.** |
+| `functions/stop_billing` | Pub/Sub-triggered, simulation-testable billing kill switch. |
 | `modules/secret-manager` | Secret entries + access bindings. |
 | `modules/iam` | Least-privilege service accounts + Workload Identity Federation (no long-lived keys). |
 | `modules/compute-run` | Cloud Run jobs that run connectors. |

@@ -219,12 +219,9 @@ class GuardedFreeTierVerifier:
             f"https://pubsub.googleapis.com/v1/{topic}/subscriptions?pageSize=100",
             label="Pub/Sub",
         )
-        expected = f"projects/{project}/subscriptions/dander-stop-billing"
         attached = subscriptions.get("subscriptions") if isinstance(subscriptions, dict) else None
-        if not isinstance(attached, list) or expected not in attached:
-            raise SandboxSafetyError(
-                f"Budget topic must have the kill-switch subscription {expected}"
-            )
+        if not isinstance(attached, list) or not attached:
+            raise SandboxSafetyError("Budget topic must have an attached kill-switch subscription")
 
     def _get_json(self, url: str, *, label: str) -> object:
         try:

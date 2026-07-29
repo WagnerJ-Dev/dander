@@ -158,7 +158,10 @@ gcloud billing budgets create \
 Follow Google's
 [programmatic notification setup](https://docs.cloud.google.com/billing/docs/how-to/budgets-programmatic-notifications)
 and [billing-disable tutorial](https://docs.cloud.google.com/billing/docs/how-to/disable-billing-with-notifications)
-to deploy the handler, using the topic and subscription name `dander-stop-billing`. Then run:
+to deploy `infra/functions/stop_billing` using the topic `dander-stop-billing`. Always deploy it
+with `SIMULATE_DEACTIVATION=true`, publish a synthetic over-budget event, and inspect the simulation
+log before switching it to `false`. Provider-managed trigger subscription names are supported.
+Then run:
 
 ```bash
 export SECRET_GREENHOUSE='projects/PROJECT/secrets/greenhouse/versions/latest'
@@ -167,8 +170,8 @@ uv run dander run greenhouse --guarded-free-tier --project "$PROJECT_ID"
 
 Before reading the secret or extracting data, Dander requires billing enabled, the named
 project-scoped USD budget at or below $5, 80% and 100% current-spend thresholds, the expected
-Pub/Sub topic, and its expected subscription. This verifies configuration metadata; it cannot
-prove the subscriber's code or runtime health. Google says budgets do not cap spending,
+Pub/Sub topic, and at least one attached subscription. This verifies configuration metadata; it
+cannot prove the subscriber's code or runtime health. Google says budgets do not cap spending,
 notifications are emitted several times daily, and charges can arrive after billing is detached.
 The kill switch can stop services and make resources unrecoverable. Set the budget below the
 actual amount you could tolerate and use a dedicated disposable project.

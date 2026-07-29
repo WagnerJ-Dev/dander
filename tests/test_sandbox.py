@@ -153,7 +153,9 @@ def _budget(
 
 
 def _subscription(*, attached: bool = True) -> _Response:
-    subscriptions = ["projects/unit-project/subscriptions/dander-stop-billing"] if attached else []
+    subscriptions = (
+        ["projects/unit-project/subscriptions/provider-managed-trigger"] if attached else []
+    )
     return _Response(200, {"subscriptions": subscriptions})
 
 
