@@ -1,0 +1,28 @@
+# Template only: copy to an ignored/local connector and replace identifiers with your tenant's
+# report URL. The credential is a reference resolved by Dander, never a literal in this file.
+name: workday_raas
+engine: workday_raas
+base_url: https://wd2-impl-services1.workday.com/ccx/service/customreport2/TENANT
+auth_strategy: oauth2_client_credentials
+auth_refs:
+  client_id: WORKDAY_CLIENT_ID
+  client_secret: WORKDAY_CLIENT_SECRET
+auth_options:
+  token_url: https://wd2-impl-services1.workday.com/ccx/oauth2/TENANT/token
+endpoints:
+  - name: workers
+    path: REPORT_OWNER/REPORT_NAME
+    pagination:
+      kind: page_number
+      page_param: page
+      size_param: count
+      page_size: 100
+      start_page: 1
+    data_selector: Report_Entry
+    incremental_cursor: updated_at
+    cursor_param: updated_after
+    primary_key: [worker_id]
+    field_types:
+      worker_id: STRING
+      active: BOOL
+      updated_at: TIMESTAMP

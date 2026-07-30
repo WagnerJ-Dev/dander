@@ -20,7 +20,14 @@ from dander.catalog import (
     SemanticRegistryPublisher,
 )
 from dander.core.config import Settings
-from dander.ingestion import DltRestSource, Endpoint, SourceConfig, load_source_config
+from dander.ingestion import (
+    DltRestSource,
+    Endpoint,
+    IngestionEngine,
+    SourceConfig,
+    WorkdayRaasSource,
+    load_source_config,
+)
 from dander.runtime import PipelineRunner
 from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafetyError
 from dander.security import (
@@ -234,9 +241,13 @@ def run(
 
     secrets = EnvironmentSecretStore() if sandbox else DefaultSecretStore()
     auth = _build_auth(config, secrets)
-    rest_source = DltRestSource(config, auth)
+    source_adapter = (
+        WorkdayRaasSource(config, auth)
+        if config.engine is IngestionEngine.WORKDAY_RAAS
+        else DltRestSource(config, auth)
+    )
     result = PipelineRunner(
-        source=rest_source,
+        source=source_adapter,
         writer=(
             BigQueryReplaceWriter(project=resolved_project)
             if sandbox

@@ -6,7 +6,7 @@ means the named upstream responsibility still has at least one unimplemented or 
 | Upstream module | Status | Current evidence | Missing proof |
 |---|---|---|---|
 | Security | Partial | Secret Manager and environment stores; API-key/basic, no-auth, and OAuth2 client-credentials strategies; per-secret runtime IAM and keyless GitHub WIF | JWT and OAuth1 TBA strategies |
-| Hybrid ingestion | Partial | Config-driven dlt REST extraction, pagination/backoff, Greenhouse public and Harvest paths | A concrete `EnterpriseSource`; runtime field-cast execution and broader schema evolution |
+| Hybrid ingestion | Substantially implemented | Config-driven dlt REST extraction plus concrete Workday RaaS enterprise execution with auth, pagination, bounded backoff, cursor params, and BigQuery scalar casts | Live tenant proof intentionally unavailable without customer access; broader nested schema evolution |
 | BigQuery Writer | Substantially implemented | Idempotent SCD1 and cursor-validated incremental MERGE, append-only partitioned snapshots, transactional SCD2 history, sandbox replace, and committed watermarks | Bounded chunk/streaming loads; controlled target schema evolution; target-node execution dispatch |
 | Transform | Partial | Typed YAML, restricted `ref()` compilation, DAG ordering, view/table builds, watermark-bounded incremental MERGE, and four generic tests | Execution of the visual pipeline mapping/join/custom-code model |
 | Metadata spine/catalog | Implemented locally | One YAML projects to transforms/tests, deterministic semantic JSON, and reusable Dataplex system-aspect requests | Live aspect publication intentionally unverified because metadata storage is billable |
@@ -16,9 +16,9 @@ means the named upstream responsibility still has at least one unimplemented or 
 
 ## Current critical path
 
-1. Implement remaining idempotent writer modes and transform incremental materialization.
-2. Execute the visual pipeline mapping/join/custom-code model.
-3. Prove one hand-rolled enterprise connector with fake/provider sandbox data.
+1. Execute the visual pipeline mapping/join/custom-code model.
+2. Dispatch visual target nodes into concrete writers.
+3. Add bounded writer loads and controlled nested schema evolution.
 4. Add hosted transform/catalog execution and run-history observability.
 5. Run a requirement-by-requirement release audit; do not treat passing unit tests as production
    readiness or as satisfying the external legal gate.

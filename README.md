@@ -122,6 +122,15 @@ See Greenhouse's [v3 authentication guide](https://harvestdocs.greenhouse.io/doc
 `greenhouse_harvest_v1_legacy` preserves API-key compatibility during migration only. Greenhouse
 states that Harvest v1/v2 become unavailable after 2026-08-31; new deployments should not use it.
 
+### Hand-rolled Workday path
+
+`WorkdayRaasSource` proves the second half of the hybrid-ingestion design without dlt. Copy
+`connectors/workday_raas.example.yaml`, supply your tenant/report identifiers and secret
+references, then run it through the same CLI/runtime/writer path. The source owns page-number
+pagination, cursor parameters, bounded backoff, response-envelope validation, and declared
+BigQuery scalar casts. Its complete test suite uses an injected fake transport; no Workday
+credential or employee row is stored in this repository.
+
 ### Strict $0 BigQuery Sandbox
 
 For evaluation without a billing account, create a
@@ -310,7 +319,7 @@ full refresh and does not delete jobs that disappear from a board. The CLI boots
 Secret Manager, IAM/WIF, scheduled runtime, and a simulation-first cost guard, but deploying those
 opt-in services may be billable. Transform execution supports full view/table rebuilds and
 watermark-bounded incremental merges; live catalog publication, visual graph execution, and
-enterprise-source proof remain future slices. The tracked completion ledger is in
+automatic schema evolution remain future slices. The tracked completion ledger is in
 [`docs/spec-alignment.md`](docs/spec-alignment.md).
 
 ## The agent workforce & the `/feature` workflow

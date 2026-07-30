@@ -8,6 +8,7 @@ which path produced the records.
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -15,6 +16,8 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from dander.ingestion.pagination import NoPagination, PaginationStrategy
+
+_FIELD_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -60,6 +63,22 @@ class Endpoint(BaseModel):
     cursor_param: str | None = None
     primary_key: list[str] = Field(default_factory=list)
     data_selector: str | None = None
+    field_types: dict[str, str] = Field(
+        default_factory=dict,
+        description="Explicit BigQuery type overrides applied by hand-rolled enterprise sources.",
+    )
+
+    @field_validator("field_types")
+    @classmethod
+    def _validate_field_types(cls, value: dict[str, str]) -> dict[str, str]:
+        """Restrict enterprise casts to supported BigQuery scalar types."""
+        supported = {"BOOL", "DATE", "FLOAT64", "INT64", "NUMERIC", "STRING", "TIMESTAMP"}
+        normalized = {field: data_type.upper() for field, data_type in value.items()}
+        if any(not _FIELD_NAME.fullmatch(field) for field in normalized):
+            raise ValueError("field_types keys must be field identifiers")
+        if unknown := sorted(set(normalized.values()) - supported):
+            raise ValueError(f"Unsupported field type: {unknown[0]}")
+        return normalized
 
     @field_validator("pagination", mode="before")
     @classmethod
@@ -103,6 +122,13 @@ class BackoffKind(StrEnum):
     EXPONENTIAL = "exponential"
 
 
+class IngestionEngine(StrEnum):
+    """Execution path used by one source configuration."""
+
+    DLT = "dlt"
+    WORKDAY_RAAS = "workday_raas"
+
+
 class RateLimitConfig(BaseModel):
     """Declarative per-source rate-limit / backoff policy.
 
@@ -138,6 +164,7 @@ class SourceConfig(BaseModel):
 
     name: str
     base_url: str
+    engine: IngestionEngine = IngestionEngine.DLT
     auth_strategy: str = Field(description="Registered AuthStrategy key, e.g. 'api_key_basic'")
     auth_ref: str | None = Field(
         default=None,

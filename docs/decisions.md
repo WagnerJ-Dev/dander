@@ -35,3 +35,12 @@
 - Builds include rows at or above the existing maximum cursor, deduplicate each key by latest
   cursor, and `MERGE`. Re-reading the boundary handles tied timestamps without losing rows and is
   safe because the merge is idempotent; canonical JSON is the deterministic final tie-breaker.
+
+## 2026-07-29 — Concrete enterprise ingestion proof
+
+- Workday RaaS is the first hand-rolled `EnterpriseSource`: connector config selects it explicitly,
+  while downstream runtime/writer/state code continues depending only on `Source`.
+- Response envelopes, page progression, cursor params, bounded retry/backoff, and scalar casts are
+  owned by this path. Transport and sleeping are injected so tests use no tenant or credential.
+- Schema discovery returns declarations only. Cast failures expose field/type contract names but
+  never rejected row values.
