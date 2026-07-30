@@ -308,9 +308,9 @@ partitioned snapshot, SCD2 history, and sandbox replacement, but whole endpoint 
 memory and automatic target-schema evolution is not implemented. Public Job Board extraction is a
 full refresh and does not delete jobs that disappear from a board. The CLI bootstrap can plan
 Secret Manager, IAM/WIF, scheduled runtime, and a simulation-first cost guard, but deploying those
-opt-in services may be billable. Transform execution supports full view/table rebuilds;
-incremental models, live catalog publication, visual graph execution, and enterprise-source proof
-remain future slices. The tracked completion ledger is in
+opt-in services may be billable. Transform execution supports full view/table rebuilds and
+watermark-bounded incremental merges; live catalog publication, visual graph execution, and
+enterprise-source proof remain future slices. The tracked completion ledger is in
 [`docs/spec-alignment.md`](docs/spec-alignment.md).
 
 ## The agent workforce & the `/feature` workflow

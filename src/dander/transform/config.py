@@ -80,6 +80,8 @@ class ModelMetadata(BaseModel):
     sensitivity: str = Field(min_length=1)
     columns: list[ColumnMetadata] = Field(min_length=1)
     tests: list[GenericTestMetadata] = Field(default_factory=list)
+    unique_key: list[str] = Field(default_factory=list)
+    incremental_cursor: str | None = None
 
     @model_validator(mode="after")
     def validate_columns_and_tests(self) -> ModelMetadata:
@@ -90,6 +92,22 @@ class ModelMetadata(BaseModel):
         declared = set(names)
         if unknown := sorted({test.column for test in self.tests} - declared):
             raise ValueError(f"tests reference undeclared columns: {', '.join(unknown)}")
+        if self.materialization is Materialization.INCREMENTAL:
+            if not self.unique_key:
+                raise ValueError("incremental models require unique_key")
+            if self.incremental_cursor is None:
+                raise ValueError("incremental models require incremental_cursor")
+            if unknown_keys := sorted(set(self.unique_key) - declared):
+                raise ValueError(
+                    "incremental unique_key references undeclared columns: "
+                    f"{', '.join(unknown_keys)}"
+                )
+            if self.incremental_cursor not in declared:
+                raise ValueError("incremental_cursor references an undeclared column")
+            if len(self.unique_key) != len(set(self.unique_key)):
+                raise ValueError("incremental unique_key columns must be unique")
+        elif self.unique_key or self.incremental_cursor is not None:
+            raise ValueError("incremental settings require incremental materialization")
         return self
 
 

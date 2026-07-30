@@ -59,6 +59,11 @@ def _write_model(
     (root / f"{name}.sql").write_text(
         f"SELECT CAST(id AS STRING) AS id FROM {{{{ ref('{ref}') }}}}"
     )
+    incremental = (
+        "\n            unique_key: [id]\n            incremental_cursor: id"
+        if materialization == "incremental"
+        else ""
+    )
     (root / f"{name}.yml").write_text(
         dedent(
             f"""
@@ -69,6 +74,7 @@ def _write_model(
             dataset: staging
             source_system: fixture
             sensitivity: public
+            {incremental}
             columns:
               - name: id
                 type: STRING
@@ -136,7 +142,7 @@ def test_assertion_failures_name_tests_without_row_values(tmp_path: Path) -> Non
         BigQueryTransformRunner(project="valid-project-123", client=client).build(tmp_path)
 
 
-def test_incremental_materialization_fails_before_queries(tmp_path: Path) -> None:
+def test_incremental_materialization_builds_watermark_bounded_merge(tmp_path: Path) -> None:
     _write_model(tmp_path, "base", tests="              []")
     _write_model(
         tmp_path,
@@ -145,13 +151,58 @@ def test_incremental_materialization_fails_before_queries(tmp_path: Path) -> Non
         ref="base",
         tests="              []",
     )
+    (tmp_path / "model_a.sql").write_text(
+        "SELECT CAST(id AS STRING) AS id, 'active' AS status FROM {{ ref('base') }}"
+    )
+    sidecar = tmp_path / "model_a.yml"
+    sidecar.write_text(
+        sidecar.read_text().replace(
+            "description: Fixture identifier.",
+            "description: Fixture identifier.\n"
+            "  - name: status\n"
+            "    type: STRING\n"
+            "    description: Fixture status.",
+        )
+    )
     client = _FakeClient()
 
-    with pytest.raises(TransformProjectError, match="Incremental materialization"):
-        BigQueryTransformRunner(project="valid-project-123", client=client).build(
-            tmp_path,
-            selected=["model_a"],
-        )
+    result = BigQueryTransformRunner(project="valid-project-123", client=client).build(
+        tmp_path,
+        selected=["model_a"],
+    )
+
+    assert result.models == ("base", "model_a")
+    incremental = client.queries[1]
+    assert incremental.startswith("CREATE TABLE IF NOT EXISTS `valid-project-123.staging.model_a`")
+    assert "MERGE `valid-project-123.staging.model_a` AS target" in incremental
+    assert "source.`id` >= (SELECT MAX(`id`)" in incremental
+    assert "PARTITION BY source.`id`" in incremental
+    assert "ORDER BY source.`id` DESC, TO_JSON_STRING(source) DESC" in incremental
+    assert "WHEN MATCHED THEN UPDATE SET target.`status` = source.`status`" in incremental
+    assert (
+        "WHEN NOT MATCHED THEN INSERT (`id`, `status`) "
+        "VALUES (source.`id`, source.`status`)" in incremental
+    )
+    assert "SELECT *" not in incremental
+
+
+@pytest.mark.parametrize("missing_line", ["unique_key: [id]", "incremental_cursor: id"])
+def test_incremental_metadata_requires_key_and_cursor_before_queries(
+    tmp_path: Path,
+    missing_line: str,
+) -> None:
+    _write_model(
+        tmp_path,
+        "model_a",
+        materialization="incremental",
+        tests="              []",
+    )
+    sidecar = tmp_path / "model_a.yml"
+    sidecar.write_text(sidecar.read_text().replace(missing_line, ""))
+    client = _FakeClient()
+
+    with pytest.raises(TransformProjectError, match="Invalid model metadata"):
+        BigQueryTransformRunner(project="valid-project-123", client=client).build(tmp_path)
 
     assert client.queries == []
 

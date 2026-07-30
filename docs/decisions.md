@@ -27,3 +27,11 @@
   suppress exact rows both across reruns and within one incoming batch.
 - SCD2 computes changed rows once, then closes and inserts versions in one transaction. System
   columns are reserved and nested values compare through canonical BigQuery JSON rendering.
+
+## 2026-07-29 — Incremental transform boundary
+
+- Incremental model metadata explicitly names its unique key and cursor; these are never inferred
+  from generic tests or column naming conventions.
+- Builds include rows at or above the existing maximum cursor, deduplicate each key by latest
+  cursor, and `MERGE`. Re-reading the boundary handles tied timestamps without losing rows and is
+  safe because the merge is idempotent; canonical JSON is the deterministic final tie-breaker.

@@ -132,9 +132,52 @@ def _materialization_sql(project: TransformProject, model: TransformModel, query
         case Materialization.TABLE:
             return f"CREATE OR REPLACE TABLE {relation} AS\n{query}"
         case Materialization.INCREMENTAL:
-            raise TransformProjectError(
-                f"Incremental materialization is not implemented for model {model.name}"
+            return _incremental_materialization_sql(
+                relation=relation,
+                query=query,
+                columns=tuple(column.name for column in model.metadata.columns),
+                unique_key=tuple(model.metadata.unique_key),
+                cursor=model.metadata.incremental_cursor,
             )
+
+
+def _incremental_materialization_sql(
+    *,
+    relation: str,
+    query: str,
+    columns: tuple[str, ...],
+    unique_key: tuple[str, ...],
+    cursor: str | None,
+) -> str:
+    if not unique_key or cursor is None:
+        raise TransformProjectError("Incremental materialization metadata is incomplete")
+    selected = ", ".join(f"`{column}`" for column in columns)
+    source_selected = ", ".join(f"source.`{column}`" for column in columns)
+    match = " AND ".join(f"target.`{key}` = source.`{key}`" for key in unique_key)
+    mutable = [column for column in columns if column not in unique_key]
+    matched = ""
+    if mutable:
+        assignments = ", ".join(f"target.`{column}` = source.`{column}`" for column in mutable)
+        matched = f"\nWHEN MATCHED THEN UPDATE SET {assignments}"
+    source_query = (
+        f"SELECT {source_selected}\n"
+        f"FROM (\n{query}\n) AS source\n"
+        f"WHERE NOT EXISTS (SELECT 1 FROM {relation})\n"
+        f"   OR source.`{cursor}` >= (SELECT MAX(`{cursor}`) FROM {relation})\n"
+        f"QUALIFY ROW_NUMBER() OVER (\n"
+        f"  PARTITION BY {', '.join(f'source.`{key}`' for key in unique_key)}\n"
+        f"  ORDER BY source.`{cursor}` DESC, TO_JSON_STRING(source) DESC\n"
+        f") = 1"
+    )
+    return (
+        f"CREATE TABLE IF NOT EXISTS {relation} AS\n"
+        f"SELECT {selected} FROM (\n{query}\n) AS source WHERE FALSE;\n"
+        f"MERGE {relation} AS target\n"
+        f"USING (\n{source_query}\n) AS source\n"
+        f"ON {match}"
+        f"{matched}\n"
+        f"WHEN NOT MATCHED THEN INSERT ({selected}) VALUES ({source_selected})"
+    )
 
 
 def _compile_assertions(
