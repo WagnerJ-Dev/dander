@@ -2,41 +2,41 @@
 
 ## Finished
 
-- Replaced the empty enterprise base with a concrete Workday RaaS JSON source.
-- Added CLI-selectable `dlt` and `workday_raas` ingestion engines.
-- Added page/cursor handling, envelope validation, bounded backoff, and scalar BigQuery casts.
-- Added a credential-free Workday connector template using OAuth secret references.
-- Proved the full enterprise behavior through injected synthetic HTTP responses.
+- Compiled linear visual graphs into explicit-column BigQuery SQL.
+- Added direct, constant, scalar-expression, cast, and trusted custom-transform execution.
+- Enforced parsed row-local expressions, exact inputs, and function allow-lists.
+- Dispatched all five target write modes to their concrete BigQuery writers.
+- Made ambiguous joins and unsupported topology fail closed.
 
 ## Try It
 
-Copy `connectors/workday_raas.example.yaml`, replace tenant/report identifiers and secret
-references, then use `uv run dander run YOUR_CONNECTOR --dry-run --project PROJECT`.
+Load a `PipelineGraph`, call `compile_target(..., source_relations=...)`, inspect the returned
+query, then use `prepare_target_writer(...)` to bind the target write contract.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
-- `uv run mypy src tests` — passed in strict mode.
-- `uv run pytest` — 383 passed.
-- `terraform fmt -recursive -check` and `terraform validate` — passed.
-- Secret-pattern scan found only the intentional private-key detector test fixture.
+- `uv run mypy src tests` — passed across 80 source files.
+- `uv run pytest` — 396 passed.
+- `git diff --check` — passed.
+- Secret-pattern scan found only its intentional private-key detector fixture.
 
 ## Decisions
 
-- Enterprise engine selection is explicit in connector YAML.
-- Workday transport and sleep are injected; no customer account is needed for proof.
-- Discovery never samples rows, and cast errors never echo values.
+- Visual SQL is parsed and allow-listed; no Python `eval` or arbitrary imports.
+- Writer preparation is side-effect free; only its explicit `write()` call reaches BigQuery.
+- Joins need a distinct output node before they can be executed safely.
 
 ## Remaining
 
-- Execute visual mapping/join/custom-code pipeline definitions.
-- Dispatch visual target nodes into concrete writers.
+- Revise and execute the join graph shape.
 - Add bounded writer loads and controlled nested schema evolution.
 - Add hosted transform/catalog scheduling and run history.
+- Add JWT and OAuth1 TBA authentication.
 - Complete the release audit and external legal gate.
 
 ## Review First
 
-- `src/dander/ingestion/enterprise.py`
-- `tests/ingestion/test_enterprise_source.py`
-- `connectors/workday_raas.example.yaml`
+- `src/dander/pipeline/compiler.py`
+- `tests/pipeline/test_compiler.py`
+- `docs/spec-alignment.md`

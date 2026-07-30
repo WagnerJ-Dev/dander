@@ -122,6 +122,23 @@ node **ids** on `Edge`.
 Transform layer — was a genuine fork; the graph took the in-scope, declarative interpretation. See
 Implementation Notes below for the Decision Log status of this call.)*
 
+## Executable linear pipelines
+
+`compile_target` turns a validated linear `source -> transform -> target` path into an explicit-
+column BigQuery `SELECT`. It supports direct mappings, JSON constants, scalar expressions, target
+casts, and the built-in custom-transform registry. Expressions are parsed with sqlglot, must
+reference exactly their declared `inputs`, may use only allow-listed scalar functions, and cannot
+contain queries, tables, stars, or parameters. No expression is passed to Python `eval`.
+
+`prepare_target_writer` resolves a target's `WriterConfig` to the concrete SCD1, SCD2, snapshot,
+incremental, or replace writer and a `WriteTarget`. Constructing it has no network side effect;
+calling its `write()` method performs the configured BigQuery write.
+
+Fan-in and join execution fail closed. The current `Edge.join` shape makes the edge's target both
+the right-hand join input and the output, so there is no unambiguous relation to materialize.
+Executable joins require a future graph-format revision with two input edges and a distinct output
+node; join declarations remain available for authoring and validation until then.
+
 ## Node cursor / watermark strategy
 
 A `Node` may carry an optional `cursor: CursorStrategy | None` (DANDER-18) declaring how a

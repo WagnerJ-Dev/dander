@@ -8,6 +8,13 @@ graph algorithms (adjacency, topological order) build on top of these models in
 
 from __future__ import annotations
 
+from dander.pipeline.compiler import (
+    CompiledTarget,
+    PipelineCompileError,
+    PreparedTargetWriter,
+    compile_target,
+    prepare_target_writer,
+)
 from dander.pipeline.errors import (
     DanglingEdgeError,
     DuplicateFieldNameError,
@@ -49,6 +56,7 @@ from dander.pipeline.request_spec import HttpMethod, RequestSpec
 
 __all__ = [
     "AdjacencyIndex",
+    "CompiledTarget",
     "DanglingEdgeError",
     "DestinationSpec",
     "DuplicateFieldNameError",
@@ -65,6 +73,8 @@ __all__ = [
     "PartitioningSpec",
     "PartitioningType",
     "PipelineGraph",
+    "PipelineCompileError",
+    "PreparedTargetWriter",
     "RequestSpec",
     "SelfLoopError",
     "SourceNodeConfig",
@@ -74,9 +84,11 @@ __all__ = [
     "WriterConfig",
     "dump_graph_to_json",
     "dump_graph_to_yaml",
+    "compile_target",
     "load_graph_from_json",
     "load_graph_from_yaml",
     "topological_order",
+    "prepare_target_writer",
     "validate",
     "validate_field_wiring",
 ]

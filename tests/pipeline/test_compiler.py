@@ -1,0 +1,260 @@
+"""Executable visual-pipeline compiler and target-writer dispatch tests."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from dander.pipeline import PipelineCompileError, compile_target, prepare_target_writer
+from dander.pipeline.graph import (
+    Edge,
+    FieldMapping,
+    Node,
+    NodeField,
+    PipelineGraph,
+    Transformation,
+    TransformationKind,
+)
+from dander.pipeline.node_config import (
+    DestinationSpec,
+    PartitioningSpec,
+    TargetNodeConfig,
+    WriterConfig,
+)
+from dander.writer import (
+    BigQueryIncrementalWriter,
+    BigQueryReplaceWriter,
+    BigQueryScd1Writer,
+    BigQueryScd2Writer,
+    BigQuerySnapshotWriter,
+    WriteMode,
+)
+
+
+def _target_config(mode: WriteMode = WriteMode.SCD1) -> TargetNodeConfig:
+    return TargetNodeConfig(
+        writer=WriterConfig(
+            write_mode=mode,
+            destination=DestinationSpec(
+                project="dander-test",
+                dataset="analytics",
+                table="people",
+                business_key=(
+                    [] if mode in (WriteMode.REPLACE, WriteMode.SNAPSHOT) else ["person_id"]
+                ),
+            ),
+            cursor_field="updated_at" if mode is WriteMode.INCREMENTAL else None,
+            partitioning=(
+                PartitioningSpec(field="snapshot_at") if mode is WriteMode.SNAPSHOT else None
+            ),
+        )
+    )
+
+
+def _linear_graph() -> PipelineGraph:
+    source = Node(
+        id="source",
+        type="source",
+        name="Source",
+        fields=[
+            NodeField(name="id", type="STRING", cast_to="STRING"),
+            NodeField(name="first_name", type="STRING"),
+            NodeField(name="last_name", type="STRING"),
+            NodeField(name="phone", type="STRING"),
+        ],
+    )
+    transform = Node(
+        id="transform",
+        type="transform",
+        name="Transform",
+        fields=[
+            NodeField(name="person_id", type="STRING"),
+            NodeField(name="full_name", type="STRING"),
+            NodeField(name="phone", type="STRING"),
+            NodeField(name="status", type="STRING"),
+        ],
+    )
+    target = Node(
+        id="target",
+        type="target",
+        name="Target",
+        config=_target_config(),
+        fields=[
+            NodeField(name="person_id", type="STRING"),
+            NodeField(name="display_name", type="STRING"),
+            NodeField(name="phone_normalized", type="STRING"),
+            NodeField(name="status", type="STRING", cast_to="STRING"),
+        ],
+    )
+    return PipelineGraph(
+        name="people",
+        nodes=[source, transform, target],
+        edges=[
+            Edge(
+                **{"from": "source", "to": "transform"},
+                mappings=[
+                    FieldMapping(source="id", target="person_id"),
+                    FieldMapping(
+                        source="first_name",
+                        target="full_name",
+                        transformation=Transformation(
+                            kind=TransformationKind.EXPRESSION,
+                            expression="CONCAT(first_name, ' ', last_name)",
+                            inputs=["first_name", "last_name"],
+                        ),
+                    ),
+                    FieldMapping(source="phone", target="phone"),
+                    FieldMapping(
+                        target="status",
+                        transformation=Transformation(
+                            kind=TransformationKind.CONSTANT,
+                            constant="active",
+                        ),
+                    ),
+                ],
+            ),
+            Edge(
+                **{"from": "transform", "to": "target"},
+                mappings=[
+                    FieldMapping(source="person_id", target="person_id"),
+                    FieldMapping(source="full_name", target="display_name"),
+                    FieldMapping(
+                        source="phone",
+                        target="phone_normalized",
+                        transformation=Transformation(
+                            kind=TransformationKind.CUSTOM_CODE,
+                            function="transforms.normalize_phone",
+                            inputs=["phone"],
+                        ),
+                    ),
+                    FieldMapping(source="status", target="status"),
+                ],
+            ),
+        ],
+    )
+
+
+def test_compiles_linear_graph_to_explicit_bigquery_sql() -> None:
+    compiled = compile_target(
+        _linear_graph(),
+        "target",
+        source_relations={"source": "dander-test.raw.people"},
+    )
+
+    assert compiled.write_mode is WriteMode.SCD1
+    assert compiled.target.business_key == ("person_id",)
+    assert "FROM `dander-test.raw.people`" in compiled.query
+    assert "SAFE_CAST(`id` AS STRING) AS `id`" in compiled.query
+    assert "CONCAT(source.first_name, ' ', source.last_name) AS `full_name`" in compiled.query
+    assert (
+        "REGEXP_REPLACE(CAST(source.`phone` AS STRING), r'[^0-9+]', '') AS `phone_normalized`"
+    ) in compiled.query
+    assert "SAFE_CAST(source.`status` AS STRING) AS `status`" in compiled.query
+    assert "SELECT *" not in compiled.query
+
+
+@pytest.mark.parametrize(
+    ("expression", "inputs", "message"),
+    [
+        ("(SELECT first_name FROM other_table)", ["first_name"], "row-local"),
+        ("CONCAT(first_name, last_name)", ["first_name"], "declared inputs"),
+        ("MD5(first_name)", ["first_name"], "not allow-listed"),
+    ],
+)
+def test_expression_compilation_fails_closed(
+    expression: str,
+    inputs: list[str],
+    message: str,
+) -> None:
+    graph = _linear_graph()
+    graph.edges[0].mappings[1].transformation = Transformation(
+        kind=TransformationKind.EXPRESSION,
+        expression=expression,
+        inputs=inputs,
+    )
+
+    with pytest.raises(PipelineCompileError, match=message):
+        compile_target(
+            graph,
+            "target",
+            source_relations={"source": "dander-test.raw.people"},
+        )
+
+
+def test_compile_rejects_ambiguous_join_execution() -> None:
+    graph = _linear_graph()
+    from dander.pipeline.graph import JoinKeyPair, JoinSpec, JoinType
+
+    graph.edges[0].join = JoinSpec(
+        type=JoinType.LEFT,
+        keys=[JoinKeyPair(left="id", right="person_id")],
+    )
+
+    with pytest.raises(PipelineCompileError, match="distinct output node"):
+        compile_target(
+            graph,
+            "target",
+            source_relations={"source": "dander-test.raw.people"},
+        )
+
+
+def test_compile_rejects_duplicate_target_mapping() -> None:
+    graph = _linear_graph()
+    graph.edges[0].mappings.append(FieldMapping(source="id", target="person_id"))
+
+    with pytest.raises(PipelineCompileError, match="more than once"):
+        compile_target(
+            graph,
+            "target",
+            source_relations={"source": "dander-test.raw.people"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_type"),
+    [
+        (WriteMode.SCD1, BigQueryScd1Writer),
+        (WriteMode.SCD2, BigQueryScd2Writer),
+        (WriteMode.INCREMENTAL, BigQueryIncrementalWriter),
+        (WriteMode.SNAPSHOT, BigQuerySnapshotWriter),
+        (WriteMode.REPLACE, BigQueryReplaceWriter),
+    ],
+)
+def test_target_config_dispatches_every_writer(
+    mode: WriteMode,
+    expected_type: type[Any],
+) -> None:
+    node = Node(id="target", type="target", name="Target", config=_target_config(mode))
+
+    prepared = prepare_target_writer(node, default_project="fallback", client=object())
+
+    assert isinstance(prepared.writer, expected_type)
+    assert prepared.target.project == "dander-test"
+
+
+def test_writer_dispatch_resolves_default_project() -> None:
+    config = _target_config(WriteMode.REPLACE)
+    assert config.writer is not None
+    config.writer.destination.project = None
+    node = Node(id="target", type="target", name="Target", config=config)
+
+    prepared = prepare_target_writer(node, default_project="fallback-project", client=object())
+
+    assert prepared.target.project == "fallback-project"
+
+
+def test_compile_resolves_default_project() -> None:
+    graph = _linear_graph()
+    assert isinstance(graph.nodes[-1].config, TargetNodeConfig)
+    assert graph.nodes[-1].config.writer is not None
+    graph.nodes[-1].config.writer.destination.project = None
+
+    compiled = compile_target(
+        graph,
+        "target",
+        source_relations={"source": "dander-test.raw.people"},
+        default_project="fallback-project",
+    )
+
+    assert compiled.target.project == "fallback-project"

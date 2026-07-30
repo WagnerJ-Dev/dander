@@ -44,3 +44,12 @@
   owned by this path. Transport and sleeping are injected so tests use no tenant or credential.
 - Schema discovery returns declarations only. Cast failures expose field/type contract names but
   never rejected row values.
+
+## 2026-07-29 — Visual graph execution boundary
+
+- Linear source-to-transform-to-target mappings compile to explicit-column BigQuery SQL. Scalar
+  expressions are parsed and allow-listed; custom transformations resolve only through a trusted
+  built-in registry, never `eval`, imports, or inline code.
+- Target configuration now dispatches every declared write mode to its concrete idempotent writer.
+- Join execution remains fail-closed because the current edge schema makes its target both the
+  right join input and output. A distinct join-output node is required before execution is safe.
