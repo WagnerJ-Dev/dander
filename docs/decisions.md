@@ -93,3 +93,13 @@
   additive mode emits idempotent nullable additions for supported BigQuery scalar types only.
 - Additive evolution never drops columns, changes types/modes, or infers nested structures.
   Invalid and duplicate declarations fail before a load request.
+
+## 2026-07-29 — Storage Write API workload path
+
+- Load jobs remain the default for latency-insensitive batch work. Keyed SCD1/incremental targets
+  can explicitly select `storage_write`.
+- Storage Write uses an offset-checked pending stream into a uniquely named staging table,
+  finalizes and atomically commits it, then runs the existing idempotent merge. Direct final-table
+  streaming was rejected because a new stream on rerun could duplicate rows.
+- The Python protobuf encoder supports the scalar types it can represent without ambiguous custom
+  annotations; unsupported types fail before any staging mutation.

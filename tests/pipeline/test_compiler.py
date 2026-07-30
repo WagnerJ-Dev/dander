@@ -33,7 +33,10 @@ from dander.writer import (
     BigQueryScd1Writer,
     BigQueryScd2Writer,
     BigQuerySnapshotWriter,
+    BigQueryStorageIncrementalWriter,
+    BigQueryStorageScd1Writer,
     WriteMode,
+    WriteTransport,
 )
 
 
@@ -365,3 +368,34 @@ def test_compile_resolves_default_project() -> None:
     )
 
     assert compiled.target.project == "fallback-project"
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_type"),
+    [
+        (WriteMode.SCD1, BigQueryStorageScd1Writer),
+        (WriteMode.INCREMENTAL, BigQueryStorageIncrementalWriter),
+    ],
+)
+def test_target_dispatches_storage_write_transport(
+    mode: WriteMode,
+    expected_type: type[Any],
+) -> None:
+    config = _target_config(mode)
+    assert config.writer is not None
+    config.writer.transport = WriteTransport.STORAGE_WRITE
+    node = Node(
+        id="target",
+        type="target",
+        name="Target",
+        config=config,
+        fields=[
+            NodeField(name="person_id", type="STRING"),
+            NodeField(name="updated_at", type="STRING"),
+        ],
+    )
+
+    prepared = prepare_target_writer(node, default_project="fallback", client=object())
+
+    assert isinstance(prepared.writer, expected_type)
+    assert prepared.target.schema[0].data_type == "STRING"

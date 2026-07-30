@@ -22,10 +22,13 @@ from dander.writer import (
     BigQueryScd1Writer,
     BigQueryScd2Writer,
     BigQuerySnapshotWriter,
+    BigQueryStorageIncrementalWriter,
+    BigQueryStorageScd1Writer,
     WriteField,
     WriteMode,
     WritePattern,
     WriteTarget,
+    WriteTransport,
 )
 
 if TYPE_CHECKING:
@@ -343,12 +346,20 @@ def prepare_target_writer(
     typed_client = cast("_BigQueryClient | None", client)
     match writer_config.write_mode:
         case WriteMode.SCD1:
-            writer: WritePattern = BigQueryScd1Writer(
-                project=project,
-                client=typed_client,
-                max_batch_rows=writer_config.max_batch_rows,
-                schema_evolution=writer_config.schema_evolution,
-            )
+            if writer_config.transport is WriteTransport.STORAGE_WRITE:
+                writer: WritePattern = BigQueryStorageScd1Writer(
+                    project=project,
+                    client=typed_client,
+                    max_batch_rows=writer_config.max_batch_rows,
+                    schema_evolution=writer_config.schema_evolution,
+                )
+            else:
+                writer = BigQueryScd1Writer(
+                    project=project,
+                    client=typed_client,
+                    max_batch_rows=writer_config.max_batch_rows,
+                    schema_evolution=writer_config.schema_evolution,
+                )
         case WriteMode.SCD2:
             writer = BigQueryScd2Writer(
                 project=project,
@@ -358,13 +369,22 @@ def prepare_target_writer(
             )
         case WriteMode.INCREMENTAL:
             assert writer_config.cursor_field is not None
-            writer = BigQueryIncrementalWriter(
-                project=project,
-                cursor_field=writer_config.cursor_field,
-                client=typed_client,
-                max_batch_rows=writer_config.max_batch_rows,
-                schema_evolution=writer_config.schema_evolution,
-            )
+            if writer_config.transport is WriteTransport.STORAGE_WRITE:
+                writer = BigQueryStorageIncrementalWriter(
+                    project=project,
+                    cursor_field=writer_config.cursor_field,
+                    client=typed_client,
+                    max_batch_rows=writer_config.max_batch_rows,
+                    schema_evolution=writer_config.schema_evolution,
+                )
+            else:
+                writer = BigQueryIncrementalWriter(
+                    project=project,
+                    cursor_field=writer_config.cursor_field,
+                    client=typed_client,
+                    max_batch_rows=writer_config.max_batch_rows,
+                    schema_evolution=writer_config.schema_evolution,
+                )
         case WriteMode.SNAPSHOT:
             partitioning = writer_config.partitioning
             if partitioning is None or partitioning.field is None:

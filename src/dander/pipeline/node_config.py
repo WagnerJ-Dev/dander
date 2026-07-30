@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # `PydanticUserError: '<Model>' is not fully defined` on import; verified with a minimal repro
 # before overriding the rule here.
 from dander.pipeline.request_spec import RequestSpec  # noqa: TC001
-from dander.writer.base import SchemaEvolution, WriteMode  # noqa: TC001
+from dander.writer.base import SchemaEvolution, WriteMode, WriteTransport  # noqa: TC001
 
 
 class NodeType(StrEnum):
@@ -232,6 +232,8 @@ class WriterConfig(BaseModel):
         max_batch_rows: Maximum rows sent in one BigQuery load-job request.
         schema_evolution: `strict` by default; `additive` permits only declared scalar target
             fields to be added as nullable columns, never changed or removed.
+        transport: `load_job` by default. `storage_write` uses an atomic pending stream and is
+            available for keyed SCD1/incremental workloads.
 
     `hide_input_in_errors=True` is set for the same reason `dander.pipeline.graph.Node` and
     `dander.pipeline.request_spec.RequestSpec` set it: without it, Pydantic's default
@@ -250,6 +252,7 @@ class WriterConfig(BaseModel):
     clustering: list[str] = Field(default_factory=list, max_length=4)
     max_batch_rows: int = Field(default=10_000, gt=0, le=100_000)
     schema_evolution: SchemaEvolution = SchemaEvolution.STRICT
+    transport: WriteTransport = WriteTransport.LOAD_JOB
 
     @model_validator(mode="after")
     def _check_mode_requirements(self) -> WriterConfig:
@@ -287,6 +290,13 @@ class WriterConfig(BaseModel):
             )
         if len(set(self.clustering)) != len(self.clustering):
             raise ValueError("WriterConfig.clustering must not contain duplicate column names.")
+        if self.transport is WriteTransport.STORAGE_WRITE and self.write_mode not in (
+            WriteMode.SCD1,
+            WriteMode.INCREMENTAL,
+        ):
+            raise ValueError(
+                "WriterConfig(transport=storage_write) supports only scd1 or incremental mode."
+            )
         return self
 
 

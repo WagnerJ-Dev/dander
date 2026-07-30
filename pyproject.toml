@@ -8,6 +8,7 @@ license = { text = "Apache-2.0" }
 dependencies = [
   "dlt[bigquery]>=1.0",            # standard-REST ingestion path (hybrid decision)
   "google-cloud-bigquery>=3.25",
+  "google-cloud-bigquery-storage>=2.30",
   "google-cloud-dataplex>=2.20,<3",
   "google-cloud-secret-manager>=2.20",
   "google-auth>=2.35",
@@ -31,6 +32,7 @@ dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
   "types-pyyaml",
+  "types-protobuf",
 ]
 
 [build-system]

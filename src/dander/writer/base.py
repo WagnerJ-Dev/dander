@@ -33,6 +33,13 @@ class SchemaEvolution(StrEnum):
     ADDITIVE = "additive"
 
 
+class WriteTransport(StrEnum):
+    """Physical ingestion path used before a logical write pattern."""
+
+    LOAD_JOB = "load_job"
+    STORAGE_WRITE = "storage_write"
+
+
 @dataclass(frozen=True)
 class WriteField:
     """One declared target column used for controlled schema evolution."""
