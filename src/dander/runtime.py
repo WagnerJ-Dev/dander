@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from dander.state.run_history import RunHistoryStore, RunStatus
 from dander.writer.base import WriteTarget
 
 if TYPE_CHECKING:
@@ -54,6 +55,7 @@ class PipelineRunner:
         project: str,
         dataset: str,
         resume_from_watermark: bool = True,
+        history: RunHistoryStore | None = None,
     ) -> None:
         self._source = source
         self._writer = writer
@@ -61,6 +63,7 @@ class PipelineRunner:
         self._project = project
         self._dataset = dataset
         self._resume_from_watermark = resume_from_watermark
+        self._history = history
 
     def run(self) -> PipelineRunResult:
         """Run every configured endpoint and commit each cursor after its successful write."""
@@ -70,14 +73,49 @@ class PipelineRunner:
             "pipeline_started",
             extra={"dander_event": "pipeline_started", "run_id": run_id, "source": source_name},
         )
-        results = tuple(
-            self._run_endpoint(endpoint, run_id) for endpoint in self._source.config.endpoints
-        )
+        if self._history is not None:
+            self._history.start(run_id, source_name)
+        completed: list[EndpointRunResult] = []
+        try:
+            for endpoint in self._source.config.endpoints:
+                completed.append(self._run_endpoint(endpoint, run_id))
+        except Exception:
+            try:
+                self._finish_history(run_id, completed, succeeded=False)
+            except Exception:
+                _LOGGER.exception(
+                    "run_history_finish_failed",
+                    extra={
+                        "dander_event": "run_history_finish_failed",
+                        "run_id": run_id,
+                        "source": source_name,
+                    },
+                )
+            raise
+        results = tuple(completed)
+        self._finish_history(run_id, completed, succeeded=True)
         _LOGGER.info(
             "pipeline_finished",
             extra={"dander_event": "pipeline_finished", "run_id": run_id, "source": source_name},
         )
         return PipelineRunResult(run_id=run_id, source=source_name, endpoints=results)
+
+    def _finish_history(
+        self,
+        run_id: str,
+        completed: list[EndpointRunResult],
+        *,
+        succeeded: bool,
+    ) -> None:
+        if self._history is None:
+            return
+        self._history.finish(
+            run_id,
+            RunStatus.SUCCEEDED if succeeded else RunStatus.FAILED,
+            endpoints=len(completed),
+            extracted=sum(result.extracted for result in completed),
+            affected=sum(result.affected for result in completed),
+        )
 
     def _run_endpoint(self, endpoint: Endpoint, run_id: str) -> EndpointRunResult:
         source_name = self._source.config.name

@@ -40,7 +40,12 @@ from dander.security import (
     OAuth2ClientCredentials,
     OAuth2JWT,
 )
-from dander.state import BigQueryWatermarkStore, SqliteWatermarkStore
+from dander.state import (
+    BigQueryRunHistoryStore,
+    BigQueryWatermarkStore,
+    SqliteRunHistoryStore,
+    SqliteWatermarkStore,
+)
 from dander.transform import (
     BigQueryTransformRunner,
     TransformProject,
@@ -266,6 +271,14 @@ def run(
         project=resolved_project,
         dataset=resolved_dataset,
         resume_from_watermark=not sandbox,
+        history=(
+            SqliteRunHistoryStore(state_path)
+            if sandbox
+            else BigQueryRunHistoryStore(
+                project=resolved_project,
+                dataset=resolved_dataset,
+            )
+        ),
     ).run()
 
     table = Table(title=f"Dander run {result.run_id}")

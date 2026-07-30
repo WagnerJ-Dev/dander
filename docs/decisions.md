@@ -72,3 +72,10 @@
   target cannot safely represent both a right input and output.
 - Join SQL uses declared equality keys, explicit projected columns, and the same safe expression
   compiler as linear mappings.
+
+## 2026-07-29 — Operational run history
+
+- Pipeline runs record start and terminal status plus endpoint/row-count aggregates in the control
+  plane: BigQuery for guarded/cloud execution and the existing SQLite file for sandbox execution.
+- History never stores rows, cursors, credentials, assertions, or exception text. A history-update
+  failure during pipeline failure is logged without masking the original pipeline exception.

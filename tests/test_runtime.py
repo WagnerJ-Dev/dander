@@ -8,7 +8,7 @@ import pytest
 
 from dander.ingestion.source import Endpoint, Source, SourceConfig
 from dander.runtime import PipelineRunner
-from dander.state import WatermarkStore
+from dander.state import RunHistoryStore, RunStatus, WatermarkStore
 from dander.writer import WriteMode, WritePattern, WriteTarget
 
 if TYPE_CHECKING:
@@ -84,6 +84,26 @@ class _Watermarks(WatermarkStore):
         self.committed = cursor
 
 
+class _History(RunHistoryStore):
+    def __init__(self) -> None:
+        self.started: tuple[str, str] | None = None
+        self.finished: tuple[str, RunStatus, int, int, int] | None = None
+
+    def start(self, run_id: str, source: str) -> None:
+        self.started = (run_id, source)
+
+    def finish(
+        self,
+        run_id: str,
+        status: RunStatus,
+        *,
+        endpoints: int,
+        extracted: int,
+        affected: int,
+    ) -> None:
+        self.finished = (run_id, status, endpoints, extracted, affected)
+
+
 def _runner(events: list[str], *, fail: bool = False) -> tuple[PipelineRunner, _Watermarks]:
     watermarks = _Watermarks(events)
     return (
@@ -136,3 +156,41 @@ def test_full_refresh_ignores_existing_cursor_but_records_observed_cursor() -> N
 
     assert events == ["extract", "write", "set"]
     assert watermarks.committed == "2026-01-03T00:00:00Z"
+
+
+@pytest.mark.parametrize(
+    ("fail", "status", "endpoints", "extracted", "affected"),
+    [
+        (False, RunStatus.SUCCEEDED, 1, 2, 2),
+        (True, RunStatus.FAILED, 0, 0, 0),
+    ],
+)
+def test_runner_records_non_sensitive_terminal_history(
+    fail: bool,
+    status: RunStatus,
+    endpoints: int,
+    extracted: int,
+    affected: int,
+) -> None:
+    events: list[str] = []
+    watermarks = _Watermarks(events)
+    history = _History()
+    runner = PipelineRunner(
+        source=_Source(events),
+        writer=_Writer(events, fail=fail),
+        watermarks=watermarks,
+        project="unit-project",
+        dataset="raw",
+        history=history,
+    )
+
+    if fail:
+        with pytest.raises(RuntimeError, match="synthetic write failure"):
+            runner.run()
+    else:
+        runner.run()
+
+    assert history.started is not None
+    run_id, source = history.started
+    assert source == "example"
+    assert history.finished == (run_id, status, endpoints, extracted, affected)
