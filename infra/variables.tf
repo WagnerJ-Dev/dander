@@ -79,3 +79,38 @@ variable "github_ref" {
     error_message = "GitHub ref must be an exact refs/heads/... or refs/tags/... value."
   }
 }
+
+variable "enable_cost_guard" {
+  type        = bool
+  description = "Provision the project-scoped budget and simulation-first kill switch."
+  default     = false
+}
+
+variable "cost_guard_budget_name" {
+  type        = string
+  description = "Display name expected by the budget verifier and kill-switch handler."
+  default     = "dander-sbx-cap"
+}
+
+variable "cost_guard_budget_amount" {
+  type        = number
+  description = "Maximum configured USD budget; Dander rejects values above five."
+  default     = 5
+
+  validation {
+    condition     = var.cost_guard_budget_amount > 0 && var.cost_guard_budget_amount <= 5
+    error_message = "Cost-guard budget must be greater than zero and no greater than USD 5."
+  }
+}
+
+variable "cost_guard_simulate" {
+  type        = bool
+  description = "Log an over-budget action without unlinking billing."
+  default     = true
+}
+
+variable "cost_guard_source_bucket" {
+  type        = string
+  description = "Existing GCS bucket used to stage the Cloud Run function source archive."
+  default     = ""
+}

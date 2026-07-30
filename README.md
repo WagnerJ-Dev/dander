@@ -214,12 +214,17 @@ uv run dander init \
   --billing-account ABCDEF-123456-ABCDEF \
   --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DIGEST \
   --secret-id greenhouse-client-secret \
-  --github-repository owner/repository
+  --github-repository owner/repository \
+  --enable-cost-guard
 ```
 
 The image must use an immutable SHA-256 digest. Secret Manager containers and narrowly scoped
 runtime access can be managed by Terraform, but secret values never enter Terraform state.
 GitHub Actions authenticates through repository/ref-constrained OIDC rather than a downloaded key.
+The integrated cost guard creates the project budget, Pub/Sub wiring, and Gen 2 function in
+simulation mode. Live billing detachment requires the additional `--live-cost-guard` flag and is
+called out in the apply confirmation. Function deployment uses billable Cloud Build, Cloud Run,
+Storage, and Artifact Registry services; free allowances do not make this a hard $0 guarantee.
 
 ### Scheduled public ingestion
 

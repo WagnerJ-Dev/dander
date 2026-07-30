@@ -84,7 +84,42 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
     assert "-var=scheduler_paused=false" in plan
     assert '-var=secret_ids=["greenhouse-client-id","greenhouse-client-secret"]' in plan
     assert "-var=github_repository=WagnerJ-Dev/dander" in plan
+    assert "-var=enable_cost_guard=false" in plan
     assert commands[2] == ("terraform", "apply", "dander-bootstrap.tfplan")
+
+
+def test_bootstrap_passes_simulation_first_cost_guard(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(
+        args: tuple[str, ...],
+        *,
+        cwd: Path,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    TerraformBootstrap(tmp_path).execute(
+        project="unit-project",
+        state_bucket="unit-state",
+        state_prefix="dander/state",
+        apply=False,
+        billing_account_id="ABCDEF-123456-ABCDEF",
+        enable_cost_guard=True,
+        cost_guard_budget_amount="4.50",
+    )
+
+    plan = commands[1]
+    assert "-var=enable_cost_guard=true" in plan
+    assert "-var=cost_guard_budget_amount=4.50" in plan
+    assert "-var=cost_guard_simulate=true" in plan
+    assert "-var=cost_guard_source_bucket=unit-state" in plan
 
 
 @pytest.mark.parametrize(
@@ -104,6 +139,11 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         ({"github_repository": "not-a-repository"}, "GitHub repository"),
         ({"github_repository": "WagnerJ-Dev/dander"}, "enable-runtime"),
         ({"github_ref": "main"}, "GitHub ref"),
+        ({"enable_cost_guard": True}, "billing-account"),
+        ({"live_cost_guard": True}, "enable-cost-guard"),
+        ({"cost_guard_budget_amount": "5.01"}, "no greater than"),
+        ({"cost_guard_budget_amount": "NaN"}, "no greater than"),
+        ({"cost_guard_budget_name": "bad\nname"}, "display-name"),
     ],
 )
 def test_bootstrap_rejects_unsafe_optional_inputs(

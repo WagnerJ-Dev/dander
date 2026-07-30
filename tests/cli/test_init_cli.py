@@ -44,6 +44,9 @@ def test_init_passes_optional_runtime_inputs(
             "api-token",
             "--github-repository",
             "WagnerJ-Dev/dander",
+            "--enable-cost-guard",
+            "--cost-guard-budget-amount",
+            "4.50",
         ],
     )
 
@@ -52,6 +55,9 @@ def test_init_passes_optional_runtime_inputs(
     assert captured["scheduler_paused"] is False
     assert captured["secret_ids"] == ("api-token",)
     assert captured["github_repository"] == "WagnerJ-Dev/dander"
+    assert captured["enable_cost_guard"] is True
+    assert captured["cost_guard_budget_amount"] == "4.50"
+    assert captured["live_cost_guard"] is False
 
 
 def test_init_apply_requires_confirmation(
@@ -82,3 +88,31 @@ def test_init_apply_requires_confirmation(
 
     assert result.exit_code != 0
     assert not called
+
+
+def test_live_cost_guard_is_named_in_apply_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_execute(self: object, **kwargs: object) -> Path:
+        raise AssertionError("must not execute")
+
+    monkeypatch.setattr("dander.cli.main.TerraformBootstrap.execute", fake_execute)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "--project",
+            "unit-project",
+            "--state-bucket",
+            "unit-state",
+            "--enable-cost-guard",
+            "--billing-account",
+            "ABCDEF-123456-ABCDEF",
+            "--live-cost-guard",
+            "--apply",
+        ],
+        input="n\n",
+    )
+
+    assert "LIVE automatic billing detachment" in result.output

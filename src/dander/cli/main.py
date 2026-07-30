@@ -103,6 +103,26 @@ def init(
         "--github-ref",
         help="Exact branch or tag ref allowed to deploy.",
     ),
+    enable_cost_guard: bool = typer.Option(
+        False,
+        "--enable-cost-guard",
+        help="Provision the project budget and simulation-first kill switch.",
+    ),
+    cost_guard_budget_name: str = typer.Option(
+        "dander-sbx-cap",
+        "--cost-guard-budget-name",
+        help="Exact project budget display name.",
+    ),
+    cost_guard_budget_amount: str = typer.Option(
+        "5.00",
+        "--cost-guard-budget-amount",
+        help="USD project budget amount; maximum 5.00.",
+    ),
+    live_cost_guard: bool = typer.Option(
+        False,
+        "--live-cost-guard",
+        help="Allow the cost guard to unlink billing. Destructive; simulation is the default.",
+    ),
     apply: bool = typer.Option(
         False,
         "--apply",
@@ -111,8 +131,11 @@ def init(
     infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
 ) -> None:
     """Plan the GCP bootstrap; apply only with explicit confirmation."""
+    confirmation = f"Apply the Dander bootstrap to GCP project {project!r}?"
+    if live_cost_guard:
+        confirmation = f"{confirmation[:-1]} with LIVE automatic billing detachment enabled?"
     if apply and not typer.confirm(
-        f"Apply the Dander bootstrap to GCP project {project!r}?",
+        confirmation,
         default=False,
     ):
         raise typer.Abort()
@@ -131,6 +154,10 @@ def init(
             secret_ids=tuple(secret_ids or ()),
             github_repository=github_repository,
             github_ref=github_ref,
+            enable_cost_guard=enable_cost_guard,
+            cost_guard_budget_name=cost_guard_budget_name,
+            cost_guard_budget_amount=cost_guard_budget_amount,
+            live_cost_guard=live_cost_guard,
         )
     except TerraformBootstrapError as error:
         raise ClickException(str(error)) from error

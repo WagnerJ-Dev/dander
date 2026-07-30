@@ -10,16 +10,15 @@ means the named upstream responsibility still has at least one unimplemented or 
 | BigQuery Writer | Partial | Idempotent SCD1 staging/MERGE, sandbox replace, BigQuery/SQLite watermarks | SCD2, snapshot, and incremental writers; chunked/streaming loads; controlled target schema evolution |
 | Transform | Partial | Typed YAML, restricted `ref()` compilation, DAG ordering, view/table builds, four generic tests | Incremental materialization; execution of the visual pipeline mapping/join/custom-code model |
 | Metadata spine/catalog | Implemented locally | One YAML projects to transforms/tests, deterministic semantic JSON, and reusable Dataplex system-aspect requests | Live aspect publication intentionally unverified because metadata storage is billable |
-| Bootstrap CLI | Partial | One reviewed `dander init` plan covers BigQuery, optional Secret Manager containers, keyless GitHub WIF, Artifact Registry, and the least-privilege scheduled Cloud Run job | Integrate cost-guard resources; pre-build/push of the immutable runtime image remains a prerequisite |
+| Bootstrap CLI | Substantially implemented | One reviewed `dander init` plan covers BigQuery, Secret Manager, keyless GitHub WIF, Artifact Registry, scheduled Cloud Run, and a simulation-first project cost guard | Pre-build/push of the immutable runtime image remains a prerequisite; live cost-guard apply intentionally unverified because it deploys billable services |
 | Orchestration/state | Substantially implemented | Cloud Scheduler invokes Cloud Run; BigQuery watermark commits only after successful writes | Transform/catalog scheduling in the hosted job; operational run history/control table |
 | Compliance/release | External gate | Public-data path contains no customer credential or HR row data | Upstream-required OSS/legal approval before any private HR/customer-data release |
 
 ## Current critical path
 
-1. Integrate the cost guard into the reviewed bootstrap without hiding its delayed-notification
-   limitation.
-2. Implement remaining idempotent writer modes and transform incremental materialization.
-3. Execute the visual pipeline mapping/join/custom-code model.
-4. Prove one hand-rolled enterprise connector with fake/provider sandbox data.
+1. Implement remaining idempotent writer modes and transform incremental materialization.
+2. Execute the visual pipeline mapping/join/custom-code model.
+3. Prove one hand-rolled enterprise connector with fake/provider sandbox data.
+4. Add hosted transform/catalog execution and run-history observability.
 5. Run a requirement-by-requirement release audit; do not treat passing unit tests as production
    readiness or as satisfying the external legal gate.

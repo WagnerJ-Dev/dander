@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.7"
+    }
   }
 
   # Values are supplied by `dander init` via `terraform init -backend-config`; Terraform backends
@@ -16,4 +20,12 @@ terraform {
 provider "google" {
   project = var.project_id
   region  = var.region
+}
+
+provider "google" {
+  alias                 = "billing"
+  project               = var.project_id
+  region                = var.region
+  billing_project       = var.project_id
+  user_project_override = true
 }

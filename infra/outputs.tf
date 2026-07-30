@@ -24,3 +24,13 @@ output "github_workload_identity" {
     service_account_email  = module.github_wif[0].service_account_email
   } : null
 }
+
+output "cost_guard" {
+  description = "Budget and simulation-first kill-switch details when enabled."
+  value = var.enable_cost_guard ? {
+    budget_name   = module.cost_guard[0].budget_name
+    function_name = module.cost_guard[0].function_name
+    pubsub_topic  = module.cost_guard[0].pubsub_topic
+    simulated     = var.cost_guard_simulate
+  } : null
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from decimal import Decimal, InvalidOperation
 from json import dumps
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ _IMMUTABLE_IMAGE = re.compile(r"^[a-z0-9.-]+/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64
 _SECRET_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,254}$")
 _GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GITHUB_REF = re.compile(r"^refs/(?:heads|tags)/[A-Za-z0-9._/-]+$")
+_BUDGET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$")
 
 
 class TerraformBootstrapError(RuntimeError):
@@ -48,6 +50,10 @@ class TerraformBootstrap:
         secret_ids: tuple[str, ...] = (),
         github_repository: str = "",
         github_ref: str = "refs/heads/main",
+        enable_cost_guard: bool = False,
+        cost_guard_budget_name: str = "dander-sbx-cap",
+        cost_guard_budget_amount: str = "5.00",
+        live_cost_guard: bool = False,
     ) -> Path:
         """Create a saved bootstrap plan and optionally apply that exact plan.
 
@@ -65,6 +71,10 @@ class TerraformBootstrap:
             secret_ids: Secret Manager container ids to create without values.
             github_repository: Optional GitHub owner/repository allowed to deploy.
             github_ref: Exact Git branch or tag ref allowed to deploy.
+            enable_cost_guard: Whether to provision the budget notification function.
+            cost_guard_budget_name: Exact project budget display name.
+            cost_guard_budget_amount: USD budget amount, no greater than five.
+            live_cost_guard: Whether over-budget events may unlink project billing.
 
         Returns:
             Path to the saved plan.
@@ -92,9 +102,11 @@ class TerraformBootstrap:
                 raise TerraformBootstrapError(
                     "Runtime enablement requires an immutable --container-image with @sha256 digest"
                 )
-        elif billing_account_id or container_image:
+        elif container_image:
+            raise TerraformBootstrapError("--container-image requires --enable-runtime")
+        if billing_account_id and not (enable_runtime or enable_cost_guard):
             raise TerraformBootstrapError(
-                "--billing-account and --container-image require --enable-runtime"
+                "--billing-account requires --enable-runtime or --enable-cost-guard"
             )
 
         invalid_secrets = sorted(
@@ -112,6 +124,24 @@ class TerraformBootstrap:
             )
         if not _GITHUB_REF.fullmatch(github_ref):
             raise TerraformBootstrapError(f"Invalid GitHub ref: {github_ref!r}")
+        if enable_cost_guard and not _BILLING_ACCOUNT.fullmatch(billing_account_id):
+            raise TerraformBootstrapError(
+                "Cost-guard enablement requires --billing-account in XXXXXX-XXXXXX-XXXXXX format"
+            )
+        if not _BUDGET_NAME.fullmatch(cost_guard_budget_name):
+            raise TerraformBootstrapError(
+                "Cost-guard budget name must contain 1 to 60 safe display-name characters"
+            )
+        try:
+            budget_amount = Decimal(cost_guard_budget_amount)
+        except InvalidOperation as error:
+            raise TerraformBootstrapError("Cost-guard budget amount must be a number") from error
+        if not budget_amount.is_finite() or budget_amount <= 0 or budget_amount > 5:
+            raise TerraformBootstrapError(
+                "Cost-guard budget amount must be greater than zero and no greater than USD 5"
+            )
+        if live_cost_guard and not enable_cost_guard:
+            raise TerraformBootstrapError("--live-cost-guard requires --enable-cost-guard")
 
         plan_path = self._infra_dir / "dander-bootstrap.tfplan"
         self._run(
@@ -134,6 +164,11 @@ class TerraformBootstrap:
             f"-var=secret_ids={dumps(sorted(set(secret_ids)), separators=(',', ':'))}",
             f"-var=github_repository={github_repository}",
             f"-var=github_ref={github_ref}",
+            f"-var=enable_cost_guard={str(enable_cost_guard).lower()}",
+            f"-var=cost_guard_budget_name={cost_guard_budget_name}",
+            f"-var=cost_guard_budget_amount={budget_amount}",
+            f"-var=cost_guard_simulate={str(not live_cost_guard).lower()}",
+            f"-var=cost_guard_source_bucket={state_bucket if enable_cost_guard else ''}",
             f"-out={plan_path.name}",
         )
         if apply:

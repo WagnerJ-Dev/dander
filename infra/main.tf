@@ -49,3 +49,30 @@ check "github_wif_requires_runtime" {
     error_message = "github_repository requires enable_scheduled_job=true."
   }
 }
+
+module "cost_guard" {
+  count  = var.enable_cost_guard ? 1 : 0
+  source = "./modules/cost-guard"
+  providers = {
+    google         = google
+    google.billing = google.billing
+  }
+
+  project_id          = var.project_id
+  region              = var.region
+  billing_account_id  = var.billing_account_id
+  source_bucket       = var.cost_guard_source_bucket
+  function_source_dir = "${path.root}/functions/stop_billing"
+  budget_name         = var.cost_guard_budget_name
+  budget_amount       = var.cost_guard_budget_amount
+  simulate            = var.cost_guard_simulate
+}
+
+check "cost_guard_inputs" {
+  assert {
+    condition = !var.enable_cost_guard || (
+      var.billing_account_id != "" && var.cost_guard_source_bucket != ""
+    )
+    error_message = "The cost guard requires billing_account_id and cost_guard_source_bucket."
+  }
+}
