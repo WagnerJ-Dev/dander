@@ -11,3 +11,16 @@ output "scheduled_job" {
     scheduler_job_name      = module.scheduled_job[0].scheduler_job_name
   } : null
 }
+
+output "secret_resources" {
+  description = "Secret Manager resource names created by the bootstrap."
+  value       = length(var.secret_ids) > 0 ? module.secret_manager[0].secret_resources : null
+}
+
+output "github_workload_identity" {
+  description = "Keyless GitHub deployment identity details when enabled."
+  value = var.github_repository != "" && var.enable_scheduled_job ? {
+    provider_resource_name = module.github_wif[0].provider_resource_name
+    service_account_email  = module.github_wif[0].service_account_email
+  } : null
+}

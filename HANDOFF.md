@@ -2,47 +2,47 @@
 
 ## Finished
 
-- Added a canonical immutable metadata-spine projection from transform YAML.
-- Added deterministic, atomic semantic-registry JSON for agents and local tooling.
-- Added Dataplex overview, contacts, schema, and generic system-aspect generation.
-- Added a non-deleting, aspect-only `modifyEntry` publisher for BigQuery system entries.
-- Added local-first `dander catalog`; cloud publication requires an explicit flag.
+- Added opt-in Secret Manager containers with per-secret runtime IAM and no managed values.
+- Added repository/ref-scoped GitHub OIDC WIF with no service-account keys.
+- Scoped image push access to Dander's Artifact Registry repository and `actAs` to its runtime identities.
+- Extended `dander init` to safely plan the complete optional runtime from literal arguments.
+- Documented security decisions and refreshed the upstream alignment ledger.
 
 ## Try It
 
 ```bash
-uv run dander catalog --project "$PROJECT_ID" \
-  --select stg_greenhouse__jobs \
-  --output .dander/catalog.json
+uv run dander init --help
+uv run dander init --project PROJECT --state-bucket BUCKET
 ```
 
-Add `--publish-dataplex --location us --guarded-free-tier` only when accepting metadata-storage
-charges. Local output is ignored by Git.
+Add `--enable-runtime`, billing account, immutable image digest, secret ids, and GitHub repository
+only when intentionally planning the hosted slice. It remains plan-only unless `--apply` is used
+and confirmed.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
 - `uv run mypy src tests` — passed in strict mode.
-- `uv run pytest` — 348 passed.
-- `terraform fmt -check -recursive` and `terraform validate` — passed.
-- Real Greenhouse registry compile and read-only live Dataplex BigQuery-entry lookup — passed.
+- `uv run pytest` — 358 passed.
+- `terraform fmt -recursive -check` and `terraform validate` — passed.
+- Live disabled-feature plan: no changes; opt-in feature plan: 14 adds, 0 changes, 0 destroys.
 
 ## Decisions
 
-- The semantic registry excludes timestamps so identical metadata produces identical bytes.
-- Reusable system aspects avoid proprietary aspect-type provisioning.
-- Catalog writes are explicit because API calls are free but stored aspect metadata is billable.
+- Terraform never handles secret values or creates secret versions.
+- GitHub deployment uses narrowly scoped OIDC rather than a downloaded key.
+- Runtime images must use immutable SHA-256 digests; apply uses the reviewed saved plan.
 
 ## Remaining
 
-- Make `dander init` provision the complete runtime stack through one command.
-- Implement idempotent incremental/SCD2/snapshot materializations.
-- Execute the visual pipeline mapping/join/custom-code model.
-- Prove one concrete hand-rolled enterprise connector.
-- Add Harvest v3 credentials only if Greenhouse account access becomes available.
+- Integrate cost-guard infrastructure into `dander init`.
+- Implement incremental, SCD2, and snapshot materializations.
+- Execute visual mapping/join/custom-code pipeline definitions.
+- Prove a concrete hand-rolled enterprise connector.
+- Complete the release audit and external legal gate.
 
 ## Review First
 
-- `src/dander/catalog/spine.py`
-- `src/dander/catalog/dataplex.py`
-- `docs/spec-alignment.md`
+- `infra/modules/github-wif/main.tf`
+- `infra/modules/secret-manager/main.tf`
+- `src/dander/bootstrap/terraform.py`

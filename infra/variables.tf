@@ -44,3 +44,38 @@ variable "scheduler_paused" {
   description = "Keep the daily scheduler paused until a manual job execution succeeds."
   default     = true
 }
+
+variable "secret_ids" {
+  type        = set(string)
+  description = "Secret Manager containers to create; secret values are never managed by Terraform."
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for secret_id in var.secret_ids : can(regex("^[A-Za-z][A-Za-z0-9_-]{0,254}$", secret_id))
+    ])
+    error_message = "Secret ids must begin with a letter and contain only letters, numbers, '_' or '-'."
+  }
+}
+
+variable "github_repository" {
+  type        = string
+  description = "GitHub owner/repository allowed to use deployment WIF; empty disables WIF."
+  default     = ""
+
+  validation {
+    condition     = var.github_repository == "" || can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "GitHub repository must be empty or use owner/repository format."
+  }
+}
+
+variable "github_ref" {
+  type        = string
+  description = "Exact Git ref allowed to use deployment WIF."
+  default     = "refs/heads/main"
+
+  validation {
+    condition     = can(regex("^refs/(heads|tags)/[A-Za-z0-9._/-]+$", var.github_ref))
+    error_message = "GitHub ref must be an exact refs/heads/... or refs/tags/... value."
+  }
+}

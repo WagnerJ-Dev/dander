@@ -10,12 +10,11 @@ call sites (mirrors the `SecretStoreProvider` / `ComputeProvider` abstractions i
 |---|---|
 | `modules/bigquery` | `raw` / `staging` / `marts` datasets. **Implemented.** |
 | `modules/scheduled-job` | Artifact Registry, least-privilege identities, public-ingestion Cloud Run Job, and daily Scheduler job. **Implemented.** |
+| `modules/secret-manager` | Named secret containers and per-secret runtime access; never secret values. **Implemented.** |
+| `modules/github-wif` | Repository/ref-scoped GitHub OIDC and a keyless deployment identity. **Implemented.** |
 | `functions/stop_billing` | Pub/Sub-triggered, simulation-testable billing kill switch. |
-| `modules/secret-manager` | Secret entries + access bindings. |
-| `modules/iam` | Least-privilege service accounts + Workload Identity Federation (no long-lived keys). |
-| `modules/compute-run` | Cloud Run jobs that run connectors. |
 
-The root module always calls `modules/bigquery` and can opt into `modules/scheduled-job`.
+The root module always calls `modules/bigquery` and can opt into the remaining modules.
 `dander init` configures the required GCS backend, creates a saved plan, and applies that exact
 plan only after the caller supplies `--apply` and confirms interactively. The state bucket must
 already exist:
@@ -23,6 +22,24 @@ already exist:
 ```bash
 uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket
 ```
+
+To plan the complete hosted runtime, first push an image and resolve its immutable digest:
+
+```bash
+uv run dander init \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --enable-runtime \
+  --billing-account ABCDEF-123456-ABCDEF \
+  --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DIGEST \
+  --secret-id greenhouse-client-secret \
+  --github-repository owner/repository
+```
+
+This still plans by default. Add `--apply` only after reviewing the saved plan. Secret values must
+be added separately with `gcloud secrets versions add`; Terraform intentionally never receives
+them. GitHub WIF grants Artifact Registry access only on the Dander repository, Cloud Run developer
+access, and `actAs` only on Dander's runtime identities.
 
 For the scheduled slice, copy `sandbox.auto.tfvars.example` to ignored
 `sandbox.auto.tfvars`, supply an immutable Artifact Registry digest, and leave

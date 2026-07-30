@@ -64,6 +64,45 @@ def init(
     state_prefix: str = typer.Option(
         "dander/state", "--state-prefix", help="Object prefix for Terraform state."
     ),
+    region: str = typer.Option("us-central1", "--region", help="GCP region."),
+    bigquery_location: str = typer.Option(
+        "US", "--bigquery-location", help="BigQuery dataset location."
+    ),
+    enable_runtime: bool = typer.Option(
+        False,
+        "--enable-runtime",
+        help="Provision the scheduled Cloud Run ingestion runtime.",
+    ),
+    billing_account_id: str = typer.Option(
+        "",
+        "--billing-account",
+        help="Billing account required by the guarded runtime.",
+    ),
+    container_image: str = typer.Option(
+        "",
+        "--container-image",
+        help="Immutable Artifact Registry image reference ending in @sha256 digest.",
+    ),
+    scheduler_paused: bool = typer.Option(
+        True,
+        "--scheduler-paused/--scheduler-enabled",
+        help="Keep the daily scheduler paused until a manual run succeeds.",
+    ),
+    secret_ids: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--secret-id",
+        help="Create a Secret Manager container without a value. Repeat for multiple secrets.",
+    ),
+    github_repository: str = typer.Option(
+        "",
+        "--github-repository",
+        help="GitHub owner/repository allowed to deploy using keyless OIDC.",
+    ),
+    github_ref: str = typer.Option(
+        "refs/heads/main",
+        "--github-ref",
+        help="Exact branch or tag ref allowed to deploy.",
+    ),
     apply: bool = typer.Option(
         False,
         "--apply",
@@ -71,7 +110,7 @@ def init(
     ),
     infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
 ) -> None:
-    """Plan the BigQuery bootstrap; apply only with explicit confirmation."""
+    """Plan the GCP bootstrap; apply only with explicit confirmation."""
     if apply and not typer.confirm(
         f"Apply the Dander bootstrap to GCP project {project!r}?",
         default=False,
@@ -83,6 +122,15 @@ def init(
             state_bucket=state_bucket,
             state_prefix=state_prefix,
             apply=apply,
+            region=region,
+            bigquery_location=bigquery_location,
+            enable_runtime=enable_runtime,
+            billing_account_id=billing_account_id,
+            container_image=container_image,
+            scheduler_paused=scheduler_paused,
+            secret_ids=tuple(secret_ids or ()),
+            github_repository=github_repository,
+            github_ref=github_ref,
         )
     except TerraformBootstrapError as error:
         raise ClickException(str(error)) from error
