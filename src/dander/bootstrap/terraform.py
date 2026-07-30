@@ -47,6 +47,7 @@ class TerraformBootstrap:
         billing_account_id: str = "",
         container_image: str = "",
         scheduler_paused: bool = True,
+        runtime_publish_dataplex: bool = False,
         secret_ids: tuple[str, ...] = (),
         github_repository: str = "",
         github_ref: str = "refs/heads/main",
@@ -68,6 +69,7 @@ class TerraformBootstrap:
             billing_account_id: Billing account used by the runtime safety check.
             container_image: Immutable runtime image reference including a sha256 digest.
             scheduler_paused: Whether the scheduler remains paused after provisioning.
+            runtime_publish_dataplex: Whether hosted runs publish potentially billable aspects.
             secret_ids: Secret Manager container ids to create without values.
             github_repository: Optional GitHub owner/repository allowed to deploy.
             github_ref: Exact Git branch or tag ref allowed to deploy.
@@ -104,6 +106,8 @@ class TerraformBootstrap:
                 )
         elif container_image:
             raise TerraformBootstrapError("--container-image requires --enable-runtime")
+        if runtime_publish_dataplex and not enable_runtime:
+            raise TerraformBootstrapError("--runtime-publish-dataplex requires --enable-runtime")
         if billing_account_id and not (enable_runtime or enable_cost_guard):
             raise TerraformBootstrapError(
                 "--billing-account requires --enable-runtime or --enable-cost-guard"
@@ -161,6 +165,7 @@ class TerraformBootstrap:
             f"-var=billing_account_id={billing_account_id}",
             f"-var=runtime_container_image={container_image}",
             f"-var=scheduler_paused={str(scheduler_paused).lower()}",
+            f"-var=runtime_publish_dataplex={str(runtime_publish_dataplex).lower()}",
             f"-var=secret_ids={dumps(sorted(set(secret_ids)), separators=(',', ':'))}",
             f"-var=github_repository={github_repository}",
             f"-var=github_ref={github_ref}",

@@ -2,38 +2,39 @@
 
 ## Finished
 
-- Added explicit load-job versus Storage Write transport selection.
-- Implemented real pending-stream creation, protobuf append offsets, finalize, and atomic commit.
-- Routed Storage Write through unique staging and existing idempotent keyed merges.
-- Added SCD1 and cursor-validated incremental Storage Write patterns.
-- Added the official Python Storage Write client and protobuf typing dependencies.
+- Extended `dander run` with an ordered transform/test and metadata tail.
+- Scheduled only the public Greenhouse jobs model after guarded ingestion.
+- Included models in the runtime image and granted dataset-scoped transform access.
+- Kept Dataplex API, IAM, and publication behind one explicit bootstrap flag.
+- Updated the upstream alignment ledger and hosted-run documentation.
 
 ## Try It
 
-Set `writer.transport: storage_write` on a keyed SCD1 or incremental visual target. Keep
-`load_job` (the default) for ordinary batch ingestion.
+Run `uv run dander run greenhouse_job_board --guarded-free-tier --build-models
+--select-model stg_greenhouse__jobs --catalog-output /tmp/dander-catalog.json`.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
-- `uv run mypy src tests` — passed across 87 source files.
-- `uv run pytest` — 423 passed.
-- `git diff --check` — passed.
-- Secret-pattern scan found only its intentional private-key detector fixture.
+- `uv run mypy src tests` — passed across 88 source files.
+- Hosted-tail and bootstrap tests — 16 passed.
+- `terraform -chdir=infra fmt -recursive -check` — passed.
+- `terraform -chdir=infra validate` — passed.
 
 ## Decisions
 
-- Storage Write commits staging atomically, then merges for cross-run idempotence.
-- Direct final-table streaming is intentionally not used.
-- The Python protobuf path fails closed on ambiguously represented BigQuery types.
+- The hosted public run selects only `stg_greenhouse__jobs`.
+- Transform tests precede registry or Dataplex publication.
+- Hosted Dataplex publication remains off by default because storage may be billable.
 
 ## Remaining
 
-- Add hosted transform/catalog scheduling.
-- Complete the release audit and external legal gate.
+- Complete the requirement-by-requirement release audit.
+- Obtain upstream-required OSS/legal approval before customer-data release.
+- Run billable/provider integrations only with explicit authorization and credentials.
 
 ## Review First
 
-- `src/dander/writer/storage_write.py`
-- `tests/writer/test_storage_write_writer.py`
-- `docs/spec-alignment.md`
+- `src/dander/cli/main.py`
+- `infra/modules/scheduled-job/main.tf`
+- `tests/cli/test_hosted_tail.py`

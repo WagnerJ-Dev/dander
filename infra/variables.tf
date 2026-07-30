@@ -45,6 +45,12 @@ variable "scheduler_paused" {
   default     = true
 }
 
+variable "runtime_publish_dataplex" {
+  type        = bool
+  description = "Publish Dataplex aspects from the hosted job; stored metadata may be billable."
+  default     = false
+}
+
 variable "secret_ids" {
   type        = set(string)
   description = "Secret Manager containers to create; secret values are never managed by Terraform."

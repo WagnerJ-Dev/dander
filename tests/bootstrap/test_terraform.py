@@ -74,6 +74,7 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         billing_account_id="ABCDEF-123456-ABCDEF",
         container_image=f"us-east1-docker.pkg.dev/unit-project/dander/dander@sha256:{digest}",
         scheduler_paused=False,
+        runtime_publish_dataplex=True,
         secret_ids=("greenhouse-client-secret", "greenhouse-client-id"),
         github_repository="WagnerJ-Dev/dander",
         github_ref="refs/heads/main",
@@ -82,6 +83,7 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
     plan = commands[1]
     assert "-var=enable_scheduled_job=true" in plan
     assert "-var=scheduler_paused=false" in plan
+    assert "-var=runtime_publish_dataplex=true" in plan
     assert '-var=secret_ids=["greenhouse-client-id","greenhouse-client-secret"]' in plan
     assert "-var=github_repository=WagnerJ-Dev/dander" in plan
     assert "-var=enable_cost_guard=false" in plan
@@ -138,6 +140,7 @@ def test_bootstrap_passes_simulation_first_cost_guard(
         ({"secret_ids": ("bad secret",)}, "secret id"),
         ({"github_repository": "not-a-repository"}, "GitHub repository"),
         ({"github_repository": "WagnerJ-Dev/dander"}, "enable-runtime"),
+        ({"runtime_publish_dataplex": True}, "enable-runtime"),
         ({"github_ref": "main"}, "GitHub ref"),
         ({"enable_cost_guard": True}, "billing-account"),
         ({"live_cost_guard": True}, "enable-cost-guard"),

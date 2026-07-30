@@ -10,12 +10,11 @@ means the named upstream responsibility still has at least one unimplemented or 
 | BigQuery Writer | Implemented locally | Idempotent SCD1/incremental MERGE, append-only snapshots, transactional SCD2, sandbox replace, bounded load jobs, additive scalar evolution, and selectable atomic pending-stream Storage Write staging | Live Storage Write integration intentionally unverified because it requires a billing-linked project |
 | Transform | Implemented locally | Typed YAML, restricted `ref()` compilation, DAG ordering, view/table/incremental builds, four generic tests, and safe visual mapping/expression/custom-transform/two-input join SQL compilation | Live BigQuery execution remains covered by injected clients rather than a billable integration run |
 | Metadata spine/catalog | Implemented locally | One YAML projects to transforms/tests, deterministic semantic JSON, and reusable Dataplex system-aspect requests | Live aspect publication intentionally unverified because metadata storage is billable |
-| Bootstrap CLI | Substantially implemented | One reviewed `dander init` plan covers BigQuery, Secret Manager, keyless GitHub WIF, Artifact Registry, scheduled Cloud Run, and a simulation-first project cost guard | Pre-build/push of the immutable runtime image remains a prerequisite; live cost-guard apply intentionally unverified because it deploys billable services |
-| Orchestration/state | Substantially implemented | Cloud Scheduler invokes Cloud Run; BigQuery watermark commits only after successful writes; SQLite/BigQuery run history records terminal aggregates | Transform/catalog scheduling in the hosted job |
+| Bootstrap CLI | Substantially implemented | One reviewed `dander init` plan covers BigQuery, Secret Manager, keyless GitHub WIF, Artifact Registry, the scheduled public pipeline, opt-in Dataplex IAM, and a simulation-first project cost guard | Pre-build/push of the immutable runtime image remains a prerequisite; live cost-guard apply intentionally unverified because it deploys billable services |
+| Orchestration/state | Implemented locally | Cloud Scheduler invokes a guarded public ingestion, selected transform/test build, and registry compilation; BigQuery watermarks commit only after successful writes; SQLite/BigQuery run history records terminal aggregates | Live hosted execution intentionally unverified because it requires a billing-linked project |
 | Compliance/release | External gate | Public-data path contains no customer credential or HR row data | Upstream-required OSS/legal approval before any private HR/customer-data release |
 
 ## Current critical path
 
-1. Add hosted transform/catalog execution.
-2. Run a requirement-by-requirement release audit; do not treat passing unit tests as production
+1. Run a requirement-by-requirement release audit; do not treat passing unit tests as production
    readiness or as satisfying the external legal gate.

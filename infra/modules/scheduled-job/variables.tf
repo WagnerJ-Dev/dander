@@ -29,6 +29,18 @@ variable "dataset_id" {
   default     = "raw"
 }
 
+variable "transform_dataset_ids" {
+  type        = set(string)
+  description = "Additional datasets the hosted transform tail may edit."
+  default     = ["staging", "marts"]
+}
+
+variable "publish_dataplex" {
+  type        = bool
+  description = "Publish metadata aspects after hosted transforms; stored metadata may be billable."
+  default     = false
+}
+
 variable "schedule" {
   type        = string
   description = "Cron schedule for public ingestion."

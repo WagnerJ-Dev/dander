@@ -103,3 +103,12 @@
   streaming was rejected because a new stream on rerun could duplicate rows.
 - The Python protobuf encoder supports the scalar types it can represent without ambiguous custom
   annotations; unsupported types fail before any staging mutation.
+
+## 2026-07-29 — Hosted public pipeline tail
+
+- The scheduled public connector builds and catalogs only `stg_greenhouse__jobs`; selecting this
+  root avoids coupling a credential-free run to private Harvest candidate data.
+- Transform tests run before the semantic registry is written. A failed ingestion or transform
+  prevents all later publication.
+- Local registry compilation is the hosted default. Dataplex storage requires an explicit
+  bootstrap flag that separately enables its API and runtime IAM.

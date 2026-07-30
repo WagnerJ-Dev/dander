@@ -15,6 +15,11 @@ module "scheduled_job" {
   billing_account_id = var.billing_account_id
   container_image    = var.runtime_container_image
   scheduler_paused   = var.scheduler_paused
+  publish_dataplex   = var.runtime_publish_dataplex
+  transform_dataset_ids = setsubtract(
+    toset(var.datasets),
+    toset(["raw"]),
+  )
 }
 
 module "secret_manager" {

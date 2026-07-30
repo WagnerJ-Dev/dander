@@ -14,6 +14,7 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable
 
 COPY connectors ./connectors
+COPY models ./models
 
 USER 65532:65532
 

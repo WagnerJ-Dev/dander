@@ -102,6 +102,11 @@ def init(
         "--scheduler-paused/--scheduler-enabled",
         help="Keep the daily scheduler paused until a manual run succeeds.",
     ),
+    runtime_publish_dataplex: bool = typer.Option(
+        False,
+        "--runtime-publish-dataplex",
+        help="Publish catalog aspects from hosted runs; stored metadata may be billable.",
+    ),
     secret_ids: list[str] | None = typer.Option(  # noqa: B008
         None,
         "--secret-id",
@@ -165,6 +170,7 @@ def init(
             billing_account_id=billing_account_id,
             container_image=container_image,
             scheduler_paused=scheduler_paused,
+            runtime_publish_dataplex=runtime_publish_dataplex,
             secret_ids=tuple(secret_ids or ()),
             github_repository=github_repository,
             github_ref=github_ref,
@@ -205,8 +211,30 @@ def run(
     ),
     budget_name: str = typer.Option("dander-sbx-cap", "--budget-name", hidden=True),
     state_path: Path = typer.Option(Path(".dander/state.db"), hidden=True),  # noqa: B008
+    build_models: bool = typer.Option(
+        False,
+        "--build-models",
+        help="Build all transform models and tests after successful ingestion.",
+    ),
+    models_dir: Path = typer.Option(_DEFAULT_MODELS_DIR, "--models-dir"),  # noqa: B008
+    selected_models: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--select-model",
+        help="Build/catalog one model root and its dependencies. Repeat for multiple roots.",
+    ),
+    catalog_output: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--catalog-output",
+        help="Write the semantic registry after transforms complete.",
+    ),
+    publish_dataplex: bool = typer.Option(
+        False,
+        "--publish-dataplex",
+        help="Publish generated aspects after transforms; may incur metadata storage charges.",
+    ),
+    dataplex_location: str = typer.Option("us", "--dataplex-location"),
 ) -> None:
-    """Extract a configured source, write it, then commit endpoint watermarks."""
+    """Run ingestion, then optionally build transforms and publish the metadata spine."""
     if not _SOURCE_NAME.fullmatch(source):
         raise typer.BadParameter("Source names may contain only letters, numbers, '_' and '-'")
 
@@ -281,6 +309,16 @@ def run(
         ),
     ).run()
 
+    _run_post_ingestion(
+        project=resolved_project,
+        models_dir=models_dir,
+        selected_models=selected_models,
+        build_models=build_models,
+        catalog_output=catalog_output,
+        publish_dataplex=publish_dataplex,
+        dataplex_location=dataplex_location,
+    )
+
     table = Table(title=f"Dander run {result.run_id}")
     table.add_column("Endpoint")
     table.add_column("Extracted", justify="right")
@@ -294,6 +332,46 @@ def run(
             "yes" if endpoint.committed_cursor is not None else "no",
         )
     console.print(table)
+
+
+def _run_post_ingestion(
+    *,
+    project: str,
+    models_dir: Path,
+    selected_models: Sequence[str] | None,
+    build_models: bool,
+    catalog_output: Path | None,
+    publish_dataplex: bool,
+    dataplex_location: str,
+) -> None:
+    """Execute the hosted transform/catalog tail only after ingestion commits."""
+    try:
+        if build_models:
+            BigQueryTransformRunner(project=project).build(
+                models_dir,
+                selected=selected_models,
+            )
+        if catalog_output is None and not publish_dataplex:
+            return
+        transform_project = TransformProject.load(models_dir, project_id=project)
+        assets = MetadataSpine().compile(transform_project, selected=selected_models)
+        manifest = MetadataSpine().manifest(assets)
+        if catalog_output is not None:
+            SemanticRegistryPublisher().publish(manifest, catalog_output)
+        if publish_dataplex:
+            publisher = DataplexCatalogPublisher(
+                project=project,
+                location=dataplex_location,
+            )
+            for asset in assets:
+                publisher.publish(asset)
+    except (
+        CatalogPublishError,
+        SemanticRegistryError,
+        TransformProjectError,
+        TransformRunError,
+    ) as error:
+        raise ClickException(str(error)) from error
 
 
 @app.command()

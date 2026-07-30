@@ -5,11 +5,11 @@ locals {
 }
 
 resource "google_project_service" "required" {
-  for_each = toset([
+  for_each = toset(concat([
     "artifactregistry.googleapis.com",
     "cloudscheduler.googleapis.com",
     "run.googleapis.com",
-  ])
+  ], var.publish_dataplex ? ["dataplex.googleapis.com"] : []))
 
   project            = var.project_id
   service            = each.value
@@ -80,6 +80,23 @@ resource "google_bigquery_dataset_iam_member" "runtime_writer" {
   member     = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+resource "google_bigquery_dataset_iam_member" "runtime_transform_writer" {
+  for_each = var.transform_dataset_ids
+
+  project    = var.project_id
+  dataset_id = each.value
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+resource "google_project_iam_member" "runtime_catalog_editor" {
+  count = var.publish_dataplex ? 1 : 0
+
+  project = var.project_id
+  role    = "roles/dataplex.catalogEditor"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 resource "google_billing_account_iam_member" "runtime_budget_viewer" {
   billing_account_id = var.billing_account_id
   role               = "roles/billing.viewer"
@@ -107,6 +124,21 @@ resource "google_cloud_run_v2_job" "ingestion" {
 
       containers {
         image = var.container_image
+        args = concat(
+          [
+            "run",
+            "greenhouse_job_board",
+            "--guarded-free-tier",
+            "--build-models",
+            "--models-dir",
+            "/app/models",
+            "--select-model",
+            "stg_greenhouse__jobs",
+            "--catalog-output",
+            "/tmp/dander-catalog.json",
+          ],
+          var.publish_dataplex ? ["--publish-dataplex"] : [],
+        )
 
         resources {
           limits = {
@@ -134,9 +166,11 @@ resource "google_cloud_run_v2_job" "ingestion" {
   depends_on = [
     google_artifact_registry_repository.images,
     google_bigquery_dataset_iam_member.runtime_writer,
+    google_bigquery_dataset_iam_member.runtime_transform_writer,
     google_billing_account_iam_member.runtime_budget_viewer,
     google_project_iam_member.runtime_job_user,
     google_project_iam_member.runtime_pubsub_viewer,
+    google_project_iam_member.runtime_catalog_editor,
   ]
 }
 

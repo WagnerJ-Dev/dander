@@ -239,17 +239,21 @@ uv run dander init \
 The image must use an immutable SHA-256 digest. Secret Manager containers and narrowly scoped
 runtime access can be managed by Terraform, but secret values never enter Terraform state.
 GitHub Actions authenticates through repository/ref-constrained OIDC rather than a downloaded key.
+Add `--runtime-publish-dataplex` only when you explicitly want hosted runs to store catalog
+aspects; it enables the API and IAM required for that potentially billable operation.
 The integrated cost guard creates the project budget, Pub/Sub wiring, and Gen 2 function in
 simulation mode. Live billing detachment requires the additional `--live-cost-guard` flag and is
 called out in the apply confirmation. Function deployment uses billable Cloud Build, Cloud Run,
 Storage, and Artifact Registry services; free allowances do not make this a hard $0 guarantee.
 
-### Scheduled public ingestion
+### Scheduled public pipeline
 
-The first hosted slice runs the credential-free Greenhouse Job Board connector as a Cloud Run Job.
-Terraform creates separate runtime and scheduler service accounts, grants the runtime write access
-only to the `raw` dataset, and invokes the job daily at 09:00 in `America/New_York`. The schedule
-defaults to paused so a manual execution can be verified before enabling it.
+The hosted slice runs the credential-free Greenhouse Job Board connector as a Cloud Run Job, builds
+and tests `stg_greenhouse__jobs`, then compiles its semantic registry. Terraform creates separate
+runtime and scheduler service accounts, grants the runtime write access only to `raw`, `staging`,
+and `marts`, and invokes the job daily at 09:00 in `America/New_York`. Dataplex publication remains
+off unless explicitly enabled. The schedule defaults to paused so a complete manual execution can
+be verified before enabling it.
 
 Build for Cloud Run, push the image, and use its immutable digest in a local tfvars file:
 
@@ -270,11 +274,12 @@ terraform -chdir=infra apply scheduled.tfplan
 gcloud run jobs execute dander-greenhouse-public --region="$REGION" --wait
 ```
 
-After the manual run succeeds, set `scheduler_paused = false`, review a fresh saved plan, and apply
-that exact plan. The image repository deletes untagged images after one day and retains the three
-most recent versions. A single Scheduler job is within Google's current three-job monthly free
-allowance, and small Cloud Run executions may fit its free compute allowance, but neither is a
-hard spending cap. The guarded CLI preflight and budget kill switch remain required.
+After the manual ingestion, transform tests, and local registry compilation succeed, set
+`scheduler_paused = false`, review a fresh saved plan, and apply that exact plan. The image
+repository deletes untagged images after one day and retains the three most recent versions. A
+single Scheduler job is within Google's current three-job monthly free allowance, and small Cloud
+Run executions may fit its free compute allowance, but neither is a hard spending cap. The guarded
+CLI preflight and budget kill switch remain required.
 
 ### Build and test SQL models
 
@@ -321,14 +326,15 @@ Knowledge Catalog API calls free but charges for stored aspect metadata, so clou
 implicit. See [Knowledge Catalog pricing](https://cloud.google.com/products/knowledge-catalog/pricing)
 and [Dataplex aspect management](https://docs.cloud.google.com/dataplex/docs/enrich-entries-metadata).
 
-Current v0 limits are explicit: the writer package now executes SCD1, cursor-validated incremental,
+Current v0 limits are explicit: the writer package executes SCD1, cursor-validated incremental,
 partitioned snapshot, SCD2 history, and sandbox replacement, but whole endpoint batches are held in
-memory and automatic target-schema evolution is not implemented. Public Job Board extraction is a
-full refresh and does not delete jobs that disappear from a board. The CLI bootstrap can plan
-Secret Manager, IAM/WIF, scheduled runtime, and a simulation-first cost guard, but deploying those
-opt-in services may be billable. Transform execution supports full view/table rebuilds and
-watermark-bounded incremental merges; live catalog publication, visual graph execution, and
-automatic schema evolution remain future slices. The tracked completion ledger is in
+memory. Schema evolution is intentionally limited to declared nullable scalar additions, and the
+Storage Write transport supports an explicitly bounded scalar subset. Public Job Board extraction
+is a full refresh and does not delete jobs that disappear from a board. The CLI bootstrap can plan
+Secret Manager, IAM/WIF, the complete scheduled public pipeline, and a simulation-first cost guard,
+but deploying those opt-in services may be billable. Visual graph execution supports safe mappings,
+expressions, built-in transforms, and two-input joins; live provider/catalog/Storage Write proof
+still requires external accounts or billable services. The tracked completion ledger is in
 [`docs/spec-alignment.md`](docs/spec-alignment.md).
 
 ## The agent workforce & the `/feature` workflow

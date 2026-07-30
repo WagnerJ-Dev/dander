@@ -50,10 +50,12 @@ Registry components; a plan never asserts that the result will cost exactly zero
 
 For the scheduled slice, copy `sandbox.auto.tfvars.example` to ignored
 `sandbox.auto.tfvars`, supply an immutable Artifact Registry digest, and leave
-`scheduler_paused = true` for the first apply. Run the Cloud Run Job manually, verify the guarded
-write, then change only that value to `false` and apply a reviewed saved plan. The runtime identity
-can create BigQuery jobs, edit only the `raw` dataset, inspect Pub/Sub guard wiring, and read billing
-budget metadata. The scheduler identity can invoke only the named Cloud Run Job.
+`scheduler_paused = true` for the first apply. Run the Cloud Run Job manually, verify its guarded
+write, selected transform tests, and registry compilation, then change only that value to `false`
+and apply a reviewed saved plan. The runtime identity can create BigQuery jobs, edit `raw`,
+`staging`, and `marts`, inspect Pub/Sub guard wiring, and read billing budget metadata. Optional
+Dataplex publication is disabled by default and adds catalog IAM only when enabled. The scheduler
+identity can invoke only the named Cloud Run Job.
 
 ## Rules (see `steering/01-security.md` and `steering/languages/terraform.md`)
 
