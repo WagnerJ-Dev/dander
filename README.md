@@ -407,6 +407,9 @@ possible connector categories; they do not imply that this repository came from,
 contains data from an existing company. Normal provenance, licensing, and privacy review still
 applies before adding employer-owned code or non-public data.
 
+For the exact current branch, validation, deployed-sandbox, and next-session state, see
+[`docs/session-resume.md`](docs/session-resume.md).
+
 ## License
 
 Apache-2.0.

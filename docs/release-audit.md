@@ -1,6 +1,7 @@
 # Dander v0 Release Audit
 
-Audited against the live `WagnerJ-Dev/dander` north star on 2026-07-29. “Implemented locally”
+Audited against the live `WagnerJ-Dev/dander` north star on 2026-07-29 and operationally refreshed
+on 2026-07-30. “Implemented locally”
 means code, offline tests, and static infrastructure validation exist. It does not imply that
 provider credentials or every billable cloud mutation have been validated. Sensitive-system names
 are treated as hypothetical connector scope, not evidence of an existing-company relationship.
@@ -48,3 +49,5 @@ This branch is a reasonable, runnable v0 of the stated architecture and has loca
 evidence for every named module. It is not yet a production-certified release.
 The remaining production proofs need vendor credentials or deliberately scoped cloud execution;
 they are not gaps that should be papered over with mocks.
+
+See [`session-resume.md`](session-resume.md) for the current Git and deployed-sandbox snapshot.

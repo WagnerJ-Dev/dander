@@ -2,7 +2,7 @@
 
 Dander owns the SQL transform layer described in the project decision log. A project is a directory
 of BigQuery SQL files with same-named YAML sidecars. The sidecar is the metadata spine shared by
-execution, generic tests, future Dataplex aspects, and the semantic registry.
+execution, generic tests, Dataplex system-aspect generation, and the semantic registry.
 
 ## Build contract
 

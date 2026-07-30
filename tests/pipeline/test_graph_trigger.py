@@ -6,8 +6,8 @@ intra-model boundary constraints (closed trigger-kind set, per-kind required/for
 stable round-trip through both YAML and JSON, and backward compatibility of a trigger-less
 pipeline/node (unchanged dump, no `trigger` key emitted). No scheduler, cron evaluation, or
 execution is in scope here — this is model + serialization only, matching the rest of
-`dander.pipeline.graph`; a future Orchestration/State layer consumes this model per
-`steering/00-project-overview.md`.
+`dander.pipeline.graph`. The hosted Cloud Scheduler slice is provisioned separately and does not
+consume this graph trigger model.
 """
 
 from __future__ import annotations

@@ -52,6 +52,12 @@ This touches HR/comp data (Workday, Xactly) and customer data (Salesforce, NetSu
 regulated company. **Clear internal OSS/legal review before publishing.** Treat this as a
 blocking gate on any public release, separate from engineering readiness.
 
+**Local interpretation recorded 2026-07-30:** the systems above are hypothetical connector
+categories. They do not establish that Dander derives from, connects to, or contains data from an
+existing company. Do not infer employer ownership, regulated-company affiliation, customer
+records, or HR records. Provenance/privacy review becomes applicable if actual employer-owned
+material, credentials, or non-public data is introduced.
+
 ---
 
 ## Decision Log

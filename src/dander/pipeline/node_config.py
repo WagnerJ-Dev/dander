@@ -53,8 +53,7 @@ class NodeConfig(BaseModel):
     Carries no fields of its own — it exists so `Node.config` can be annotated on this
     abstraction (interface-first per `steering/02-engineering.md`) and so mismatch detection in
     `resolve_node_config` can test `isinstance(value, NodeConfig)`. `extra="allow"` so config
-    content that has no dedicated field yet on any subclass (e.g. `TransformNodeConfig`'s
-    still-unmodeled materialization/execution details) is preserved losslessly rather than
+    content that has no dedicated field yet on any subclass is preserved losslessly rather than
     rejected.
 
     A `NodeConfig` (and every subclass) must never hold a secret or credential value
@@ -154,11 +153,10 @@ class PartitioningType(StrEnum):
 class PartitioningSpec(BaseModel):
     """Declarative BigQuery time-unit/ingestion-time partitioning for a target write.
 
-    Inert: nothing here issues DDL or executes a write — it records intent only, for a future
-    write-execution layer (`src/dander/writer/base.py`) to apply, per
-    `steering/00-project-overview.md`. Scope is time-unit and ingestion-time partitioning (the
-    common case, and what the `WriteMode.SNAPSHOT` "partitioned, append-only" pattern needs);
-    integer-range partitioning is deferred as a future field.
+    Inert: nothing here issues DDL or executes a write. `prepare_target_writer` maps this intent
+    to the concrete writer contract in `src/dander/writer/base.py`. Scope is time-unit and
+    ingestion-time partitioning (the common case, and what the `WriteMode.SNAPSHOT`
+    "partitioned, append-only" pattern needs); integer-range partitioning is deferred.
 
     Attributes:
         field: The partition column name. `None` means ingestion-time partitioning (BigQuery's
@@ -179,14 +177,11 @@ class DestinationSpec(BaseModel):
     """Declarative BigQuery destination for a target write, mirroring `WriteTarget`.
 
     Structurally mirrors `dander.writer.base.WriteTarget` (`project`/`dataset`/`table`/
-    `business_key`) 1:1 so a future write-execution ticket can map this config to a `WriteTarget`
-    by field name alone. Unlike `WriteTarget` (a frozen dataclass — the internal runtime value
-    object), this is a Pydantic model, per `steering/languages/python.md`'s "Pydantic v2 for all
-    config objects; frozen dataclass for internal value objects" split; no `to_write_target()`
-    converter is provided here since `WriteTarget.project` is required while `project` here is
-    optional (resolved from deployment context later) — that mapping is a write-execution concern
-    outside this model's "no writes" scope. Dataset/table values here are ordinary identifiers,
-    never secrets (`steering/01-security.md`).
+    `business_key`) 1:1. `compile_target` and `prepare_target_writer` perform the runtime mapping
+    after resolving an optional project from deployment context. Unlike `WriteTarget` (a frozen
+    dataclass — the internal runtime value object), this is a Pydantic model, per
+    `steering/languages/python.md`'s config/runtime split. Dataset/table values here are ordinary
+    identifiers, never secrets (`steering/01-security.md`).
 
     Attributes:
         project: GCP project id hosting the destination dataset. `None` means "resolve from

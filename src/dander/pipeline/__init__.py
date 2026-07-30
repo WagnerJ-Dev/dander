@@ -1,9 +1,11 @@
-"""Pipeline graph module: declarative Node/Edge/PipelineGraph model + YAML/JSON serialization.
+"""Validated pipeline graphs, safe SQL compilation, and target-writer preparation.
 
 Validation (uniqueness, dangling edges, self-loops, DAG/cycle detection), field-wiring validation
 (duplicate field names, unresolved mapping/transformation/join field references), and derived
 graph algorithms (adjacency, topological order) build on top of these models in
-`dander.pipeline.graph_ops`.
+`dander.pipeline.graph_ops`. `compile_target` compiles the supported graph subset to explicit
+BigQuery SQL, while `prepare_target_writer` binds a configured target to a concrete writer without
+performing a network call.
 """
 
 from __future__ import annotations
