@@ -3,9 +3,10 @@
 `Node.config` (see `dander.pipeline.graph`) is validated against a config model chosen by the
 node's `type` rather than accepted as an opaque `dict`. This module owns that discriminated set of
 config models plus the pure routing function `Node` delegates to. `SourceNodeConfig` carries the
-request/payload spec (DANDER-11); `TargetNodeConfig` carries the target/writer config (write
-pattern, destination table, partitioning/clustering — DANDER-16). Pagination and incremental
-cursor on the source side remain unmodeled placeholders. Deliberately does not import `Node`
+request/payload spec (DANDER-11); `TransformNodeConfig` carries an optional executable join;
+`TargetNodeConfig` carries the target/writer config (write pattern, destination table,
+partitioning/clustering — DANDER-16). Pagination and incremental cursor on the source side remain
+unmodeled placeholders. Deliberately does not import `Node`
 (`graph.py` imports from here, not the reverse), so there is no import cycle.
 """
 
@@ -84,13 +85,48 @@ class SourceNodeConfig(NodeConfig):
     request: RequestSpec | None = None
 
 
+class ExecutableJoinType(StrEnum):
+    """BigQuery join kinds supported by an executable transform node."""
+
+    INNER = "inner"
+    LEFT = "left"
+    RIGHT = "right"
+    FULL = "full"
+
+
+class ExecutableJoinKey(BaseModel):
+    """One equality key between the named left and right inputs."""
+
+    left: str = Field(min_length=1)
+    right: str = Field(min_length=1)
+
+
+class TransformJoinConfig(BaseModel):
+    """An executable two-input join whose output is the owning transform node."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    left_input: str = Field(min_length=1)
+    right_input: str = Field(min_length=1)
+    type: ExecutableJoinType
+    keys: list[ExecutableJoinKey] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check_distinct_inputs(self) -> TransformJoinConfig:
+        if self.left_input == self.right_input:
+            raise ValueError("TransformJoinConfig requires distinct left and right inputs")
+        return self
+
+
 class TransformNodeConfig(NodeConfig):
     """Typed config for a `transform`-type node.
 
-    An extensible placeholder: it declares no fields of its own yet (beyond the `extra="allow"`
-    inherited from `NodeConfig`). A future ticket extends this model with the transform's
-    materialization/execution details. Must never hold a secret value.
+    Attributes:
+        join: Optional executable two-input join. Unlike the legacy edge-level `JoinSpec`, this
+            names two predecessor nodes and makes the transform node the unambiguous output.
     """
+
+    join: TransformJoinConfig | None = None
 
 
 class PartitioningType(StrEnum):

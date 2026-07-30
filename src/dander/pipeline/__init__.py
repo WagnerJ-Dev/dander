@@ -43,12 +43,15 @@ from dander.pipeline.graph_ops import (
 )
 from dander.pipeline.node_config import (
     DestinationSpec,
+    ExecutableJoinKey,
+    ExecutableJoinType,
     NodeConfig,
     NodeType,
     PartitioningSpec,
     PartitioningType,
     SourceNodeConfig,
     TargetNodeConfig,
+    TransformJoinConfig,
     TransformNodeConfig,
     WriterConfig,
 )
@@ -62,6 +65,8 @@ __all__ = [
     "DuplicateFieldNameError",
     "DuplicateNodeIdError",
     "Edge",
+    "ExecutableJoinKey",
+    "ExecutableJoinType",
     "FieldReferenceKind",
     "GraphCycleError",
     "GraphValidationError",
@@ -80,6 +85,7 @@ __all__ = [
     "SourceNodeConfig",
     "TargetNodeConfig",
     "TransformNodeConfig",
+    "TransformJoinConfig",
     "UnknownFieldReferenceError",
     "WriterConfig",
     "dump_graph_to_json",

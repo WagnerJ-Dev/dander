@@ -63,3 +63,12 @@
   and NetSuite's HMAC-SHA256 profile; all four credentials are resolved fresh per request.
 - Connector files contain only secret references. Signing, token transport, nonce, and clocks are
   injectable so the complete behavior is proven offline.
+
+## 2026-07-29 — Executable join output
+
+- An executable join belongs to a transform node that explicitly names its two predecessor inputs;
+  the transform is the distinct output relation. Its two incoming edges own output-field mappings.
+- The edge-level join shape remains loadable for compatibility but non-executable because its
+  target cannot safely represent both a right input and output.
+- Join SQL uses declared equality keys, explicit projected columns, and the same safe expression
+  compiler as linear mappings.

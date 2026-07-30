@@ -11,7 +11,11 @@ from sqlglot import exp
 
 from dander.pipeline.graph import TransformationKind
 from dander.pipeline.graph_ops import validate_field_wiring
-from dander.pipeline.node_config import TargetNodeConfig
+from dander.pipeline.node_config import (
+    ExecutableJoinType,
+    TargetNodeConfig,
+    TransformNodeConfig,
+)
 from dander.writer import (
     BigQueryIncrementalWriter,
     BigQueryReplaceWriter,
@@ -107,12 +111,10 @@ def compile_target(
     source_relations: Mapping[str, str],
     default_project: str | None = None,
 ) -> CompiledTarget:
-    """Compile one linear source-to-target graph path into a BigQuery SELECT.
+    """Compile one source dependency subgraph into a BigQuery target SELECT.
 
-    This first executable graph slice deliberately rejects joins and fan-in. The current graph
-    schema puts a join's right input on the same node that also represents the edge output, so
-    silently inventing execution semantics would be unsafe. Linear mappings, casts, expressions,
-    constants, and allow-listed custom transforms are fully executable.
+    Linear mappings and explicit two-input transform joins are executable. Legacy edge joins
+    remain declarative because that shape makes the right input and output the same node.
     """
     validate_field_wiring(graph)
     nodes = {node.id: node for node in graph.nodes}
@@ -129,73 +131,12 @@ def compile_target(
     incoming: dict[str, list[Edge]] = {node_id: [] for node_id in nodes}
     for edge in graph.edges:
         incoming[edge.target].append(edge)
-
-    path: list[tuple[Node, Edge]] = []
-    current = target
-    while current.type != "source":
-        if current.type not in {"transform", "target"}:
-            raise PipelineCompileError(
-                f"Node {current.id!r} has unsupported executable type {current.type!r}"
-            )
-        edges = incoming[current.id]
-        if len(edges) != 1:
-            raise PipelineCompileError(
-                f"Node {current.id!r} requires exactly one incoming edge for execution"
-            )
-        edge = edges[0]
-        if edge.join is not None:
-            raise PipelineCompileError(
-                "Executable joins require a distinct output node; the current edge join model "
-                "does not distinguish its right input from its output"
-            )
-        path.append((current, edge))
-        current = nodes[edge.source]
-    if incoming[current.id]:
-        raise PipelineCompileError(f"Source node {current.id!r} cannot have an incoming edge")
-    path.reverse()
-
-    relation = source_relations.get(current.id)
-    if relation is None:
-        raise PipelineCompileError(f"Missing source relation for node {current.id!r}")
-    if not _RELATION.fullmatch(relation):
-        raise PipelineCompileError(
-            f"Source relation for node {current.id!r} must be project.dataset.table"
-        )
-
-    ctes: list[str] = []
-    source_alias = "_node_0"
-    source_columns = ", ".join(_compile_source_field(field) for field in current.fields)
-    if not source_columns:
-        raise PipelineCompileError(f"Source node {current.id!r} must declare fields")
-    ctes.append(f"{_quote(source_alias)} AS (\n  SELECT {source_columns} FROM `{relation}`\n)")
-
-    previous_alias = source_alias
-    for index, (node, edge) in enumerate(path, start=1):
-        if not edge.mappings:
-            raise PipelineCompileError(f"Edge {edge.source!r}->{edge.target!r} has no mappings")
-        mappings = {mapping.target: mapping for mapping in edge.mappings}
-        if len(mappings) != len(edge.mappings):
-            raise PipelineCompileError(
-                f"Edge {edge.source!r}->{edge.target!r} maps a target field more than once"
-            )
-        missing = [field.name for field in node.fields if field.name not in mappings]
-        if missing:
-            raise PipelineCompileError(
-                f"Edge {edge.source!r}->{edge.target!r} does not map target field {missing[0]!r}"
-            )
-        projected = [
-            _compile_mapping(mappings[field.name], field.cast_to, alias="source")
-            for field in node.fields
-        ]
-        current_alias = f"_node_{index}"
-        select_list = ",\n    ".join(projected)
-        ctes.append(
-            f"{_quote(current_alias)} AS (\n"
-            f"  SELECT\n    {select_list}\n"
-            f"  FROM {_quote(previous_alias)} AS source\n"
-            ")"
-        )
-        previous_alias = current_alias
+    compiler = _GraphSqlCompiler(
+        nodes=nodes,
+        incoming=incoming,
+        source_relations=source_relations,
+    )
+    final_alias = compiler.compile_node(target_node_id)
 
     destination = config.writer.destination
     project = destination.project or default_project
@@ -205,9 +146,9 @@ def compile_target(
         )
     query = (
         "WITH\n"
-        + ",\n".join(ctes)
+        + ",\n".join(compiler.ctes)
         + f"\nSELECT {', '.join(_quote(field.name) for field in target.fields)}\n"
-        + f"FROM {_quote(previous_alias)}"
+        + f"FROM {_quote(final_alias)}"
     )
     return CompiledTarget(
         node_id=target_node_id,
@@ -220,6 +161,163 @@ def compile_target(
             business_key=tuple(destination.business_key),
         ),
     )
+
+
+class _GraphSqlCompiler:
+    """Stateful recursive CTE builder for one target's dependency subgraph."""
+
+    def __init__(
+        self,
+        *,
+        nodes: Mapping[str, Node],
+        incoming: Mapping[str, list[Edge]],
+        source_relations: Mapping[str, str],
+    ) -> None:
+        self._nodes = nodes
+        self._incoming = incoming
+        self._source_relations = source_relations
+        self._aliases: dict[str, str] = {}
+        self.ctes: list[str] = []
+
+    def compile_node(self, node_id: str) -> str:
+        """Compile dependencies first and return this node's CTE alias."""
+        if node_id in self._aliases:
+            return self._aliases[node_id]
+        node = self._nodes[node_id]
+        edges = self._incoming[node_id]
+        if node.type == "source":
+            return self._compile_source(node, edges)
+        if node.type not in {"transform", "target"}:
+            raise PipelineCompileError(
+                f"Node {node.id!r} has unsupported executable type {node.type!r}"
+            )
+        if any(edge.join is not None for edge in edges):
+            raise PipelineCompileError(
+                "Legacy edge joins are declarative only; use transform.config.join with two "
+                "incoming edges and a distinct transform output"
+            )
+        if len(edges) == 1:
+            if isinstance(node.config, TransformNodeConfig) and node.config.join is not None:
+                raise PipelineCompileError(
+                    f"Join transform {node.id!r} requires exactly two incoming edges"
+                )
+            upstream = self.compile_node(edges[0].source)
+            return self._append_projection(
+                node,
+                [(edges[0], "source")],
+                from_sql=f"{_quote(upstream)} AS source",
+            )
+        if (
+            len(edges) == 2
+            and isinstance(node.config, TransformNodeConfig)
+            and node.config.join is not None
+        ):
+            return self._compile_join(node, edges)
+        raise PipelineCompileError(
+            f"Node {node.id!r} requires one incoming edge, or two with transform.config.join"
+        )
+
+    def _compile_source(self, node: Node, edges: list[Edge]) -> str:
+        if edges:
+            raise PipelineCompileError(f"Source node {node.id!r} cannot have an incoming edge")
+        relation = self._source_relations.get(node.id)
+        if relation is None:
+            raise PipelineCompileError(f"Missing source relation for node {node.id!r}")
+        if not _RELATION.fullmatch(relation):
+            raise PipelineCompileError(
+                f"Source relation for node {node.id!r} must be project.dataset.table"
+            )
+        columns = ", ".join(_compile_source_field(field) for field in node.fields)
+        if not columns:
+            raise PipelineCompileError(f"Source node {node.id!r} must declare fields")
+        alias = self._next_alias()
+        self.ctes.append(f"{_quote(alias)} AS (\n  SELECT {columns} FROM `{relation}`\n)")
+        self._aliases[node.id] = alias
+        return alias
+
+    def _compile_join(self, node: Node, edges: list[Edge]) -> str:
+        assert isinstance(node.config, TransformNodeConfig)
+        join = node.config.join
+        assert join is not None
+        by_source = {edge.source: edge for edge in edges}
+        expected = {join.left_input, join.right_input}
+        if set(by_source) != expected:
+            raise PipelineCompileError(
+                f"Join transform {node.id!r} inputs must match its incoming edges"
+            )
+        left_node = self._nodes[join.left_input]
+        right_node = self._nodes[join.right_input]
+        left_fields = {field.name for field in left_node.fields}
+        right_fields = {field.name for field in right_node.fields}
+        for key in join.keys:
+            if key.left not in left_fields or key.right not in right_fields:
+                raise PipelineCompileError(
+                    f"Join transform {node.id!r} references an undeclared key field"
+                )
+        left_alias = self.compile_node(join.left_input)
+        right_alias = self.compile_node(join.right_input)
+        join_keyword = {
+            ExecutableJoinType.INNER: "INNER JOIN",
+            ExecutableJoinType.LEFT: "LEFT JOIN",
+            ExecutableJoinType.RIGHT: "RIGHT JOIN",
+            ExecutableJoinType.FULL: "FULL OUTER JOIN",
+        }[join.type]
+        condition = " AND ".join(
+            f"lhs.{_quote(key.left)} = rhs.{_quote(key.right)}" for key in join.keys
+        )
+        from_sql = (
+            f"{_quote(left_alias)} AS lhs\n"
+            f"  {join_keyword} {_quote(right_alias)} AS rhs ON {condition}"
+        )
+        return self._append_projection(
+            node,
+            [
+                (by_source[join.left_input], "lhs"),
+                (by_source[join.right_input], "rhs"),
+            ],
+            from_sql=from_sql,
+        )
+
+    def _append_projection(
+        self,
+        node: Node,
+        edge_aliases: list[tuple[Edge, str]],
+        *,
+        from_sql: str,
+    ) -> str:
+        mappings: dict[str, tuple[FieldMapping, str]] = {}
+        mapping_count = 0
+        for edge, source_alias in edge_aliases:
+            if not edge.mappings:
+                raise PipelineCompileError(f"Edge {edge.source!r}->{edge.target!r} has no mappings")
+            for mapping in edge.mappings:
+                mapping_count += 1
+                if mapping.target in mappings:
+                    raise PipelineCompileError(
+                        f"Node {node.id!r} maps target field {mapping.target!r} more than once"
+                    )
+                mappings[mapping.target] = (mapping, source_alias)
+        if len(mappings) != mapping_count:
+            raise AssertionError("Duplicate mapping validation did not fail")
+        missing = [field.name for field in node.fields if field.name not in mappings]
+        if missing:
+            raise PipelineCompileError(f"Node {node.id!r} does not map target field {missing[0]!r}")
+        projected = [
+            _compile_mapping(
+                mappings[field.name][0],
+                field.cast_to,
+                alias=mappings[field.name][1],
+            )
+            for field in node.fields
+        ]
+        select_list = ",\n    ".join(projected)
+        alias = self._next_alias()
+        self.ctes.append(f"{_quote(alias)} AS (\n  SELECT\n    {select_list}\n  FROM {from_sql}\n)")
+        self._aliases[node.id] = alias
+        return alias
+
+    def _next_alias(self) -> str:
+        return f"_node_{len(self.ctes)}"
 
 
 def prepare_target_writer(

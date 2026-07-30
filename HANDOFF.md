@@ -2,40 +2,39 @@
 
 ## Finished
 
-- Added generic OAuth2 JWT bearer authentication with RSA signing and token caching.
-- Added RFC 5849 OAuth1 TBA with NetSuite's HMAC-SHA256 profile.
-- Wired both strategies through connector validation and CLI dispatch.
-- Added credential-free Salesforce JWT and NetSuite TBA connector templates.
-- Proved real RSA claim signing and deterministic OAuth1 signatures offline.
+- Added an explicit two-input join contract to transform nodes.
+- Compiled inner, left, right, and full joins into explicit-column BigQuery CTEs.
+- Recursively compiled both join inputs, including upstream transforms.
+- Preserved legacy edge joins for authoring while making execution fail closed.
+- Validated join inputs, keys, mappings, and distinct output semantics.
 
 ## Try It
 
-Copy `connectors/salesforce_jwt.example.yaml` or `connectors/netsuite.example.yaml`, replace
-account identifiers and secret reference names, then run `uv run dander run NAME --dry-run`.
+Give a transform two incoming edges and a `config.join` with `left_input`, `right_input`, `type`,
+and `keys`, then call `compile_target(...)` with a relation for each source node.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
 - `uv run mypy src tests` — passed across 83 source files.
-- `uv run pytest` — 406 passed.
+- `uv run pytest` — 410 passed.
 - `git diff --check` — passed.
 - Secret-pattern scan found only its intentional private-key detector fixture.
 
 ## Decisions
 
-- JWT tokens use provider expiry or a conservative 300-second default.
-- OAuth1 resolves all credentials per request and signs query parameters deterministically.
-- Templates contain references only; no credentials or generated key material are committed.
+- Executable joins live on their distinct output transform.
+- Incoming edges retain column lineage and source-specific transformations.
+- Legacy edge joins are not silently reinterpreted.
 
 ## Remaining
 
-- Revise and execute the join graph shape.
 - Add bounded writer loads and controlled nested schema evolution.
 - Add hosted transform/catalog scheduling and run history.
 - Complete the release audit and external legal gate.
 
 ## Review First
 
-- `src/dander/security/oauth_jwt.py`
-- `src/dander/security/oauth1.py`
+- `src/dander/pipeline/compiler.py`
+- `src/dander/pipeline/node_config.py`
 - `docs/spec-alignment.md`

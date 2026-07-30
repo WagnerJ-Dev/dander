@@ -124,20 +124,21 @@ Implementation Notes below for the Decision Log status of this call.)*
 
 ## Executable linear pipelines
 
-`compile_target` turns a validated linear `source -> transform -> target` path into an explicit-
-column BigQuery `SELECT`. It supports direct mappings, JSON constants, scalar expressions, target
-casts, and the built-in custom-transform registry. Expressions are parsed with sqlglot, must
-reference exactly their declared `inputs`, may use only allow-listed scalar functions, and cannot
-contain queries, tables, stars, or parameters. No expression is passed to Python `eval`.
+`compile_target` turns a validated graph into an explicit-column BigQuery `SELECT`. It supports
+linear mappings plus two-input joins whose output is a distinct transform node, JSON constants,
+scalar expressions, target casts, and the built-in custom-transform registry. Expressions are
+parsed with sqlglot, must reference exactly their declared `inputs`, may use only allow-listed
+scalar functions, and cannot contain queries, tables, stars, or parameters. No expression is
+passed to Python `eval`.
 
 `prepare_target_writer` resolves a target's `WriterConfig` to the concrete SCD1, SCD2, snapshot,
 incremental, or replace writer and a `WriteTarget`. Constructing it has no network side effect;
 calling its `write()` method performs the configured BigQuery write.
 
-Fan-in and join execution fail closed. The current `Edge.join` shape makes the edge's target both
-the right-hand join input and the output, so there is no unambiguous relation to materialize.
-Executable joins require a future graph-format revision with two input edges and a distinct output
-node; join declarations remain available for authoring and validation until then.
+An executable join is authored on `TransformNodeConfig.join`: `left_input` and `right_input` must
+match its two incoming edges, `keys` name equality columns on those inputs, and the transform node
+is the output. The older `Edge.join` shape remains readable for backward compatibility but fails
+closed during compilation because it makes the edge target both a right input and the output.
 
 ## Node cursor / watermark strategy
 

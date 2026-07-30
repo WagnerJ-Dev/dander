@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+import sqlglot
 
 from dander.pipeline import PipelineCompileError, compile_target, prepare_target_writer
 from dander.pipeline.graph import (
@@ -18,8 +19,12 @@ from dander.pipeline.graph import (
 )
 from dander.pipeline.node_config import (
     DestinationSpec,
+    ExecutableJoinKey,
+    ExecutableJoinType,
     PartitioningSpec,
     TargetNodeConfig,
+    TransformJoinConfig,
+    TransformNodeConfig,
     WriterConfig,
 )
 from dander.writer import (
@@ -191,12 +196,114 @@ def test_compile_rejects_ambiguous_join_execution() -> None:
         keys=[JoinKeyPair(left="id", right="person_id")],
     )
 
-    with pytest.raises(PipelineCompileError, match="distinct output node"):
+    with pytest.raises(PipelineCompileError, match="Legacy edge joins"):
         compile_target(
             graph,
             "target",
             source_relations={"source": "dander-test.raw.people"},
         )
+
+
+@pytest.mark.parametrize(
+    ("join_type", "keyword"),
+    [
+        (ExecutableJoinType.INNER, "INNER JOIN"),
+        (ExecutableJoinType.LEFT, "LEFT JOIN"),
+        (ExecutableJoinType.RIGHT, "RIGHT JOIN"),
+        (ExecutableJoinType.FULL, "FULL OUTER JOIN"),
+    ],
+)
+def test_compiles_explicit_two_input_join_transform(
+    join_type: ExecutableJoinType,
+    keyword: str,
+) -> None:
+    left = Node(
+        id="people",
+        type="source",
+        name="People",
+        fields=[
+            NodeField(name="person_id", type="STRING"),
+            NodeField(name="name", type="STRING"),
+        ],
+    )
+    right = Node(
+        id="scores",
+        type="source",
+        name="Scores",
+        fields=[
+            NodeField(name="person_id", type="STRING"),
+            NodeField(name="score", type="INT64"),
+        ],
+    )
+    joined = Node(
+        id="joined",
+        type="transform",
+        name="Joined",
+        config=TransformNodeConfig(
+            join=TransformJoinConfig(
+                left_input="people",
+                right_input="scores",
+                type=join_type,
+                keys=[ExecutableJoinKey(left="person_id", right="person_id")],
+            )
+        ),
+        fields=[
+            NodeField(name="person_id", type="STRING"),
+            NodeField(name="name", type="STRING"),
+            NodeField(name="score", type="INT64"),
+        ],
+    )
+    target = Node(
+        id="target",
+        type="target",
+        name="Target",
+        config=_target_config(),
+        fields=[
+            NodeField(name="person_id", type="STRING"),
+            NodeField(name="name", type="STRING"),
+            NodeField(name="score", type="INT64"),
+        ],
+    )
+    graph = PipelineGraph(
+        name="joined_people",
+        nodes=[left, right, joined, target],
+        edges=[
+            Edge(
+                **{"from": "people", "to": "joined"},
+                mappings=[
+                    FieldMapping(source="person_id", target="person_id"),
+                    FieldMapping(source="name", target="name"),
+                ],
+            ),
+            Edge(
+                **{"from": "scores", "to": "joined"},
+                mappings=[FieldMapping(source="score", target="score")],
+            ),
+            Edge(
+                **{"from": "joined", "to": "target"},
+                mappings=[
+                    FieldMapping(source="person_id", target="person_id"),
+                    FieldMapping(source="name", target="name"),
+                    FieldMapping(source="score", target="score"),
+                ],
+            ),
+        ],
+    )
+
+    compiled = compile_target(
+        graph,
+        "target",
+        source_relations={
+            "people": "dander-test.raw.people",
+            "scores": "dander-test.raw.scores",
+        },
+    )
+
+    assert f"{keyword} `_node_1` AS rhs" in compiled.query
+    assert "ON lhs.`person_id` = rhs.`person_id`" in compiled.query
+    assert "lhs.`name` AS `name`" in compiled.query
+    assert "rhs.`score` AS `score`" in compiled.query
+    assert sqlglot.parse_one(compiled.query, read="bigquery") is not None
 
 
 def test_compile_rejects_duplicate_target_mapping() -> None:
