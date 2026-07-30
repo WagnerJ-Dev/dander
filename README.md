@@ -88,6 +88,20 @@ green; the `pr-review` agent enforces it on every ticket.
 
 ## Runnable Greenhouse paths
 
+### Fully local synthetic vendor
+
+For a credential-free proof of the REST extraction boundary, start the invented local API:
+
+```bash
+uv run dander-synthetic-api
+```
+
+In another terminal, inspect its connector with
+`uv run dander run synthetic_vendor --dry-run --project local-demo`. The synthetic integration
+tests run the real dlt HTTP adapter against both endpoints and verify cursor and Link-header
+pagination, duplicate business keys, incremental updates, and bounded retry recovery. A full CLI
+write still targets BigQuery; the API command itself and its tests do not contact GCP.
+
 The free first path reads published jobs from Greenhouse's public Job Board API. It uses
 Greenhouse's own board as a live example, needs no Greenhouse account or credential, and exercises
 the same dlt → BigQuery writer path as private connectors:

@@ -25,6 +25,7 @@ dependencies = [
 
 [project.scripts]
 dander = "dander.cli.main:app"
+dander-synthetic-api = "dander.dev.synthetic_vendor:main"
 
 [project.optional-dependencies]
 dev = [

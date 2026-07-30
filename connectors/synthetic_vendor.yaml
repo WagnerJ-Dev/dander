@@ -1,0 +1,28 @@
+# Local-only connector for the invented API started by `uv run dander-synthetic-api`.
+# It contains no vendor data, tenant identifiers, or credential references.
+name: synthetic_vendor
+base_url: http://127.0.0.1:8765/v1
+auth_strategy: none
+rate_limit:
+  requests_per_second: 100
+  burst: 10
+  backoff: fixed
+  max_retries: 2
+
+endpoints:
+  - name: accounts
+    path: /accounts
+    pagination:
+      kind: cursor
+      next_cursor_path: meta.next_cursor
+      cursor_param: cursor
+    incremental_cursor: updated_at
+    cursor_param: updated_after
+    data_selector: data
+    primary_key: [id]
+
+  - name: events
+    path: /events
+    pagination: link_header
+    data_selector: data
+    primary_key: [id]

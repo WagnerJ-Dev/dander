@@ -129,3 +129,12 @@
 - Do not infer employer ownership, regulated-company affiliation, customer records, or HR records
   from the architecture note. Apply normal provenance and privacy review only when actual
   employer-owned material, credentials, or non-public data enters scope.
+
+## 2026-07-30 — Deterministic synthetic vendor proof
+
+- A loopback-only invented API is the default integration proof for Dander-controlled REST
+  behavior; it contains no tenant identifiers, credentials, or copied vendor records.
+- Cursor and Link pagination, duplicates, updates, and retryable failures are deterministic so the
+  real dlt HTTP boundary can be validated repeatably without a vendor contract or cloud mutation.
+- The packaged server proves extraction only. The normal CLI retains its explicit BigQuery write
+  boundary rather than introducing a second local production storage mode for a demo.
