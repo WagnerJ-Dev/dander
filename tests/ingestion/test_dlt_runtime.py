@@ -88,6 +88,7 @@ def test_build_config_supports_public_enveloped_response() -> None:
                 name="jobs",
                 path="/demo/jobs",
                 data_selector="jobs",
+                query_params={"include_content": True},
                 primary_key=["id"],
             )
         ],
@@ -100,6 +101,7 @@ def test_build_config_supports_public_enveloped_response() -> None:
     endpoint = resource["endpoint"]
     assert isinstance(endpoint, dict)
     assert endpoint["data_selector"] == "jobs"
+    assert endpoint["params"] == {"include_content": True}
     adapter = rest_config["client"]["auth"]
     assert isinstance(adapter, DltAuthAdapter)
     prepared = Request("GET", "https://example.test/v1/boards/demo/jobs").prepare()

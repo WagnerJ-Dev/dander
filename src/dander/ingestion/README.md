@@ -22,3 +22,9 @@ Run `uv run dander-synthetic-api` to start an entirely local, credential-free Sa
 Link-header pagination, duplicate business keys, incremental updates, and bounded recovery from a
 deterministic 429 and 500. The integration tests call it over real HTTP; no vendor tenant or cloud
 resource is involved.
+
+Greenhouse is the primary live public demo. The `lever_job_board` connector adds real published
+jobs with offset pagination, and `ashby_job_board` adds a second real ATS response envelope. Their
+offline tests pin request construction; live data counts are deliberately not asserted because
+public postings change. Static `query_params` may configure non-secret response options, while
+credential-like parameter names fail validation and must be handled by `auth_strategy`.

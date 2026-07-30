@@ -52,6 +52,8 @@ class Endpoint(BaseModel):
             `updated_after`.
         primary_key: Field name(s) forming this endpoint's business key.
         data_selector: Optional JSONPath selecting records from an enveloped response.
+        query_params: Non-secret scalar query parameters applied to every request. Authentication
+            material must use the source's auth strategy instead.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -63,6 +65,7 @@ class Endpoint(BaseModel):
     cursor_param: str | None = None
     primary_key: list[str] = Field(default_factory=list)
     data_selector: str | None = None
+    query_params: dict[str, str | int | bool] = Field(default_factory=dict)
     field_types: dict[str, str] = Field(
         default_factory=dict,
         description="Explicit BigQuery type overrides applied by hand-rolled enterprise sources.",
@@ -79,6 +82,34 @@ class Endpoint(BaseModel):
         if unknown := sorted(set(normalized.values()) - supported):
             raise ValueError(f"Unsupported field type: {unknown[0]}")
         return normalized
+
+    @field_validator("query_params")
+    @classmethod
+    def _validate_query_params(
+        cls, value: dict[str, str | int | bool]
+    ) -> dict[str, str | int | bool]:
+        """Keep static request parameters non-secret and request-safe."""
+        sensitive_names = {
+            "api_key",
+            "apikey",
+            "authorization",
+            "client_secret",
+            "credential",
+            "key",
+            "password",
+            "secret",
+            "token",
+        }
+        for name in value:
+            normalized = name.lower().replace("-", "_")
+            if not name or "\r" in name or "\n" in name:
+                raise ValueError("query_params keys must be non-empty single-line names")
+            if normalized in sensitive_names or normalized.endswith(("_key", "_secret", "_token")):
+                raise ValueError(
+                    f"query_params cannot contain credential-like parameter {name!r}; "
+                    "use auth_strategy"
+                )
+        return value
 
     @field_validator("pagination", mode="before")
     @classmethod

@@ -88,20 +88,6 @@ green; the `pr-review` agent enforces it on every ticket.
 
 ## Runnable Greenhouse paths
 
-### Fully local synthetic vendor
-
-For a credential-free proof of the REST extraction boundary, start the invented local API:
-
-```bash
-uv run dander-synthetic-api
-```
-
-In another terminal, inspect its connector with
-`uv run dander run synthetic_vendor --dry-run --project local-demo`. The synthetic integration
-tests run the real dlt HTTP adapter against both endpoints and verify cursor and Link-header
-pagination, duplicate business keys, incremental updates, and bounded retry recovery. A full CLI
-write still targets BigQuery; the API command itself and its tests do not contact GCP.
-
 The free first path reads published jobs from Greenhouse's public Job Board API. It uses
 Greenhouse's own board as a live example, needs no Greenhouse account or credential, and exercises
 the same dlt → BigQuery writer path as private connectors:
@@ -114,6 +100,39 @@ uv run dander run greenhouse_job_board --guarded-free-tier --project my-gcp-proj
 To read another organization's published jobs, copy the connector and replace `greenhouse` in
 `/greenhouse/jobs` with the public board token from its job-board URL. Public GET requests return
 published job data only; they do not expose candidates, applications, or other private records.
+
+### Additional real public job boards
+
+`lever_job_board` reads Spotify's published Lever postings and exercises the provider's
+`skip`/`limit` pagination. `ashby_job_board` reads Ashby's published jobs, including publicly
+displayed compensation where present. Both are credential-free, read-only examples using official
+public APIs:
+
+```bash
+uv run dander run lever_job_board --dry-run --project my-gcp-project
+uv run dander run ashby_job_board --dry-run --project my-gcp-project
+```
+
+See the official [Lever Postings API](https://github.com/lever/postings-api) and
+[Ashby Job Postings API](https://developers.ashbyhq.com/docs/public-job-posting-api)
+documentation. Public boards can change or migrate without notice; copy the connector and replace
+the documented site/board token to target another organization's published jobs.
+
+### Deterministic fault injection
+
+The local synthetic vendor remains the repeatable test for behavior that must not be provoked
+against public services: duplicate/update scenarios and deterministic 429/500 recovery.
+
+```bash
+uv run dander-synthetic-api
+uv run pytest tests/ingestion/test_synthetic_vendor.py
+```
+
+Do not use public profiles as substitute candidate data. Candidate- or contact-shaped integration
+tests should contain invented people in an account you control. HubSpot offers
+[free developer test accounts](https://developers.hubspot.com/docs/getting-started/account-types)
+with sample CRM data; connecting one requires the account owner to create and authorize the test
+app, so no credential or account is embedded in this repository.
 
 The canonical `greenhouse` connector reads private candidates and jobs through Harvest v3. It
 uses OAuth 2.0 client credentials, caches expiring access tokens, and applies the token to every

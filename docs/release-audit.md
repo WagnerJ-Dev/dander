@@ -12,7 +12,7 @@ are treated as hypothetical connector scope, not evidence of an existing-company
 |---|---|---|
 | Secret Manager backing store and audited credential access | Implemented locally | `security/secret_manager.py`; environment-to-managed-resource routing; value-free access events; secret-resolution tests |
 | API/basic, OAuth2 client credentials/JWT, and OAuth1 TBA | Implemented locally | `security/`; cached/refreshable bearer tokens; Greenhouse, Marketo, Salesforce, Workday, and NetSuite templates/tests |
-| Config-driven standard REST ingestion on dlt | Implemented locally | `ingestion/dlt_backed.py`; five pagination strategies; public Greenhouse and Marketo templates |
+| Config-driven standard REST ingestion on dlt | Implemented locally | `ingestion/dlt_backed.py`; five pagination strategies; live public Greenhouse, Lever, and Ashby connectors plus Marketo template |
 | Hand-rolled enterprise ingestion behind `Source` | Implemented locally | `WorkdayRaasSource`; injected transport; paging, cursor, envelope, casting, and retry tests |
 | Per-source rate limiting and bounded backoff | Implemented locally | dlt token-bucket session plus safe-read retries; Workday bounded retry path; metadata-only retry events |
 | Inferred types plus per-field BigQuery overrides | Implemented locally | dlt inference on standard REST; declared scalar casts for enterprise sources; additive declared target schemas |
@@ -30,8 +30,9 @@ Python `WritePattern` interface. This avoids pulling transform data out of BigQu
 
 ## Release boundaries
 
-- The credential-free Greenhouse path is the only live source proof available without a customer
-  account. Marketo and enterprise provider exchanges are tested offline and require tenant access.
+- Credential-free Greenhouse, Lever, and Ashby paths prove live public source shapes without a
+  customer account. Marketo and enterprise provider exchanges are tested offline and require
+  tenant access.
 - The sandbox project currently has billing enabled, a USD 5 monthly budget, Pub/Sub notifications,
   and a live billing-detachment service. Budgets and automated actions still have reporting delay,
   so each additional billable test requires deliberate scope.

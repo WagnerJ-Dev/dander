@@ -222,7 +222,7 @@ class DltRestSource(Source):
         sources and must never be logged.
         """
         endpoint = self._get_endpoint(endpoint_name)
-        params: dict[str, Any] = {}
+        params: dict[str, Any] = dict(endpoint.query_params)
         paginator = self._build_paginator(endpoint, params)
         cursor_param = endpoint.cursor_param or endpoint.incremental_cursor
         if since is not None and cursor_param is not None:

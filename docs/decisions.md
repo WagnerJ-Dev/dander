@@ -138,3 +138,12 @@
   real dlt HTTP boundary can be validated repeatably without a vendor contract or cloud mutation.
 - The packaged server proves extraction only. The normal CLI retains its explicit BigQuery write
   boundary rather than introducing a second local production storage mode for a demo.
+
+## 2026-07-30 — Public data versus controlled test data
+
+- Greenhouse remains the primary live demo; Lever and Ashby broaden real public response and
+  pagination coverage without credentials or non-public records.
+- Synthetic endpoints remain necessary for deliberate duplicates, updates, throttling, and server
+  failures because public providers must not be manipulated to produce test failures.
+- Candidate/contact-shaped tests use invented records in an owned test account. Public profiles are
+  not treated as a substitute candidate dataset.

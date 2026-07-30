@@ -2,43 +2,43 @@
 
 ## Finished
 
-- Added a loopback-only synthetic SaaS API with entirely invented records.
-- Added cursor and Link-header endpoints with duplicates and incremental updates.
-- Added deterministic 429/500 recovery through the real rate-limited dlt HTTP adapter.
-- Added the packaged `dander-synthetic-api` command and matching connector.
-- Documented the local proof boundary and its provenance decision.
+- Kept Greenhouse as the primary real public demo.
+- Added credential-free Lever and Ashby job-board connectors.
+- Proved Lever offset pagination and Ashby's enveloped response against their live APIs.
+- Added typed non-secret query parameters with credential-name rejection.
+- Kept synthetic data exclusively for deterministic duplicates, updates, 429s, and 500s.
 
 ## Try It
 
-Run `uv run dander-synthetic-api`, then in another terminal run
-`uv run dander run synthetic_vendor --dry-run --project local-demo`. Run the live-local proof with
-`uv run pytest tests/ingestion/test_synthetic_vendor.py`.
+Run `uv run dander run lever_job_board --dry-run --project local-demo` and
+`uv run dander run ashby_job_board --dry-run --project local-demo`. Their offline contracts are in
+`tests/ingestion/test_public_job_connectors.py`.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
-- `uv run mypy src tests` — passed across 91 source files.
-- `uv run pytest` — 433 passed.
+- `uv run mypy src tests` — passed across 92 source files.
+- `uv run pytest` — 439 passed.
 - Terraform recursive formatting and root validation — passed.
-- Synthetic connector CLI dry run — passed with two SCD1 targets.
-- Secret-pattern and diff checks — no new secret or whitespace issue.
+- Live Lever extraction — 104 rows/104 unique ids; live Ashby — 58/58.
+- Both connector CLI dry-run plans — passed with SCD1 targets.
 
 ## Decisions
 
-- The default REST integration proof uses only invented loopback data.
-- The synthetic server proves extraction; the normal CLI retains its explicit BigQuery write path.
-- No scheduler, billing, GCP resource, deployment, or public remote was changed.
+- Public ATS records prove real provider shapes; synthetic records prove controlled failures.
+- Static query parameters cannot carry credential-like names.
+- Candidate/contact tests use invented records in an owned test account, never public profiles.
 
 ## Remaining
 
 - Decide whether to leave the daily 09:00 Cloud Scheduler run enabled.
+- Connect a free HubSpot developer test account only after its owner authorizes an app.
 - Run Marketo and enterprise tenant integrations when credentials are available.
 - Run hosted, Dataplex, and Storage Write proofs only with explicit per-run cost approval.
-- Stream/spool very large endpoint extracts instead of holding a logical batch in memory.
-- Add nested/repeated schema evolution only from explicit reviewed contracts.
+- Stream/spool very large endpoint extracts and review nested/repeated schema evolution.
 
 ## Review First
 
-- `src/dander/dev/synthetic_vendor.py`
-- `tests/ingestion/test_synthetic_vendor.py`
-- `connectors/synthetic_vendor.yaml`
+- `connectors/lever_job_board.yaml`
+- `connectors/ashby_job_board.yaml`
+- `src/dander/ingestion/source.py`

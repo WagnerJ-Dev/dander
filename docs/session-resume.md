@@ -22,11 +22,11 @@ conversation. Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, 
 - Repository: `/Users/harrison/Documents/dander`
 - Branch: `codex/dander-v0`
 - `origin` is `WagnerJ-Dev/dander`; `fork` is the user's GitHub fork.
-- The fork is public. It is pushed through commit `ccf0419`; the synthetic-vendor slice and later
-  documentation commits are local until explicitly pushed. Confirm with `git status -sb` and
+- The fork is public and the branch has an open draft PR into upstream `main`. Confirm
+  synchronization with `git status -sb` and
   `git log --oneline fork/codex/dander-v0..HEAD`.
-- Last full code gate: Ruff and formatting passed, strict mypy passed across 91 source files,
-  433 tests passed, and Terraform formatting/validation passed.
+- Last full code gate: Ruff and formatting passed, strict mypy passed across 92 source files,
+  439 tests passed, and Terraform formatting/validation passed.
 - A wheel installed into a clean virtual environment, and the local amd64 Docker image contained
   the CLI, connectors, and models.
 - The current/history secret-pattern scan found only the intentional detector fixture in
@@ -67,13 +67,17 @@ gcloud run jobs executions list --job=dander-greenhouse-public --region=us-centr
   exchanges have not run live.
 - The loopback synthetic vendor now proves the real dlt HTTP boundary across cursor and Link-header
   pagination, duplicate keys, incremental updates, and deterministic 429/500 recovery.
+- Checked-in Lever and Ashby connectors completed live credential-free extraction on 2026-07-30:
+  104/104 and 58/58 rows/unique ids respectively. Counts are observations, not test fixtures.
 
 ## Recommended next vertical slice
 
 1. Decide whether to pause the enabled daily scheduler before changing the runtime image.
-2. With explicit approval, build/push an immutable image, review a saved Terraform plan, keep the
+2. If candidate/contact integration is next, have the user create and authorize a free HubSpot
+   developer test account; use invented or provider-supplied sample records only.
+3. With explicit approval, build/push an immutable image, review a saved Terraform plan, keep the
    scheduler paused, and run the full ingestion → transform/test → registry path once manually.
-3. Treat live Storage Write and Dataplex publication as separate, deliberately authorized tests.
+4. Treat live Storage Write and Dataplex publication as separate, deliberately authorized tests.
 
 Synthetic data can validate the complete Dander-controlled pipeline. A real vendor sandbox is
 needed only to prove the vendor's actual authentication, undocumented response behavior, scopes,

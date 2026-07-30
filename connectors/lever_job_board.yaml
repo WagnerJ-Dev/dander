@@ -1,0 +1,23 @@
+# Credential-free access to Spotify's real published Lever job board.
+# Replace `spotify` with another public Lever site token if desired.
+# Documentation: https://github.com/lever/postings-api
+name: lever_job_board
+base_url: https://api.lever.co/v0/postings
+auth_strategy: none
+rate_limit:
+  requests_per_second: 2
+  burst: 1
+  backoff: exponential
+  max_retries: 3
+
+endpoints:
+  - name: jobs
+    path: /spotify
+    query_params:
+      mode: json
+    pagination:
+      kind: offset
+      offset_param: skip
+      limit_param: limit
+      page_size: 100
+    primary_key: [id]
