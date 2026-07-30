@@ -1,0 +1,191 @@
+"""BigQuery transform materialization and assertion tests."""
+
+from __future__ import annotations
+
+from textwrap import dedent
+from typing import TYPE_CHECKING
+
+import pytest
+
+from dander.transform import BigQueryTransformRunner, TransformProjectError, TransformRunError
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+class _FakeJob:
+    def __init__(self, rows: list[_FakeRow]) -> None:
+        self._rows = rows
+
+    def result(self) -> list[_FakeRow]:
+        return self._rows
+
+
+class _FakeRow:
+    """BigQuery-like row: keyed lookup works, membership checks inspect values."""
+
+    def __init__(self, **values: object) -> None:
+        self._values = values
+
+    def __getitem__(self, key: str) -> object:
+        return self._values[key]
+
+    def __contains__(self, value: object) -> bool:
+        return value in self._values.values()
+
+
+class _FakeClient:
+    def __init__(self, assertion_failures: list[int] | None = None) -> None:
+        self.queries: list[str] = []
+        self.assertion_failures = list(assertion_failures or [])
+
+    def query(self, query: str) -> _FakeJob:
+        self.queries.append(query)
+        if " AS failures" in query:
+            failures = self.assertion_failures.pop(0) if self.assertion_failures else 0
+            return _FakeJob([_FakeRow(failures=failures)])
+        return _FakeJob([])
+
+
+def _write_model(
+    root: Path,
+    name: str,
+    *,
+    materialization: str = "view",
+    ref: str = "raw_fixture",
+    tests: str,
+) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / f"{name}.sql").write_text(
+        f"SELECT CAST(id AS STRING) AS id FROM {{{{ ref('{ref}') }}}}"
+    )
+    (root / f"{name}.yml").write_text(
+        dedent(
+            f"""
+            model: {name}
+            description: Safe test model.
+            owner: data-eng
+            materialization: {materialization}
+            dataset: staging
+            source_system: fixture
+            sensitivity: public
+            columns:
+              - name: id
+                type: STRING
+                description: Fixture identifier.
+            tests:
+            {tests}
+            """
+        )
+    )
+
+
+def test_build_materializes_then_runs_all_generic_assertions(tmp_path: Path) -> None:
+    tests = """
+              - column: id
+                not_null: true
+                unique: true
+                accepted_values: [open, closed]
+                relationships:
+                  to: raw_parent
+                  field: id
+    """
+    _write_model(tmp_path, "model_a", materialization="table", tests=tests)
+    client = _FakeClient()
+
+    result = BigQueryTransformRunner(project="valid-project-123", client=client).build(
+        tmp_path,
+        selected=["model_a"],
+    )
+
+    assert result.models == ("model_a",)
+    assert result.assertions == 4
+    assert client.queries[0].startswith(
+        "CREATE OR REPLACE TABLE `valid-project-123.staging.model_a` AS"
+    )
+    assert "COUNTIF(`id` IS NULL)" in client.queries[1]
+    assert "HAVING COUNT(*) > 1" in client.queries[2]
+    assert "'open', 'closed'" in client.queries[3]
+    assert "LEFT JOIN `valid-project-123.raw.parent` AS parent" in client.queries[4]
+
+
+def test_test_command_path_does_not_materialize(tmp_path: Path) -> None:
+    tests = """
+              - column: id
+                not_null: true
+    """
+    _write_model(tmp_path, "model_a", tests=tests)
+    client = _FakeClient()
+
+    result = BigQueryTransformRunner(project="valid-project-123", client=client).test(tmp_path)
+
+    assert result.assertions == 1
+    assert all(not query.startswith("CREATE") for query in client.queries)
+
+
+def test_assertion_failures_name_tests_without_row_values(tmp_path: Path) -> None:
+    tests = """
+              - column: id
+                not_null: true
+                unique: true
+    """
+    _write_model(tmp_path, "model_a", tests=tests)
+    client = _FakeClient(assertion_failures=[2, 0])
+
+    with pytest.raises(TransformRunError, match=r"model_a\.id\.not_null"):
+        BigQueryTransformRunner(project="valid-project-123", client=client).build(tmp_path)
+
+
+def test_incremental_materialization_fails_before_queries(tmp_path: Path) -> None:
+    _write_model(tmp_path, "base", tests="              []")
+    _write_model(
+        tmp_path,
+        "model_a",
+        materialization="incremental",
+        ref="base",
+        tests="              []",
+    )
+    client = _FakeClient()
+
+    with pytest.raises(TransformProjectError, match="Incremental materialization"):
+        BigQueryTransformRunner(project="valid-project-123", client=client).build(
+            tmp_path,
+            selected=["model_a"],
+        )
+
+    assert client.queries == []
+
+
+def test_selected_build_includes_model_dependencies(tmp_path: Path) -> None:
+    _write_model(tmp_path, "base", tests="              []")
+    _write_model(tmp_path, "consumer", ref="base", tests="              []")
+    client = _FakeClient()
+
+    result = BigQueryTransformRunner(project="valid-project-123", client=client).build(
+        tmp_path,
+        selected=["consumer"],
+    )
+
+    assert result.models == ("base", "consumer")
+    assert client.queries[0].startswith("CREATE OR REPLACE VIEW")
+    assert "`valid-project-123.staging.base`" in client.queries[1]
+
+
+def test_relationship_target_field_fails_before_queries(tmp_path: Path) -> None:
+    _write_model(tmp_path, "parent", tests="              []")
+    tests = """
+              - column: id
+                relationships:
+                  to: parent
+                  field: missing
+    """
+    _write_model(tmp_path, "child", ref="parent", tests=tests)
+    client = _FakeClient()
+
+    with pytest.raises(TransformProjectError, match="parent.missing"):
+        BigQueryTransformRunner(project="valid-project-123", client=client).build(
+            tmp_path,
+            selected=["child"],
+        )
+
+    assert client.queries == []

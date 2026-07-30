@@ -25,6 +25,11 @@ from dander.security import (
     OAuth2ClientCredentials,
 )
 from dander.state import BigQueryWatermarkStore, SqliteWatermarkStore
+from dander.transform import (
+    BigQueryTransformRunner,
+    TransformProjectError,
+    TransformRunError,
+)
 from dander.writer import BigQueryReplaceWriter, BigQueryScd1Writer
 
 if TYPE_CHECKING:
@@ -38,6 +43,7 @@ console = Console()
 _SOURCE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _DEFAULT_CONNECTORS_DIR = Path("connectors")
 _DEFAULT_INFRA_DIR = Path("infra")
+_DEFAULT_MODELS_DIR = Path("models")
 
 
 @app.command()
@@ -178,6 +184,100 @@ def run(
             "yes" if endpoint.committed_cursor is not None else "no",
         )
     console.print(table)
+
+
+@app.command()
+def build(
+    project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
+    selected: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--select",
+        help="Build one model and its model dependencies. Repeat to select multiple models.",
+    ),
+    models_dir: Path = typer.Option(_DEFAULT_MODELS_DIR, "--models-dir"),  # noqa: B008
+    guarded_free_tier: bool = typer.Option(
+        False,
+        "--guarded-free-tier",
+        help="Require the <=$5 budget guard before submitting BigQuery queries.",
+    ),
+    budget_name: str = typer.Option("dander-sbx-cap", "--budget-name", hidden=True),
+) -> None:
+    """Build selected SQL models in dependency order and run their data tests."""
+    resolved_project = project or Settings().gcp_project_id
+    if not resolved_project:
+        raise ClickException("GCP project is required via --project or GCP_PROJECT_ID")
+    _require_transform_guard(
+        resolved_project,
+        guarded_free_tier=guarded_free_tier,
+        budget_name=budget_name,
+    )
+    try:
+        result = BigQueryTransformRunner(project=resolved_project).build(
+            models_dir,
+            selected=selected,
+        )
+    except (TransformProjectError, TransformRunError) as error:
+        raise ClickException(str(error)) from error
+    _print_transform_result("Built", result.models, result.assertions)
+
+
+@app.command("test")
+def test_models(
+    project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
+    selected: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--select",
+        help="Test one model and its model dependencies. Repeat to select multiple models.",
+    ),
+    models_dir: Path = typer.Option(_DEFAULT_MODELS_DIR, "--models-dir"),  # noqa: B008
+    guarded_free_tier: bool = typer.Option(
+        False,
+        "--guarded-free-tier",
+        help="Require the <=$5 budget guard before submitting BigQuery queries.",
+    ),
+    budget_name: str = typer.Option("dander-sbx-cap", "--budget-name", hidden=True),
+) -> None:
+    """Run declared generic tests against existing model relations."""
+    resolved_project = project or Settings().gcp_project_id
+    if not resolved_project:
+        raise ClickException("GCP project is required via --project or GCP_PROJECT_ID")
+    _require_transform_guard(
+        resolved_project,
+        guarded_free_tier=guarded_free_tier,
+        budget_name=budget_name,
+    )
+    try:
+        result = BigQueryTransformRunner(project=resolved_project).test(
+            models_dir,
+            selected=selected,
+        )
+    except (TransformProjectError, TransformRunError) as error:
+        raise ClickException(str(error)) from error
+    _print_transform_result("Tested", result.models, result.assertions)
+
+
+def _require_transform_guard(
+    project: str,
+    *,
+    guarded_free_tier: bool,
+    budget_name: str,
+) -> None:
+    if not guarded_free_tier:
+        return
+    try:
+        GuardedFreeTierVerifier().require_guarded(project, budget_name=budget_name)
+    except SandboxSafetyError as error:
+        raise ClickException(str(error)) from error
+
+
+def _print_transform_result(action: str, models: Sequence[str], assertions: int) -> None:
+    table = Table(title=f"Dander transform: {action.lower()}")
+    table.add_column("Model")
+    for model in models:
+        table.add_row(model)
+    console.print(table)
+    summary = f"{action} {len(models)} model(s); {assertions} assertion(s) passed."
+    console.print(f"[green]{summary}[/green]")
 
 
 def _build_auth(

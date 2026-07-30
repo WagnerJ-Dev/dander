@@ -1,0 +1,44 @@
+# This sidecar is the metadata spine for SQL execution, data tests, catalog, and semantics.
+model: stg_greenhouse__jobs
+description: Published Greenhouse jobs cleaned to one row per job.
+owner: data-eng
+materialization: view
+dataset: staging
+source_system: greenhouse_job_board
+sensitivity: public
+
+columns:
+  - name: job_id
+    type: STRING
+    description: Stable Greenhouse public job identifier.
+  - name: internal_job_id
+    type: STRING
+    description: Greenhouse internal job identifier when published.
+  - name: title
+    type: STRING
+    description: Public job title.
+  - name: company_name
+    type: STRING
+    description: Company name shown on the public job board.
+  - name: location_name
+    type: STRING
+    description: Public display location for the job.
+  - name: absolute_url
+    type: STRING
+    description: Public application page URL.
+  - name: language
+    type: STRING
+    description: Language code for the published job.
+  - name: first_published
+    type: TIMESTAMP
+    description: Timestamp when the job was first published.
+  - name: updated_at
+    type: TIMESTAMP
+    description: Timestamp when the public job was last updated.
+
+tests:
+  - column: job_id
+    not_null: true
+    unique: true
+  - column: title
+    not_null: true

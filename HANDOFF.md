@@ -2,45 +2,47 @@
 
 ## Finished
 
-- Containerized Dander with pinned dependencies and a non-root runtime.
-- Provisioned an Artifact Registry repository, two dedicated identities, and a Cloud Run Job.
-- Enabled the daily 09:00 America/New_York Scheduler job after a manual execution passed.
-- Proved Scheduler OAuth invocation and the guarded BigQuery SCD1 path with 21 distinct jobs.
-- Left the live `$5` billing guard active; Terraform remote state has no drift.
+- Added typed SQL-model/YAML discovery with fail-closed metadata validation.
+- Added dependency ordering, restricted `ref()` compilation, and read-only BigQuery SQL checks.
+- Added view/table materialization plus four generic data-test kinds.
+- Added `dander build` and `dander test` with selection and guarded-free-tier support.
+- Built `staging.stg_greenhouse__jobs` live with 21 unique, non-null public jobs.
 
 ## Try It
 
 ```bash
-gcloud run jobs execute dander-greenhouse-public \
-  --project=dander-sbx-harrison-20260729 --region=us-central1 --wait
+uv run dander build --project "$PROJECT_ID" \
+  --select stg_greenhouse__jobs --guarded-free-tier
+uv run dander test --project "$PROJECT_ID" \
+  --select stg_greenhouse__jobs --guarded-free-tier
 ```
 
-The daily schedule is `0 9 * * *` in `America/New_York`. Use
-`gcloud scheduler jobs pause dander-greenhouse-public-daily --location=us-central1` to stop it.
+Repeat `--select` for multiple roots; omit it to build all discovered models.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
 - `uv run mypy src tests` — passed in strict mode.
-- `uv run pytest` — 322 passed.
-- `terraform fmt -check -recursive`, `terraform validate`, and final no-change plan — passed.
-- Container build/smoke, direct execution, and Scheduler execution — passed; table has 21 unique rows.
+- `uv run pytest` — 338 passed.
+- `terraform fmt -check -recursive` and `terraform validate` — passed.
+- Guarded live build/test — 3 assertions passed; 21 rows, 21 unique ids, zero null ids.
 
 ## Decisions
 
-- Deploy by immutable image digest and retain only three recent images.
-- Keep runtime writes scoped to `raw`; use a separate invoker-only Scheduler identity.
-- Apply paused first, prove a manual run, then enable the daily schedule.
+- `raw_<table>` refs map conventionally to raw relations; all other refs name discovered models.
+- Transform SQL must compile to one read-only query before Dander wraps it in controlled DDL.
+- Incremental materialization fails closed until it has an explicit idempotent write contract.
 
 ## Remaining
 
+- Project the model YAML into Dataplex aspects and a local semantic manifest.
+- Make `dander init` provision the complete runtime stack through one command.
+- Implement idempotent incremental/SCD2/snapshot materializations.
 - Add Harvest v3 credentials only if Greenhouse account access becomes available.
-- Review or remove default project service accounts with broad Editor grants.
 - Stream/chunk large endpoints and add controlled target-schema evolution.
-- Monitor the first automatic 09:00 run and billing export before expanding frequency or scope.
 
 ## Review First
 
-- `infra/modules/scheduled-job/main.tf`
-- `Dockerfile`
-- `README.md`
+- `src/dander/transform/project.py`
+- `src/dander/transform/runner.py`
+- `models/staging/stg_greenhouse__jobs.yml`

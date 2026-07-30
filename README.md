@@ -236,12 +236,39 @@ most recent versions. A single Scheduler job is within Google's current three-jo
 allowance, and small Cloud Run executions may fit its free compute allowance, but neither is a
 hard spending cap. The guarded CLI preflight and budget kill switch remain required.
 
+### Build and test SQL models
+
+Every SQL model has a YAML sidecar that defines its materialization, catalog metadata, columns, and
+generic tests. Dander validates the complete project, resolves `ref()` dependencies, orders models,
+compiles one read-only BigQuery query per model, materializes views or tables, and then runs the
+declared assertions:
+
+```bash
+uv run dander build \
+  --project "$PROJECT_ID" \
+  --select stg_greenhouse__jobs \
+  --guarded-free-tier
+
+uv run dander test \
+  --project "$PROJECT_ID" \
+  --select stg_greenhouse__jobs \
+  --guarded-free-tier
+```
+
+Repeat `--select` to build multiple roots; their model dependencies are included automatically.
+Omit it to build every model. References beginning with `raw_` resolve by convention to
+`raw.<remaining_name>`; other references must name a discovered model. Unknown references, cycles,
+missing/invalid sidecars, non-query SQL, and unsupported incremental materializations fail before
+the first BigQuery query. Generic tests currently support not-null, unique, accepted-values, and
+relationships.
+
 Current v0 limits are explicit: production SCD1 plus sandbox full-replacement writes,
 whole-endpoint batches held in memory, no automatic target-schema evolution, and bootstrap
 coverage for BigQuery datasets only. Public Job Board extraction is a full refresh; it does not
 delete jobs that disappear from a board. The guarded mode verifies budget wiring but does not
-provision or continuously monitor it. Transform execution, catalog publication, additional
-production write modes, IAM/WIF, and Secret Manager provisioning remain future slices.
+provision or continuously monitor it. Transform execution currently supports full view/table
+rebuilds; incremental models, catalog publication, additional production write modes, IAM/WIF,
+and Secret Manager provisioning remain future slices.
 
 ## The agent workforce & the `/feature` workflow
 

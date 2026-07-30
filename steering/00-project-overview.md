@@ -58,6 +58,9 @@ blocking gate on any public release, separate from engineering readiness.
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-07-29 — **The first transform slice builds and tests public jobs as views/tables** — typed
+  YAML, fail-closed DAG resolution, restricted `ref()` rendering, and generic assertions prove the
+  owned raw-to-staging path; incremental materialization waits for an explicit idempotent contract.
 - 2026-07-29 — **The first hosted runtime is a daily, paused-first Cloud Run Job** — the public
   connector needs no stored credential; separate least-privilege runtime and scheduler identities,
   an immutable image digest, and bounded image retention minimize both access and cost exposure.
