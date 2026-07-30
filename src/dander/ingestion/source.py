@@ -204,6 +204,37 @@ class SourceConfig(BaseModel):
                 raise ValueError(
                     "oauth2_client_credentials requires an HTTPS auth_options.token_url"
                 )
+        elif self.auth_strategy == "oauth2_jwt":
+            missing = {"issuer", "private_key"} - self.auth_refs.keys()
+            if missing:
+                raise ValueError("oauth2_jwt requires auth_refs for " + ", ".join(sorted(missing)))
+            token_url = self.auth_options.get("token_url")
+            scope = self.auth_options.get("scope")
+            if not isinstance(token_url, str) or not token_url.startswith("https://"):
+                raise ValueError("oauth2_jwt requires an HTTPS auth_options.token_url")
+            if scope is not None and (not isinstance(scope, str) or not scope.strip()):
+                raise ValueError("oauth2_jwt auth_options.scope must be non-empty when set")
+            default_expires_in = self.auth_options.get("default_expires_in", 300)
+            if (
+                isinstance(default_expires_in, bool)
+                or not isinstance(default_expires_in, int)
+                or not 60 <= default_expires_in <= 3600
+            ):
+                raise ValueError(
+                    "oauth2_jwt auth_options.default_expires_in must be an integer from 60 to 3600"
+                )
+        elif self.auth_strategy == "oauth1_tba":
+            missing = {
+                "consumer_key",
+                "consumer_secret",
+                "token_id",
+                "token_secret",
+            } - self.auth_refs.keys()
+            if missing:
+                raise ValueError("oauth1_tba requires auth_refs for " + ", ".join(sorted(missing)))
+            account_id = self.auth_options.get("account_id")
+            if not isinstance(account_id, str) or not account_id.strip():
+                raise ValueError("oauth1_tba requires a non-empty auth_options.account_id")
         return self
 
 

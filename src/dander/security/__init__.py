@@ -4,6 +4,8 @@ from dander.security.api_key import ApiKeyBasic
 from dander.security.base import AuthStrategy
 from dander.security.no_auth import NoAuth
 from dander.security.oauth import OAuth2ClientCredentials, OAuthTokenError
+from dander.security.oauth1 import OAuth1TBA
+from dander.security.oauth_jwt import OAuth2JWT
 from dander.security.secret_manager import (
     DefaultSecretStore,
     EnvironmentSecretStore,
@@ -19,6 +21,8 @@ __all__ = [
     "GcpSecretStore",
     "NoAuth",
     "OAuth2ClientCredentials",
+    "OAuth2JWT",
+    "OAuth1TBA",
     "OAuthTokenError",
     "SecretResolutionError",
 ]

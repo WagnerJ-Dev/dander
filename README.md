@@ -131,6 +131,15 @@ pagination, cursor parameters, bounded backoff, response-envelope validation, an
 BigQuery scalar casts. Its complete test suite uses an injected fake transport; no Workday
 credential or employee row is stored in this repository.
 
+### Enterprise authentication templates
+
+`connectors/salesforce_jwt.example.yaml` demonstrates OAuth2 JWT bearer authentication with an
+RSA-key reference, optional delegated subject, and a conservative token cache for providers that
+omit `expires_in`. `connectors/netsuite.example.yaml` demonstrates OAuth1 TBA with four credential
+references and HMAC-SHA256 request signing. Copy either template to a local connector and replace
+only account/endpoint identifiers and secret reference names; do not place credential values in
+YAML.
+
 ### Strict $0 BigQuery Sandbox
 
 For evaluation without a billing account, create a

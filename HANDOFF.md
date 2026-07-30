@@ -2,41 +2,40 @@
 
 ## Finished
 
-- Compiled linear visual graphs into explicit-column BigQuery SQL.
-- Added direct, constant, scalar-expression, cast, and trusted custom-transform execution.
-- Enforced parsed row-local expressions, exact inputs, and function allow-lists.
-- Dispatched all five target write modes to their concrete BigQuery writers.
-- Made ambiguous joins and unsupported topology fail closed.
+- Added generic OAuth2 JWT bearer authentication with RSA signing and token caching.
+- Added RFC 5849 OAuth1 TBA with NetSuite's HMAC-SHA256 profile.
+- Wired both strategies through connector validation and CLI dispatch.
+- Added credential-free Salesforce JWT and NetSuite TBA connector templates.
+- Proved real RSA claim signing and deterministic OAuth1 signatures offline.
 
 ## Try It
 
-Load a `PipelineGraph`, call `compile_target(..., source_relations=...)`, inspect the returned
-query, then use `prepare_target_writer(...)` to bind the target write contract.
+Copy `connectors/salesforce_jwt.example.yaml` or `connectors/netsuite.example.yaml`, replace
+account identifiers and secret reference names, then run `uv run dander run NAME --dry-run`.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
-- `uv run mypy src tests` — passed across 80 source files.
-- `uv run pytest` — 396 passed.
+- `uv run mypy src tests` — passed across 83 source files.
+- `uv run pytest` — 406 passed.
 - `git diff --check` — passed.
 - Secret-pattern scan found only its intentional private-key detector fixture.
 
 ## Decisions
 
-- Visual SQL is parsed and allow-listed; no Python `eval` or arbitrary imports.
-- Writer preparation is side-effect free; only its explicit `write()` call reaches BigQuery.
-- Joins need a distinct output node before they can be executed safely.
+- JWT tokens use provider expiry or a conservative 300-second default.
+- OAuth1 resolves all credentials per request and signs query parameters deterministically.
+- Templates contain references only; no credentials or generated key material are committed.
 
 ## Remaining
 
 - Revise and execute the join graph shape.
 - Add bounded writer loads and controlled nested schema evolution.
 - Add hosted transform/catalog scheduling and run history.
-- Add JWT and OAuth1 TBA authentication.
 - Complete the release audit and external legal gate.
 
 ## Review First
 
-- `src/dander/pipeline/compiler.py`
-- `tests/pipeline/test_compiler.py`
+- `src/dander/security/oauth_jwt.py`
+- `src/dander/security/oauth1.py`
 - `docs/spec-alignment.md`

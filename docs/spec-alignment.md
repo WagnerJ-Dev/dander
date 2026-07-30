@@ -5,7 +5,7 @@ means the named upstream responsibility still has at least one unimplemented or 
 
 | Upstream module | Status | Current evidence | Missing proof |
 |---|---|---|---|
-| Security | Partial | Secret Manager and environment stores; API-key/basic, no-auth, and OAuth2 client-credentials strategies; per-secret runtime IAM and keyless GitHub WIF | JWT and OAuth1 TBA strategies |
+| Security | Implemented locally | Audited Secret Manager/environment stores; API-key/basic, no-auth, OAuth2 client-credentials, OAuth2 JWT bearer, and OAuth1 TBA strategies; per-secret runtime IAM and keyless GitHub WIF | Live provider exchanges intentionally require customer credentials |
 | Hybrid ingestion | Substantially implemented | Config-driven dlt REST extraction plus concrete Workday RaaS enterprise execution with auth, pagination, bounded backoff, cursor params, and BigQuery scalar casts | Live tenant proof intentionally unavailable without customer access; broader nested schema evolution |
 | BigQuery Writer | Substantially implemented | Idempotent SCD1 and cursor-validated incremental MERGE, append-only partitioned snapshots, transactional SCD2 history, sandbox replace, committed watermarks, and target-node writer dispatch | Bounded chunk/streaming loads; controlled target schema evolution |
 | Transform | Substantially implemented | Typed YAML, restricted `ref()` compilation, DAG ordering, view/table/incremental builds, four generic tests, and safe linear visual mapping/expression/custom-transform SQL compilation | Executable joins require a distinct join-output relation in the graph schema |
@@ -19,6 +19,5 @@ means the named upstream responsibility still has at least one unimplemented or 
 1. Revise the join graph shape to give joins two inputs and one distinct output, then compile it.
 2. Add bounded writer loads and controlled nested schema evolution.
 3. Add hosted transform/catalog execution and run-history observability.
-4. Add the remaining JWT and OAuth1 TBA authentication strategies.
-5. Run a requirement-by-requirement release audit; do not treat passing unit tests as production
+4. Run a requirement-by-requirement release audit; do not treat passing unit tests as production
    readiness or as satisfying the external legal gate.

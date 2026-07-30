@@ -36,7 +36,9 @@ from dander.security import (
     DefaultSecretStore,
     EnvironmentSecretStore,
     NoAuth,
+    OAuth1TBA,
     OAuth2ClientCredentials,
+    OAuth2JWT,
 )
 from dander.state import BigQueryWatermarkStore, SqliteWatermarkStore
 from dander.transform import (
@@ -462,6 +464,34 @@ def _build_auth(
             client_secret_ref=config.auth_refs["client_secret"],
             token_url=token_url,
             subject=subject,
+        )
+    if config.auth_strategy == "oauth2_jwt":
+        subject = config.auth_options.get("subject")
+        if subject is not None and not isinstance(subject, str):
+            raise ClickException("OAuth JWT subject must be a string")
+        scope = config.auth_options.get("scope")
+        if scope is not None and not isinstance(scope, str):
+            raise ClickException("OAuth JWT scope must be a string")
+        default_expires_in = config.auth_options.get("default_expires_in", 300)
+        if isinstance(default_expires_in, bool) or not isinstance(default_expires_in, int):
+            raise ClickException("OAuth JWT default_expires_in must be an integer")
+        return OAuth2JWT(
+            secrets,
+            issuer_ref=config.auth_refs["issuer"],
+            private_key_ref=config.auth_refs["private_key"],
+            token_url=str(config.auth_options["token_url"]),
+            scope=scope,
+            subject=subject,
+            default_expires_in=default_expires_in,
+        )
+    if config.auth_strategy == "oauth1_tba":
+        return OAuth1TBA(
+            secrets,
+            account_id=str(config.auth_options["account_id"]),
+            consumer_key_ref=config.auth_refs["consumer_key"],
+            consumer_secret_ref=config.auth_refs["consumer_secret"],
+            token_id_ref=config.auth_refs["token_id"],
+            token_secret_ref=config.auth_refs["token_secret"],
         )
     raise ClickException(f"Unsupported auth strategy: {config.auth_strategy!r}")
 

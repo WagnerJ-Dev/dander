@@ -53,3 +53,13 @@
 - Target configuration now dispatches every declared write mode to its concrete idempotent writer.
 - Join execution remains fail-closed because the current edge schema makes its target both the
   right join input and output. A distinct join-output node is required before execution is safe.
+
+## 2026-07-29 — Enterprise authentication profiles
+
+- OAuth2 JWT assertions use a secret-backed RSA key only during token acquisition. Tokens cache to
+  the provider expiry or a conservative 300-second default for providers such as Salesforce that
+  omit `expires_in`.
+- OAuth1 TBA signs every method, base URI, query, and OAuth parameter using RFC 5849 normalization
+  and NetSuite's HMAC-SHA256 profile; all four credentials are resolved fresh per request.
+- Connector files contain only secret references. Signing, token transport, nonce, and clocks are
+  injectable so the complete behavior is proven offline.

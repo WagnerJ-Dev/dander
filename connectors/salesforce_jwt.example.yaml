@@ -1,0 +1,19 @@
+# Template only. The connected-app issuer and RSA key are references, never literals. Salesforce
+# JWT bearer responses may omit expires_in, so Dander uses the conservative cache period below.
+name: salesforce
+engine: dlt
+base_url: https://YOUR_DOMAIN.my.salesforce.com/services/data/v61.0
+auth_strategy: oauth2_jwt
+auth_refs:
+  issuer: SALESFORCE_CONNECTED_APP_CLIENT_ID
+  private_key: SALESFORCE_CONNECTED_APP_PRIVATE_KEY
+auth_options:
+  token_url: https://login.salesforce.com/services/oauth2/token
+  subject: integration-user@example.com
+  default_expires_in: 300
+endpoints:
+  # Credential smoke-test endpoint. Add object/query resources only after choosing their fields
+  # and pagination contract for your org.
+  - name: organization_limits
+    path: /limits
+    pagination: none
