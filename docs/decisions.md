@@ -79,3 +79,10 @@
   plane: BigQuery for guarded/cloud execution and the existing SQLite file for sandbox execution.
 - History never stores rows, cursors, credentials, assertions, or exception text. A history-update
   failure during pipeline failure is logged without masking the original pipeline exception.
+
+## 2026-07-29 — Bounded BigQuery load jobs
+
+- Every writer accepts a validated `max_batch_rows` contract (10,000 by default, 100,000 maximum
+  in target config). One logical batch is validated/deduplicated before requests are split.
+- The first load request truncates its destination and later chunks append, preserving replacement
+  and unique-staging semantics without unbounded request payloads.

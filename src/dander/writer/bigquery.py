@@ -49,9 +49,16 @@ class BigQueryScd1Writer(WritePattern):
 
     mode = WriteMode.SCD1
 
-    def __init__(self, *, project: str, client: _BigQueryClient | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        project: str,
+        client: _BigQueryClient | None = None,
+        max_batch_rows: int = 10_000,
+    ) -> None:
         self._project = _validated_identifier(project, "project", allow_dash=True)
         self._client = client or cast("_BigQueryClient", bigquery.Client(project=project))
+        self._max_batch_rows = _validated_batch_size(max_batch_rows)
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
         """Write a consistently-shaped batch idempotently.
@@ -100,18 +107,13 @@ class BigQueryScd1Writer(WritePattern):
 
         staged_rows = list(deduplicated.values())
         staging_id = f"{target.project}.{target.dataset}._dander_stage_{target.table}_{uuid4().hex}"
-        load_config = bigquery.LoadJobConfig(
-            autodetect=True,
-            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-        )
-
         try:
-            self._client.load_table_from_json(
+            _load_rows_in_chunks(
+                self._client,
                 staged_rows,
                 staging_id,
-                job_config=load_config,
-            ).result()
+                max_batch_rows=self._max_batch_rows,
+            )
             self._client.query(_create_target_sql(target_id, staging_id, columns)).result()
             merge_job = self._client.query(
                 _merge_sql(target_id, staging_id, columns, target.business_key)
@@ -137,8 +139,9 @@ class BigQueryIncrementalWriter(BigQueryScd1Writer):
         project: str,
         cursor_field: str,
         client: _BigQueryClient | None = None,
+        max_batch_rows: int = 10_000,
     ) -> None:
-        super().__init__(project=project, client=client)
+        super().__init__(project=project, client=client, max_batch_rows=max_batch_rows)
         self._cursor_field = _validated_identifier(cursor_field, "cursor column")
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
@@ -165,10 +168,12 @@ class BigQuerySnapshotWriter(WritePattern):
         project: str,
         snapshot_field: str,
         client: _BigQueryClient | None = None,
+        max_batch_rows: int = 10_000,
     ) -> None:
         self._project = _validated_identifier(project, "project", allow_dash=True)
         self._snapshot_field = _validated_identifier(snapshot_field, "snapshot column")
         self._client = client or cast("_BigQueryClient", bigquery.Client(project=project))
+        self._max_batch_rows = _validated_batch_size(max_batch_rows)
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
         """Stage one or more snapshots and insert rows not already stored exactly."""
@@ -207,11 +212,12 @@ class BigQuerySnapshotWriter(WritePattern):
             self._client.delete_table(staging_id, not_found_ok=True)
 
     def _load(self, rows: Sequence[Mapping[str, Any]], staging_id: str) -> None:
-        self._client.load_table_from_json(
+        _load_rows_in_chunks(
+            self._client,
             rows,
             staging_id,
-            job_config=_truncate_load_config(),
-        ).result()
+            max_batch_rows=self._max_batch_rows,
+        )
 
 
 class BigQueryScd2Writer(WritePattern):
@@ -220,9 +226,16 @@ class BigQueryScd2Writer(WritePattern):
     mode = WriteMode.SCD2
     _SYSTEM_COLUMNS = ("valid_from", "valid_to", "is_current")
 
-    def __init__(self, *, project: str, client: _BigQueryClient | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        project: str,
+        client: _BigQueryClient | None = None,
+        max_batch_rows: int = 10_000,
+    ) -> None:
         self._project = _validated_identifier(project, "project", allow_dash=True)
         self._client = client or cast("_BigQueryClient", bigquery.Client(project=project))
+        self._max_batch_rows = _validated_batch_size(max_batch_rows)
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
         """Close changed current versions and insert their replacements transactionally."""
@@ -241,11 +254,12 @@ class BigQueryScd2Writer(WritePattern):
         staging_id = _staging_id(target)
 
         try:
-            self._client.load_table_from_json(
+            _load_rows_in_chunks(
+                self._client,
                 staged_rows,
                 staging_id,
-                job_config=_truncate_load_config(),
-            ).result()
+                max_batch_rows=self._max_batch_rows,
+            )
             self._client.query(_create_scd2_target_sql(target_id, staging_id, columns)).result()
             history_job = self._client.query(
                 _scd2_sql(target_id, staging_id, columns, target.business_key)
@@ -265,9 +279,16 @@ class BigQueryReplaceWriter(WritePattern):
 
     mode = WriteMode.REPLACE
 
-    def __init__(self, *, project: str, client: _BigQueryClient | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        project: str,
+        client: _BigQueryClient | None = None,
+        max_batch_rows: int = 10_000,
+    ) -> None:
         self._project = _validated_identifier(project, "project", allow_dash=True)
         self._client = client or cast("_BigQueryClient", bigquery.Client(project=project))
+        self._max_batch_rows = _validated_batch_size(max_batch_rows)
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
         """Replace the target without SQL or DML, including clearing an empty snapshot."""
@@ -294,16 +315,12 @@ class BigQueryReplaceWriter(WritePattern):
                     f"Record {index} has a different column set from the first record"
                 )
 
-        load_config = bigquery.LoadJobConfig(
-            autodetect=True,
-            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-        )
-        self._client.load_table_from_json(
+        _load_rows_in_chunks(
+            self._client,
             rows,
             target_id,
-            job_config=load_config,
-        ).result()
+            max_batch_rows=self._max_batch_rows,
+        )
         return len(rows)
 
 
@@ -311,6 +328,12 @@ def _validated_identifier(value: str, label: str, *, allow_dash: bool = False) -
     pattern = r"^[A-Za-z_][A-Za-z0-9_-]*$" if allow_dash else _IDENTIFIER.pattern
     if not re.fullmatch(pattern, value):
         raise BigQueryWriteError(f"Invalid {label}: {value!r}")
+    return value
+
+
+def _validated_batch_size(value: int) -> int:
+    if isinstance(value, bool) or value <= 0:
+        raise BigQueryWriteError("max_batch_rows must be a positive integer")
     return value
 
 
@@ -375,12 +398,33 @@ def _deduplicate_keyed(
     return list(deduplicated.values())
 
 
-def _truncate_load_config() -> bigquery.LoadJobConfig:
+def _load_config(write_disposition: str) -> bigquery.LoadJobConfig:
     return bigquery.LoadJobConfig(
         autodetect=True,
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        write_disposition=write_disposition,
     )
+
+
+def _load_rows_in_chunks(
+    client: _BigQueryClient,
+    rows: Sequence[Mapping[str, Any]],
+    destination: str,
+    *,
+    max_batch_rows: int,
+) -> None:
+    """Bound each load request while preserving one logical truncate-then-append batch."""
+    for offset in range(0, len(rows), max_batch_rows):
+        disposition = (
+            bigquery.WriteDisposition.WRITE_TRUNCATE
+            if offset == 0
+            else bigquery.WriteDisposition.WRITE_APPEND
+        )
+        client.load_table_from_json(
+            rows[offset : offset + max_batch_rows],
+            destination,
+            job_config=_load_config(disposition),
+        ).result()
 
 
 def _quoted_columns(columns: Sequence[str], *, alias: str | None = None) -> str:

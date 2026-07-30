@@ -12,5 +12,6 @@ shape before mutation, and delete staging in a `finally` block.
 | `BigQueryReplaceWriter` | Direct `WRITE_TRUNCATE` load for no-DML sandbox operation. |
 
 SCD2 reserves `valid_from`, `valid_to`, and `is_current`. Snapshot input must contain the
-configured non-null timestamp/date partition field. These writers hold and validate one endpoint
-batch in memory; bounded chunk loading and controlled schema evolution remain separate work.
+configured non-null timestamp/date partition field. Writers validate the logical endpoint batch
+once, then bound each BigQuery load request with `max_batch_rows` (truncate first, append
+thereafter). Controlled schema evolution and Storage Write API selection remain separate work.

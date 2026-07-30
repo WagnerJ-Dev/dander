@@ -245,6 +245,7 @@ class WriterConfig(BaseModel):
     cursor_field: str | None = None
     partitioning: PartitioningSpec | None = None
     clustering: list[str] = Field(default_factory=list, max_length=4)
+    max_batch_rows: int = Field(default=10_000, gt=0, le=100_000)
 
     @model_validator(mode="after")
     def _check_mode_requirements(self) -> WriterConfig:

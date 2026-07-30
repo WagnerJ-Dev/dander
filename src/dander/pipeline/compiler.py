@@ -338,15 +338,24 @@ def prepare_target_writer(
     typed_client = cast("_BigQueryClient | None", client)
     match writer_config.write_mode:
         case WriteMode.SCD1:
-            writer: WritePattern = BigQueryScd1Writer(project=project, client=typed_client)
+            writer: WritePattern = BigQueryScd1Writer(
+                project=project,
+                client=typed_client,
+                max_batch_rows=writer_config.max_batch_rows,
+            )
         case WriteMode.SCD2:
-            writer = BigQueryScd2Writer(project=project, client=typed_client)
+            writer = BigQueryScd2Writer(
+                project=project,
+                client=typed_client,
+                max_batch_rows=writer_config.max_batch_rows,
+            )
         case WriteMode.INCREMENTAL:
             assert writer_config.cursor_field is not None
             writer = BigQueryIncrementalWriter(
                 project=project,
                 cursor_field=writer_config.cursor_field,
                 client=typed_client,
+                max_batch_rows=writer_config.max_batch_rows,
             )
         case WriteMode.SNAPSHOT:
             partitioning = writer_config.partitioning
@@ -358,9 +367,14 @@ def prepare_target_writer(
                 project=project,
                 snapshot_field=partitioning.field,
                 client=typed_client,
+                max_batch_rows=writer_config.max_batch_rows,
             )
         case WriteMode.REPLACE:
-            writer = BigQueryReplaceWriter(project=project, client=typed_client)
+            writer = BigQueryReplaceWriter(
+                project=project,
+                client=typed_client,
+                max_batch_rows=writer_config.max_batch_rows,
+            )
     return PreparedTargetWriter(
         writer=writer,
         target=WriteTarget(

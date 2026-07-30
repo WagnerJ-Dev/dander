@@ -39,10 +39,12 @@ class _Client:
     def __init__(self, *, load_error: Exception | None = None) -> None:
         self.load_error = load_error
         self.loaded_rows: list[dict[str, Any]] = []
+        self.loaded_batches: list[list[dict[str, Any]]] = []
         self.destination = ""
         self.queries: list[str] = []
         self.deleted: list[str] = []
         self.write_disposition: str | None = None
+        self.write_dispositions: list[str] = []
 
     def load_table_from_json(
         self,
@@ -53,7 +55,9 @@ class _Client:
     ) -> _Job:
         assert job_config.autodetect
         self.write_disposition = job_config.write_disposition
+        self.write_dispositions.append(job_config.write_disposition)
         self.loaded_rows = [dict(row) for row in json_rows]
+        self.loaded_batches.append(self.loaded_rows)
         self.destination = destination
         return _Job(error=self.load_error)
 
@@ -144,6 +148,29 @@ def test_replace_writer_deletes_stale_table_for_empty_snapshot() -> None:
 
     assert client.deleted == ["unit-project.raw.example_widgets"]
     assert client.queries == []
+
+
+def test_replace_writer_bounds_load_requests_and_appends_after_first_chunk() -> None:
+    client = _Client()
+    writer = BigQueryReplaceWriter(
+        project="unit-project",
+        client=client,
+        max_batch_rows=2,
+    )
+
+    affected = writer.write(
+        [{"id": "one"}, {"id": "two"}, {"id": "three"}, {"id": "four"}, {"id": "five"}],
+        _target(),
+    )
+
+    assert affected == 5
+    assert [len(batch) for batch in client.loaded_batches] == [2, 2, 1]
+    assert client.write_dispositions == ["WRITE_TRUNCATE", "WRITE_APPEND", "WRITE_APPEND"]
+
+
+def test_writer_rejects_invalid_batch_bound() -> None:
+    with pytest.raises(BigQueryWriteError, match="positive integer"):
+        BigQueryScd1Writer(project="unit-project", client=_Client(), max_batch_rows=0)
 
 
 def test_incremental_writer_requires_cursor_and_reuses_idempotent_merge() -> None:
