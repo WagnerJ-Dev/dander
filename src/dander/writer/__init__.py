@@ -1,6 +1,6 @@
 """BigQuery writer module: explicit, idempotent write patterns."""
 
-from dander.writer.base import WriteMode, WritePattern, WriteTarget
+from dander.writer.base import SchemaEvolution, WriteField, WriteMode, WritePattern, WriteTarget
 from dander.writer.bigquery import (
     BigQueryIncrementalWriter,
     BigQueryReplaceWriter,
@@ -17,6 +17,8 @@ __all__ = [
     "BigQueryScd2Writer",
     "BigQuerySnapshotWriter",
     "BigQueryWriteError",
+    "SchemaEvolution",
+    "WriteField",
     "WriteMode",
     "WritePattern",
     "WriteTarget",

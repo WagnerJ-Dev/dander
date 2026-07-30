@@ -8,12 +8,17 @@ from uuid import uuid4
 
 from google.cloud import bigquery
 
-from dander.writer.base import WriteMode, WritePattern, WriteTarget
+from dander.writer.base import SchemaEvolution, WriteMode, WritePattern, WriteTarget
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_SCALAR_TYPE = re.compile(
+    r"^(?:BOOL|BOOLEAN|BYTES|DATE|DATETIME|FLOAT64|GEOGRAPHY|INT64|INTEGER|JSON|"
+    r"NUMERIC|BIGNUMERIC|STRING|TIME|TIMESTAMP)$",
+    re.IGNORECASE,
+)
 
 
 class BigQueryWriteError(ValueError):
@@ -55,10 +60,12 @@ class BigQueryScd1Writer(WritePattern):
         project: str,
         client: _BigQueryClient | None = None,
         max_batch_rows: int = 10_000,
+        schema_evolution: SchemaEvolution = SchemaEvolution.STRICT,
     ) -> None:
         self._project = _validated_identifier(project, "project", allow_dash=True)
         self._client = client or cast("_BigQueryClient", bigquery.Client(project=project))
         self._max_batch_rows = _validated_batch_size(max_batch_rows)
+        self._schema_evolution = schema_evolution
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
         """Write a consistently-shaped batch idempotently.
@@ -106,6 +113,7 @@ class BigQueryScd1Writer(WritePattern):
                 ) from error
 
         staged_rows = list(deduplicated.values())
+        _validate_declared_schema(target, self._schema_evolution)
         staging_id = f"{target.project}.{target.dataset}._dander_stage_{target.table}_{uuid4().hex}"
         try:
             _load_rows_in_chunks(
@@ -115,6 +123,12 @@ class BigQueryScd1Writer(WritePattern):
                 max_batch_rows=self._max_batch_rows,
             )
             self._client.query(_create_target_sql(target_id, staging_id, columns)).result()
+            _apply_schema_evolution(
+                self._client,
+                target_id,
+                target,
+                self._schema_evolution,
+            )
             merge_job = self._client.query(
                 _merge_sql(target_id, staging_id, columns, target.business_key)
             )
@@ -140,8 +154,14 @@ class BigQueryIncrementalWriter(BigQueryScd1Writer):
         cursor_field: str,
         client: _BigQueryClient | None = None,
         max_batch_rows: int = 10_000,
+        schema_evolution: SchemaEvolution = SchemaEvolution.STRICT,
     ) -> None:
-        super().__init__(project=project, client=client, max_batch_rows=max_batch_rows)
+        super().__init__(
+            project=project,
+            client=client,
+            max_batch_rows=max_batch_rows,
+            schema_evolution=schema_evolution,
+        )
         self._cursor_field = _validated_identifier(cursor_field, "cursor column")
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
@@ -169,11 +189,13 @@ class BigQuerySnapshotWriter(WritePattern):
         snapshot_field: str,
         client: _BigQueryClient | None = None,
         max_batch_rows: int = 10_000,
+        schema_evolution: SchemaEvolution = SchemaEvolution.STRICT,
     ) -> None:
         self._project = _validated_identifier(project, "project", allow_dash=True)
         self._snapshot_field = _validated_identifier(snapshot_field, "snapshot column")
         self._client = client or cast("_BigQueryClient", bigquery.Client(project=project))
         self._max_batch_rows = _validated_batch_size(max_batch_rows)
+        self._schema_evolution = schema_evolution
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
         """Stage one or more snapshots and insert rows not already stored exactly."""
@@ -190,6 +212,7 @@ class BigQuerySnapshotWriter(WritePattern):
             if row[self._snapshot_field] is None:
                 raise BigQueryWriteError(f"Record {index} has a null snapshot value")
 
+        _validate_declared_schema(target, self._schema_evolution)
         staging_id = _staging_id(target)
         try:
             self._load(rows, staging_id)
@@ -201,6 +224,12 @@ class BigQuerySnapshotWriter(WritePattern):
                     self._snapshot_field,
                 )
             ).result()
+            _apply_schema_evolution(
+                self._client,
+                target_id,
+                target,
+                self._schema_evolution,
+            )
             insert_job = self._client.query(_snapshot_insert_sql(target_id, staging_id, columns))
             insert_job.result()
             return (
@@ -232,10 +261,12 @@ class BigQueryScd2Writer(WritePattern):
         project: str,
         client: _BigQueryClient | None = None,
         max_batch_rows: int = 10_000,
+        schema_evolution: SchemaEvolution = SchemaEvolution.STRICT,
     ) -> None:
         self._project = _validated_identifier(project, "project", allow_dash=True)
         self._client = client or cast("_BigQueryClient", bigquery.Client(project=project))
         self._max_batch_rows = _validated_batch_size(max_batch_rows)
+        self._schema_evolution = schema_evolution
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
         """Close changed current versions and insert their replacements transactionally."""
@@ -251,6 +282,7 @@ class BigQueryScd2Writer(WritePattern):
         if collisions:
             raise BigQueryWriteError(f"SCD2 input uses reserved column {collisions[0]!r}")
         staged_rows = _deduplicate_keyed(rows, columns, target.business_key)
+        _validate_declared_schema(target, self._schema_evolution)
         staging_id = _staging_id(target)
 
         try:
@@ -261,6 +293,12 @@ class BigQueryScd2Writer(WritePattern):
                 max_batch_rows=self._max_batch_rows,
             )
             self._client.query(_create_scd2_target_sql(target_id, staging_id, columns)).result()
+            _apply_schema_evolution(
+                self._client,
+                target_id,
+                target,
+                self._schema_evolution,
+            )
             history_job = self._client.query(
                 _scd2_sql(target_id, staging_id, columns, target.business_key)
             )
@@ -335,6 +373,46 @@ def _validated_batch_size(value: int) -> int:
     if isinstance(value, bool) or value <= 0:
         raise BigQueryWriteError("max_batch_rows must be a positive integer")
     return value
+
+
+def _apply_schema_evolution(
+    client: _BigQueryClient,
+    target_id: str,
+    target: WriteTarget,
+    mode: SchemaEvolution,
+) -> None:
+    """Add only declared scalar columns; never mutate or remove existing columns."""
+    fields = _validate_declared_schema(target, mode)
+    if not fields:
+        return
+    statements: list[str] = []
+    for name, data_type in fields:
+        statements.append(
+            f"ALTER TABLE `{target_id}` ADD COLUMN IF NOT EXISTS `{name}` {data_type}"
+        )
+    client.query(";\n".join(statements)).result()
+
+
+def _validate_declared_schema(
+    target: WriteTarget,
+    mode: SchemaEvolution,
+) -> tuple[tuple[str, str], ...]:
+    if mode is SchemaEvolution.STRICT:
+        return ()
+    if not target.schema:
+        raise BigQueryWriteError("Additive schema evolution requires a declared target schema")
+    seen: set[str] = set()
+    fields: list[tuple[str, str]] = []
+    for field in target.schema:
+        name = _validated_identifier(field.name, "schema column")
+        data_type = field.data_type.upper()
+        if not _SCALAR_TYPE.fullmatch(data_type):
+            raise BigQueryWriteError(f"Unsupported additive schema type: {field.data_type!r}")
+        if name in seen:
+            raise BigQueryWriteError(f"Duplicate declared schema column: {name!r}")
+        seen.add(name)
+        fields.append((name, data_type))
+    return tuple(fields)
 
 
 def _target_id(target: WriteTarget) -> str:

@@ -26,6 +26,21 @@ class WriteMode(StrEnum):
     REPLACE = "replace"  # full-table replacement through a load job
 
 
+class SchemaEvolution(StrEnum):
+    """How a writer handles declared columns absent from an existing target."""
+
+    STRICT = "strict"
+    ADDITIVE = "additive"
+
+
+@dataclass(frozen=True)
+class WriteField:
+    """One declared target column used for controlled schema evolution."""
+
+    name: str
+    data_type: str
+
+
 @dataclass(frozen=True)
 class WriteTarget:
     """Fully-qualified BigQuery destination for a write."""
@@ -34,6 +49,7 @@ class WriteTarget:
     dataset: str
     table: str
     business_key: tuple[str, ...] = field(default_factory=tuple)
+    schema: tuple[WriteField, ...] = field(default_factory=tuple)
 
 
 class WritePattern(ABC):

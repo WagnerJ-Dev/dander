@@ -22,6 +22,7 @@ from dander.writer import (
     BigQueryScd1Writer,
     BigQueryScd2Writer,
     BigQuerySnapshotWriter,
+    WriteField,
     WriteMode,
     WritePattern,
     WriteTarget,
@@ -159,6 +160,10 @@ def compile_target(
             dataset=destination.dataset,
             table=destination.table,
             business_key=tuple(destination.business_key),
+            schema=tuple(
+                WriteField(name=field.name, data_type=field.cast_to or field.type)
+                for field in target.fields
+            ),
         ),
     )
 
@@ -342,12 +347,14 @@ def prepare_target_writer(
                 project=project,
                 client=typed_client,
                 max_batch_rows=writer_config.max_batch_rows,
+                schema_evolution=writer_config.schema_evolution,
             )
         case WriteMode.SCD2:
             writer = BigQueryScd2Writer(
                 project=project,
                 client=typed_client,
                 max_batch_rows=writer_config.max_batch_rows,
+                schema_evolution=writer_config.schema_evolution,
             )
         case WriteMode.INCREMENTAL:
             assert writer_config.cursor_field is not None
@@ -356,6 +363,7 @@ def prepare_target_writer(
                 cursor_field=writer_config.cursor_field,
                 client=typed_client,
                 max_batch_rows=writer_config.max_batch_rows,
+                schema_evolution=writer_config.schema_evolution,
             )
         case WriteMode.SNAPSHOT:
             partitioning = writer_config.partitioning
@@ -368,6 +376,7 @@ def prepare_target_writer(
                 snapshot_field=partitioning.field,
                 client=typed_client,
                 max_batch_rows=writer_config.max_batch_rows,
+                schema_evolution=writer_config.schema_evolution,
             )
         case WriteMode.REPLACE:
             writer = BigQueryReplaceWriter(
@@ -382,6 +391,10 @@ def prepare_target_writer(
             dataset=destination.dataset,
             table=destination.table,
             business_key=tuple(destination.business_key),
+            schema=tuple(
+                WriteField(name=field.name, data_type=field.cast_to or field.type)
+                for field in target_node.fields
+            ),
         ),
     )
 

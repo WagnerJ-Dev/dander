@@ -2,39 +2,39 @@
 
 ## Finished
 
-- Added configurable load-job bounds to every BigQuery writer.
-- Split large logical batches into deterministic row chunks.
-- Truncated on the first load and appended every later chunk.
-- Preserved pre-load validation, deduplication, idempotence, and cleanup.
-- Synchronized `.env.example` with every enterprise connector secret reference.
+- Added strict/additive schema policy to visual target configuration.
+- Carried declared target fields into concrete writer contracts.
+- Added nullable scalar columns through idempotent BigQuery DDL.
+- Rejected missing, duplicate, nested, and unsupported declarations before loading.
+- Preserved existing columns, types, modes, write patterns, and strict defaults.
 
 ## Try It
 
-Set target `writer.max_batch_rows` when preparing a visual writer, or pass `max_batch_rows` to a
-concrete writer. The default is 10,000 rows per BigQuery load request.
+Set `writer.schema_evolution: additive` on a visual target. Its declared `fields` become the
+allowed schema; omit the option to retain strict behavior.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
 - `uv run mypy src tests` — passed across 85 source files.
-- `uv run pytest` — 415 passed.
+- `uv run pytest` — 417 passed.
 - `git diff --check` — passed.
 - Secret-pattern scan found only its intentional private-key detector fixture.
 
 ## Decisions
 
-- Logical batches validate and deduplicate before splitting.
-- Request bounds do not change write-mode semantics.
-- Storage Write API remains a separate workload path, not a renamed load job.
+- Additive evolution is explicit and scalar-only.
+- New columns are nullable; existing definitions are untouched.
+- Storage Write API remains the final local writer architecture gap.
 
 ## Remaining
 
-- Add controlled schema evolution and Storage Write API workload selection.
+- Add Storage Write API workload selection.
 - Add hosted transform/catalog scheduling.
 - Complete the release audit and external legal gate.
 
 ## Review First
 
+- `src/dander/writer/base.py`
 - `src/dander/writer/bigquery.py`
-- `tests/writer/test_bigquery_writer.py`
 - `docs/spec-alignment.md`

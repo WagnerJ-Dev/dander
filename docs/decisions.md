@@ -86,3 +86,10 @@
   in target config). One logical batch is validated/deduplicated before requests are split.
 - The first load request truncates its destination and later chunks append, preserving replacement
   and unique-staging semantics without unbounded request payloads.
+
+## 2026-07-29 — Controlled schema evolution
+
+- Target-node fields become the writer's declared schema. Strict mode remains the default;
+  additive mode emits idempotent nullable additions for supported BigQuery scalar types only.
+- Additive evolution never drops columns, changes types/modes, or infers nested structures.
+  Invalid and duplicate declarations fail before a load request.

@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # `PydanticUserError: '<Model>' is not fully defined` on import; verified with a minimal repro
 # before overriding the rule here.
 from dander.pipeline.request_spec import RequestSpec  # noqa: TC001
-from dander.writer.base import WriteMode  # noqa: TC001
+from dander.writer.base import SchemaEvolution, WriteMode  # noqa: TC001
 
 
 class NodeType(StrEnum):
@@ -229,6 +229,9 @@ class WriterConfig(BaseModel):
         partitioning: Optional partitioning spec. `None` means an unpartitioned destination.
         clustering: Ordered clustering column names. BigQuery caps clustering at 4 columns, so
             this is capped here too (`max_length=4`); duplicate column names are rejected.
+        max_batch_rows: Maximum rows sent in one BigQuery load-job request.
+        schema_evolution: `strict` by default; `additive` permits only declared scalar target
+            fields to be added as nullable columns, never changed or removed.
 
     `hide_input_in_errors=True` is set for the same reason `dander.pipeline.graph.Node` and
     `dander.pipeline.request_spec.RequestSpec` set it: without it, Pydantic's default
@@ -246,6 +249,7 @@ class WriterConfig(BaseModel):
     partitioning: PartitioningSpec | None = None
     clustering: list[str] = Field(default_factory=list, max_length=4)
     max_batch_rows: int = Field(default=10_000, gt=0, le=100_000)
+    schema_evolution: SchemaEvolution = SchemaEvolution.STRICT
 
     @model_validator(mode="after")
     def _check_mode_requirements(self) -> WriterConfig:

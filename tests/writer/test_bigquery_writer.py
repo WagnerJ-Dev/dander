@@ -13,6 +13,8 @@ from dander.writer import (
     BigQueryScd2Writer,
     BigQuerySnapshotWriter,
     BigQueryWriteError,
+    SchemaEvolution,
+    WriteField,
     WriteMode,
     WritePattern,
     WriteTarget,
@@ -171,6 +173,57 @@ def test_replace_writer_bounds_load_requests_and_appends_after_first_chunk() -> 
 def test_writer_rejects_invalid_batch_bound() -> None:
     with pytest.raises(BigQueryWriteError, match="positive integer"):
         BigQueryScd1Writer(project="unit-project", client=_Client(), max_batch_rows=0)
+
+
+def test_additive_schema_evolution_adds_only_declared_scalar_columns() -> None:
+    client = _Client()
+    writer = BigQueryScd1Writer(
+        project="unit-project",
+        client=client,
+        schema_evolution=SchemaEvolution.ADDITIVE,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(
+            WriteField(name="id", data_type="STRING"),
+            WriteField(name="label", data_type="STRING"),
+        ),
+    )
+
+    writer.write([{"id": "one", "label": "new"}], target)
+
+    evolution = client.queries[1]
+    assert evolution == (
+        "ALTER TABLE `unit-project.raw.example_widgets` "
+        "ADD COLUMN IF NOT EXISTS `id` STRING;\n"
+        "ALTER TABLE `unit-project.raw.example_widgets` "
+        "ADD COLUMN IF NOT EXISTS `label` STRING"
+    )
+    assert client.queries[2].startswith("MERGE")
+
+
+def test_additive_schema_rejects_unsupported_type_before_load() -> None:
+    client = _Client()
+    writer = BigQueryScd1Writer(
+        project="unit-project",
+        client=client,
+        schema_evolution=SchemaEvolution.ADDITIVE,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(WriteField(name="id", data_type="STRUCT<value STRING>"),),
+    )
+
+    with pytest.raises(BigQueryWriteError, match="Unsupported additive schema type"):
+        writer.write([{"id": "one"}], target)
+
+    assert client.loaded_batches == []
 
 
 def test_incremental_writer_requires_cursor_and_reuses_idempotent_merge() -> None:
