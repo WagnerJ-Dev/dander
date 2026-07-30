@@ -121,3 +121,11 @@
 - Marketo's official client-credential query placement is supported explicitly while API calls
   continue using bearer headers. Connector files still contain references and tenant placeholders,
   never credential values.
+
+## 2026-07-30 — Sensitive-system scope is hypothetical
+
+- Workday, Xactly, Salesforce, NetSuite, and similar systems are target connector categories, not
+  evidence that Dander derives from, connects to, or contains data from an existing company.
+- Do not infer employer ownership, regulated-company affiliation, customer records, or HR records
+  from the architecture note. Apply normal provenance and privacy review only when actual
+  employer-owned material, credentials, or non-public data enters scope.

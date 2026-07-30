@@ -25,13 +25,13 @@ connector, replace `MUNCHKIN_ID`, and supply only the named environment or Secre
 
 - dlt retries only GET/HEAD and never mutating requests.
 - Marketo token credentials use its documented query placement; API tokens use bearer headers.
-- “Implemented locally” never implies provider, billing, production, or legal approval.
+- Sensitive-system names are hypothetical connector scope, not company provenance.
 
 ## Remaining
 
-- Obtain upstream-required OSS/legal approval before customer-data release.
+- Decide whether to leave the daily 09:00 Cloud Scheduler run enabled.
 - Run Marketo and enterprise tenant integrations when credentials are available.
-- Run hosted, Dataplex, and Storage Write proofs only with explicit cost authorization.
+- Run hosted, Dataplex, and Storage Write proofs only with explicit per-run cost approval.
 - Stream/spool very large endpoint extracts instead of holding a logical batch in memory.
 - Add nested/repeated schema evolution only from explicit reviewed contracts.
 

@@ -2,7 +2,8 @@
 
 Audited against the live `WagnerJ-Dev/dander` north star on 2026-07-29. “Implemented locally”
 means code, offline tests, and static infrastructure validation exist. It does not imply that
-provider credentials, billable cloud mutations, or the upstream legal gate have been cleared.
+provider credentials or every billable cloud mutation have been validated. Sensitive-system names
+are treated as hypothetical connector scope, not evidence of an existing-company relationship.
 
 ## Requirement evidence
 
@@ -30,18 +31,20 @@ Python `WritePattern` interface. This avoids pulling transform data out of BigQu
 
 - The credential-free Greenhouse path is the only live source proof available without a customer
   account. Marketo and enterprise provider exchanges are tested offline and require tenant access.
-- Storage Write, hosted Cloud Run, the live billing kill switch, and Dataplex publication still
-  require explicit billable-project authorization. Free allowances are not a hard cost ceiling.
+- The sandbox project currently has billing enabled, a USD 5 monthly budget, Pub/Sub notifications,
+  and a live billing-detachment service. Budgets and automated actions still have reporting delay,
+  so each additional billable test requires deliberate scope.
 - Endpoint extraction is still accumulated in memory before a logical write. Bounded writer
   requests protect BigQuery payload size, not total-process memory for very large sources.
 - Nested/repeated automatic schema evolution is intentionally unsupported; only declared nullable
   scalar additions are automatic.
-- A public or customer-data release remains blocked by the upstream requirement for internal
-  OSS/legal review. Engineering checks cannot satisfy that approval.
+- The architecture's HR/customer system names are product examples only. Normal provenance,
+  licensing, and privacy review becomes a release gate only if employer-owned material,
+  credentials, or non-public records are introduced.
 
 ## Verdict
 
 This branch is a reasonable, runnable v0 of the stated architecture and has local implementation
-evidence for every named module. It is not yet a production-certified or legally cleared release.
-The remaining blockers need external authority, credentials, or a willingness to incur cloud cost;
+evidence for every named module. It is not yet a production-certified release.
+The remaining production proofs need vendor credentials or deliberately scoped cloud execution;
 they are not gaps that should be papered over with mocks.

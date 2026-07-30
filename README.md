@@ -402,9 +402,10 @@ shows each run's agents with their role, ticket, and live PASS/FAIL verdicts:
 Runnable ingestion v0: the Greenhouse → BigQuery production SCD1 path, strict no-billing sandbox,
 and billing-linked guarded preflight, plus audited secret resolution, watermark state, dry-run
 planning, and BigQuery Terraform bootstrap are implemented and unit-tested. The limits above still
-make this **unsuitable for production**, and it must not be open-sourced before internal OSS/legal
-review (it touches HR/comp and customer data — see
-`steering/00-project-overview.md`).
+make this **unsuitable for production**. The named HR, compensation, and customer systems describe
+possible connector categories; they do not imply that this repository came from, connects to, or
+contains data from an existing company. Normal provenance, licensing, and privacy review still
+applies before adding employer-owned code or non-public data.
 
 ## License
 
