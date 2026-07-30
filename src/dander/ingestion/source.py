@@ -134,9 +134,8 @@ class RateLimitConfig(BaseModel):
 
     Satisfies the per-source throttling requirement in `steering/02-engineering.md` ("Rate-limit/
     backoff per source (Marketo & Salesforce throttle). Retries are bounded and logged.") by
-    giving that requirement a config home. This model is **declaration-only**: no throttling,
-    sleeping, or retrying is performed here — that is the ingestion runtime's responsibility (a
-    later ticket), which will read this policy off `SourceConfig.rate_limit`.
+    giving that requirement a config home. Both the dlt REST adapter and enterprise runtime apply
+    this policy; the dlt adapter uses token-bucket pacing and retries only safe read methods.
 
     Attributes:
         requests_per_second: Steady-state request rate allowed against the source. Must be
@@ -203,6 +202,12 @@ class SourceConfig(BaseModel):
             if not isinstance(token_url, str) or not token_url.startswith("https://"):
                 raise ValueError(
                     "oauth2_client_credentials requires an HTTPS auth_options.token_url"
+                )
+            credential_placement = self.auth_options.get("credential_placement", "basic")
+            if credential_placement not in {"basic", "body", "query"}:
+                raise ValueError(
+                    "oauth2_client_credentials auth_options.credential_placement "
+                    "must be basic, body, or query"
                 )
         elif self.auth_strategy == "oauth2_jwt":
             missing = {"issuer", "private_key"} - self.auth_refs.keys()

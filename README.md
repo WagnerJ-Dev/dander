@@ -122,6 +122,14 @@ See Greenhouse's [v3 authentication guide](https://harvestdocs.greenhouse.io/doc
 `greenhouse_harvest_v1_legacy` preserves API-key compatibility during migration only. Greenhouse
 states that Harvest v1/v2 become unavailable after 2026-08-31; new deployments should not use it.
 
+`connectors/marketo.example.yaml` is the second standard-REST template. Copy it to
+`connectors/marketo.yaml`, replace `MUNCHKIN_ID`, and provide the two named secret references.
+It follows Adobe's current two-legged OAuth token shape, sends API access tokens in the
+`Authorization` header, pages the read-only Programs endpoint, and enforces the documented
+[five-request-per-second instance rate](https://experienceleague.adobe.com/en/docs/marketo-developer/marketo/rest/rest-api).
+See Adobe's [authentication guide](https://experienceleague.adobe.com/en/docs/marketo-developer/marketo/rest/authentication)
+for the tenant-side custom-service setup.
+
 ### Hand-rolled Workday path
 
 `WorkdayRaasSource` proves the second half of the hybrid-ingestion design without dlt. Copy

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import httpx
 import pytest
 
-from dander.security import OAuth2ClientCredentials, OAuthTokenError
+from dander.security import ClientCredentialPlacement, OAuth2ClientCredentials, OAuthTokenError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -35,8 +35,9 @@ class _TokenServer:
         self,
         url: str,
         *,
-        auth: tuple[str, str],
+        auth: tuple[str, str] | None,
         data: Mapping[str, str],
+        params: Mapping[str, str],
         headers: Mapping[str, str],
         timeout: float,
     ) -> httpx.Response:
@@ -45,6 +46,7 @@ class _TokenServer:
                 "url": url,
                 "auth": auth,
                 "data": dict(data),
+                "params": dict(params),
                 "headers": dict(headers),
                 "timeout": timeout,
             }
@@ -62,6 +64,7 @@ def _strategy(
     *,
     clock: Callable[[], float] = lambda: 100.0,
     subject: int | None = None,
+    credential_placement: ClientCredentialPlacement = ClientCredentialPlacement.BASIC,
 ) -> tuple[OAuth2ClientCredentials, _Secrets]:
     secrets = _Secrets({"id_ref": token_urlsafe(), "secret_ref": token_urlsafe()})
     strategy = OAuth2ClientCredentials(
@@ -70,6 +73,7 @@ def _strategy(
         client_secret_ref="secret_ref",
         token_url="https://auth.example.test/token",
         subject=subject,
+        credential_placement=credential_placement,
         request_token=server,
         clock=clock,
     )
@@ -92,10 +96,53 @@ def test_oauth_uses_basic_token_exchange_and_caches_bearer() -> None:
             "url": "https://auth.example.test/token",
             "auth": (secrets.values["id_ref"], secrets.values["secret_ref"]),
             "data": {"grant_type": "client_credentials", "sub": "42"},
+            "params": {},
             "headers": {"Content-Type": "application/x-www-form-urlencoded"},
             "timeout": 30.0,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("placement", "expected_auth", "expected_data", "expected_params"),
+    [
+        (
+            ClientCredentialPlacement.BODY,
+            None,
+            {
+                "grant_type": "client_credentials",
+                "client_id": "CLIENT_ID",
+                "client_secret": "CLIENT_SECRET",
+            },
+            {},
+        ),
+        (
+            ClientCredentialPlacement.QUERY,
+            None,
+            {},
+            {
+                "grant_type": "client_credentials",
+                "client_id": "CLIENT_ID",
+                "client_secret": "CLIENT_SECRET",
+            },
+        ),
+    ],
+)
+def test_oauth_supports_provider_credential_placement(
+    placement: ClientCredentialPlacement,
+    expected_auth: tuple[str, str] | None,
+    expected_data: dict[str, str],
+    expected_params: dict[str, str],
+) -> None:
+    server = _TokenServer([{"access_token": token_urlsafe(), "expires_in": 3600}])
+    strategy, secrets = _strategy(server, credential_placement=placement)
+    secrets.values = {"id_ref": "CLIENT_ID", "secret_ref": "CLIENT_SECRET"}
+
+    strategy.apply(httpx.Request("GET", "https://api.example.test"))
+
+    assert server.calls[0]["auth"] == expected_auth
+    assert server.calls[0]["data"] == expected_data
+    assert server.calls[0]["params"] == expected_params
 
 
 def test_oauth_refreshes_after_expiry_or_explicit_refresh() -> None:
@@ -151,4 +198,15 @@ def test_oauth_requires_https_token_endpoint() -> None:
             client_id_ref="id",
             client_secret_ref="secret",
             token_url="http://auth.example.test/token",
+        )
+
+
+def test_oauth_rejects_unknown_credential_placement() -> None:
+    with pytest.raises(ValueError, match="placement"):
+        OAuth2ClientCredentials(
+            _Secrets({}),
+            client_id_ref="id",
+            client_secret_ref="secret",
+            token_url="https://auth.example.test/token",
+            credential_placement="header",
         )

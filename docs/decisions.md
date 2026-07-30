@@ -112,3 +112,12 @@
   prevents all later publication.
 - Local registry compilation is the hosted default. Dataplex storage requires an explicit
   bootstrap flag that separately enables its API and runtime IAM.
+
+## 2026-07-29 — Standard REST source rate control
+
+- A dlt connector with a rate policy receives a private session that applies token-bucket pacing,
+  safe-read-only retries, and fixed or exponential backoff; connectors without a policy retain
+  dlt's default session.
+- Marketo's official client-credential query placement is supported explicitly while API calls
+  continue using bearer headers. Connector files still contain references and tenant placeholders,
+  never credential values.

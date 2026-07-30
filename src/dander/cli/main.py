@@ -33,6 +33,7 @@ from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafet
 from dander.security import (
     ApiKeyBasic,
     AuthStrategy,
+    ClientCredentialPlacement,
     DefaultSecretStore,
     EnvironmentSecretStore,
     NoAuth,
@@ -545,6 +546,7 @@ def _build_auth(
     if config.auth_strategy == "oauth2_client_credentials":
         token_url = config.auth_options["token_url"]
         subject = config.auth_options.get("subject")
+        credential_placement = config.auth_options.get("credential_placement", "basic")
         if not isinstance(token_url, str):
             raise ClickException("OAuth token_url must be a string")
         if subject is not None and (isinstance(subject, bool) or not isinstance(subject, int)):
@@ -555,6 +557,7 @@ def _build_auth(
             client_secret_ref=config.auth_refs["client_secret"],
             token_url=token_url,
             subject=subject,
+            credential_placement=ClientCredentialPlacement(str(credential_placement)),
         )
     if config.auth_strategy == "oauth2_jwt":
         subject = config.auth_options.get("subject")

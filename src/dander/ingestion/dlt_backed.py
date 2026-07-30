@@ -7,7 +7,11 @@ behind the shared authentication strategy.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Mapping
+from contextlib import suppress
+from threading import Lock
+from time import monotonic, sleep
 from typing import TYPE_CHECKING, Annotated, Any
 
 import httpx
@@ -22,6 +26,7 @@ from dlt.sources.helpers.rest_client.paginators import (
     SinglePagePaginator,
 )
 from dlt.sources.rest_api import rest_api_source
+from requests import PreparedRequest, RequestException, Response, Session
 
 from dander.ingestion.pagination import (
     CursorPagination,
@@ -30,13 +35,22 @@ from dander.ingestion.pagination import (
     OffsetPagination,
     PageNumberPagination,
 )
-from dander.ingestion.source import Endpoint, Source, SourceConfig
+from dander.ingestion.source import BackoffKind, Endpoint, RateLimitConfig, Source, SourceConfig
 from dander.security.base import AuthStrategy  # noqa: TC001  # configspec resolves at runtime
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from dlt.sources.rest_api.typing import (
+        ClientConfig,
+        EndpointResource,
+        RESTAPIConfig,
+    )
     from dlt.sources.rest_api.typing import Endpoint as DltEndpoint
-    from dlt.sources.rest_api.typing import EndpointResource, RESTAPIConfig
-    from requests import PreparedRequest
+
+_LOGGER = logging.getLogger(__name__)
+_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+_RETRYABLE_METHODS = frozenset({"GET", "HEAD"})
 
 
 class EndpointNotFoundError(ValueError):
@@ -45,6 +59,87 @@ class EndpointNotFoundError(ValueError):
 
 class UnsupportedPaginationError(ValueError):
     """Raised when dlt cannot represent a declared pagination variation."""
+
+
+class _RateLimitedSession(Session):
+    """Apply one source's bounded request-rate and retry contract around dlt HTTP calls."""
+
+    def __init__(
+        self,
+        policy: RateLimitConfig,
+        *,
+        source_name: str,
+        sleeper: Callable[[float], None] = sleep,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        super().__init__()
+        self._policy = policy
+        self._source_name = source_name
+        self._sleep = sleeper
+        self._clock = clock
+        self._tokens = float(policy.burst)
+        self._last_refill = clock()
+        self._lock = Lock()
+
+    def send(self, request: PreparedRequest, **kwargs: object) -> Response:
+        """Send with token-bucket pacing and bounded retries for safe read methods."""
+        retryable_method = (request.method or "").upper() in _RETRYABLE_METHODS
+        for attempt in range(self._policy.max_retries + 1):
+            self._acquire_token()
+            try:
+                response = super().send(request, **kwargs)
+            except RequestException:
+                if not retryable_method or attempt == self._policy.max_retries:
+                    raise
+                self._wait_before_retry(attempt, retry_after=None)
+                continue
+            if (
+                not retryable_method
+                or response.status_code not in _RETRYABLE_STATUSES
+                or attempt == self._policy.max_retries
+            ):
+                return response
+            retry_after = response.headers.get("Retry-After")
+            response.close()
+            self._wait_before_retry(attempt, retry_after=retry_after)
+        raise AssertionError("bounded dlt retry loop did not return or raise")
+
+    def _acquire_token(self) -> None:
+        with self._lock:
+            now = self._clock()
+            elapsed = max(now - self._last_refill, 0.0)
+            self._tokens = min(
+                float(self._policy.burst),
+                self._tokens + elapsed * self._policy.requests_per_second,
+            )
+            self._last_refill = now
+            if self._tokens < 1.0:
+                delay = (1.0 - self._tokens) / self._policy.requests_per_second
+                self._sleep(delay)
+                now = self._clock()
+                elapsed = max(now - self._last_refill, 0.0)
+                self._tokens = min(
+                    float(self._policy.burst),
+                    self._tokens + elapsed * self._policy.requests_per_second,
+                )
+                self._last_refill = now
+            self._tokens = max(self._tokens - 1.0, 0.0)
+
+    def _wait_before_retry(self, attempt: int, *, retry_after: str | None) -> None:
+        multiplier = 2**attempt if self._policy.backoff is BackoffKind.EXPONENTIAL else 1
+        delay = multiplier / self._policy.requests_per_second
+        if retry_after is not None:
+            with suppress(ValueError):
+                delay = max(delay, min(float(retry_after), 60.0))
+        _LOGGER.warning(
+            "source_request_retry",
+            extra={
+                "attempt": attempt + 1,
+                "dander_event": "source_request_retry",
+                "source": self._source_name,
+            },
+        )
+        self._sleep(delay)
 
 
 @configspec
@@ -70,9 +165,26 @@ class DltAuthAdapter(AuthConfigBase):
 class DltRestSource(Source):
     """Adapt a standard REST connector to Dander's `Source` contract using dlt."""
 
-    def __init__(self, config: SourceConfig, auth: AuthStrategy) -> None:
+    def __init__(
+        self,
+        config: SourceConfig,
+        auth: AuthStrategy,
+        *,
+        sleeper: Callable[[float], None] = sleep,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
         super().__init__(config)
         self._auth = auth
+        self._session = (
+            _RateLimitedSession(
+                config.rate_limit,
+                source_name=config.name,
+                sleeper=sleeper,
+                clock=clock,
+            )
+            if config.rate_limit is not None
+            else None
+        )
 
     def discover(self) -> Mapping[str, Any]:
         """Return validated endpoint metadata without fetching source row values.
@@ -132,11 +244,14 @@ class DltRestSource(Source):
         if endpoint.primary_key:
             resource["primary_key"] = endpoint.primary_key
 
+        client: ClientConfig = {
+            "base_url": f"{self.config.base_url.rstrip('/')}/",
+            "auth": DltAuthAdapter(self._auth),
+        }
+        if self._session is not None:
+            client["session"] = self._session
         return {
-            "client": {
-                "base_url": f"{self.config.base_url.rstrip('/')}/",
-                "auth": DltAuthAdapter(self._auth),
-            },
+            "client": client,
             "resources": [resource],
         }
 

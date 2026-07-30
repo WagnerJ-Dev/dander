@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from secrets import token_urlsafe
 from typing import TYPE_CHECKING, Any
 
 from dlt.sources.helpers.rest_client.auth import AuthConfigBase
 from dlt.sources.helpers.rest_client.paginators import HeaderLinkPaginator
-from requests import Request
+from requests import Request, Response, Session
 
+from dander.ingestion.config import load_source_config
 from dander.ingestion.dlt_backed import DltAuthAdapter, DltRestSource
-from dander.ingestion.source import Endpoint, SourceConfig
+from dander.ingestion.source import Endpoint, RateLimitConfig, SourceConfig
 from dander.security import NoAuth
 from dander.security.base import AuthStrategy
 
@@ -104,6 +106,29 @@ def test_build_config_supports_public_enveloped_response() -> None:
     assert "Authorization" not in adapter(prepared).headers
 
 
+def test_marketo_template_maps_provider_auth_pagination_and_rate_limit() -> None:
+    connector_path = Path(__file__).parents[2] / "connectors" / "marketo.example.yaml"
+    config = load_source_config(connector_path)
+
+    assert config.auth_options["credential_placement"] == "query"
+    assert config.rate_limit == RateLimitConfig(
+        requests_per_second=5,
+        burst=10,
+        backoff="exponential",
+        max_retries=5,
+    )
+    rest_config = DltRestSource(
+        config,
+        _Auth(_Secrets(), "DANDER_TEST_REFERENCE"),
+    ).build_rest_config("programs")
+    resource = rest_config["resources"][0]
+    assert isinstance(resource, dict)
+    endpoint = resource["endpoint"]
+    assert isinstance(endpoint, dict)
+    assert endpoint["data_selector"] == "result"
+    assert isinstance(rest_config["client"]["session"], Session)
+
+
 class _FakeDltSource:
     def with_resources(self, *resource_names: str) -> _FakeDltSource:
         assert resource_names == ("widgets",)
@@ -124,3 +149,81 @@ def test_extract_yields_mapping_items(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("dander.ingestion.dlt_backed.rest_api_source", fake_rest_api_source)
 
     assert list(source.extract("widgets")) == [{"id": "synthetic"}]
+
+
+def test_dlt_session_applies_declared_rate_and_bounded_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    config.rate_limit = RateLimitConfig(
+        requests_per_second=2,
+        burst=1,
+        backoff="exponential",
+        max_retries=2,
+    )
+    now = [0.0]
+    sleeps: list[float] = []
+    statuses = iter((429, 503, 200))
+
+    def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+        now[0] += delay
+
+    def fake_send(
+        self: Session,
+        request: object,
+        **kwargs: object,
+    ) -> Response:
+        del self, request, kwargs
+        response = Response()
+        response.status_code = next(statuses)
+        response._content = b""
+        response._content_consumed = True
+        return response
+
+    monkeypatch.setattr(Session, "send", fake_send)
+    source = DltRestSource(
+        config,
+        _Auth(_Secrets(), "DANDER_TEST_REFERENCE"),
+        sleeper=fake_sleep,
+        clock=lambda: now[0],
+    )
+    rest_config = source.build_rest_config("widgets")
+    session = rest_config["client"]["session"]
+    assert isinstance(session, Session)
+
+    response = session.send(Request("GET", "https://example.test/widgets").prepare())
+
+    assert response.status_code == 200
+    assert sleeps == [0.5, 1.0]
+
+
+def test_dlt_session_does_not_retry_mutating_methods(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    config.rate_limit = RateLimitConfig(max_retries=3)
+    calls = 0
+
+    def fake_send(
+        self: Session,
+        request: object,
+        **kwargs: object,
+    ) -> Response:
+        nonlocal calls
+        del self, request, kwargs
+        calls += 1
+        response = Response()
+        response.status_code = 503
+        return response
+
+    monkeypatch.setattr(Session, "send", fake_send)
+    source = DltRestSource(config, _Auth(_Secrets(), "DANDER_TEST_REFERENCE"))
+    rest_config = source.build_rest_config("widgets")
+    session = rest_config["client"]["session"]
+    assert isinstance(session, Session)
+
+    response = session.send(Request("POST", "https://example.test/widgets").prepare())
+
+    assert response.status_code == 503
+    assert calls == 1

@@ -8,3 +8,5 @@
 !src/**
 !connectors/
 !connectors/**
+!models/
+!models/**
