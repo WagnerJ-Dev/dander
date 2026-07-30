@@ -6,7 +6,17 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from dander.writer import BigQueryReplaceWriter, BigQueryScd1Writer, BigQueryWriteError, WriteTarget
+from dander.writer import (
+    BigQueryIncrementalWriter,
+    BigQueryReplaceWriter,
+    BigQueryScd1Writer,
+    BigQueryScd2Writer,
+    BigQuerySnapshotWriter,
+    BigQueryWriteError,
+    WriteMode,
+    WritePattern,
+    WriteTarget,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -134,3 +144,139 @@ def test_replace_writer_deletes_stale_table_for_empty_snapshot() -> None:
 
     assert client.deleted == ["unit-project.raw.example_widgets"]
     assert client.queries == []
+
+
+def test_incremental_writer_requires_cursor_and_reuses_idempotent_merge() -> None:
+    client = _Client()
+    writer = BigQueryIncrementalWriter(
+        project="unit-project",
+        cursor_field="updated_at",
+        client=client,
+    )
+
+    affected = writer.write(
+        [{"id": "one", "updated_at": "2026-07-29T12:00:00Z"}],
+        _target(),
+    )
+
+    assert writer.mode is WriteMode.INCREMENTAL
+    assert affected == 2
+    assert client.queries[1].startswith("MERGE")
+
+    with pytest.raises(BigQueryWriteError, match="Cursor column"):
+        writer.write([{"id": "two"}], _target())
+    with pytest.raises(BigQueryWriteError, match="null cursor"):
+        writer.write([{"id": "two", "updated_at": None}], _target())
+
+
+def test_snapshot_writer_partitions_and_suppresses_exact_reruns() -> None:
+    client = _Client()
+    writer = BigQuerySnapshotWriter(
+        project="unit-project",
+        snapshot_field="snapshot_at",
+        client=client,
+    )
+
+    affected = writer.write(
+        [
+            {
+                "id": "one",
+                "snapshot_at": "2026-07-29T12:00:00Z",
+                "label": "active",
+            }
+        ],
+        _target(),
+    )
+
+    assert affected == 1
+    assert "PARTITION BY DATE(`snapshot_at`)" in client.queries[0]
+    insert = client.queries[1]
+    assert insert.startswith("INSERT INTO")
+    assert "WHERE NOT EXISTS" in insert
+    assert "IS NOT DISTINCT FROM" in insert
+    assert "PARTITION BY TO_JSON_STRING(source)" in insert
+    assert "SELECT *" not in insert
+    assert client.deleted == [client.destination]
+
+
+def test_snapshot_writer_rejects_missing_or_null_snapshot_value() -> None:
+    writer = BigQuerySnapshotWriter(
+        project="unit-project",
+        snapshot_field="snapshot_at",
+        client=_Client(),
+    )
+
+    with pytest.raises(BigQueryWriteError, match="absent"):
+        writer.write([{"id": "one"}], _target())
+    with pytest.raises(BigQueryWriteError, match="null snapshot"):
+        writer.write([{"id": "one", "snapshot_at": None}], _target())
+
+
+def test_scd2_writer_builds_transactional_change_history() -> None:
+    client = _Client()
+    writer = BigQueryScd2Writer(project="unit-project", client=client)
+
+    affected = writer.write(
+        [
+            {"id": "one", "label": "old"},
+            {"id": "one", "label": "new"},
+            {"id": "two", "label": "other"},
+        ],
+        _target(),
+    )
+
+    assert affected == 2
+    assert client.loaded_rows == [
+        {"id": "one", "label": "new"},
+        {"id": "two", "label": "other"},
+    ]
+    create = client.queries[0]
+    assert "valid_from" in create
+    assert "valid_to" in create
+    assert "is_current" in create
+    history = client.queries[1]
+    assert "CREATE TEMP TABLE changed" in history
+    assert "IS DISTINCT FROM" in history
+    assert "BEGIN TRANSACTION" in history
+    assert "SET `valid_to` = effective_at, `is_current` = FALSE" in history
+    assert "COMMIT TRANSACTION" in history
+    assert "SELECT *" not in history
+    assert client.deleted == [client.destination]
+
+
+def test_scd2_writer_rejects_reserved_columns_and_missing_key() -> None:
+    writer = BigQueryScd2Writer(project="unit-project", client=_Client())
+
+    with pytest.raises(BigQueryWriteError, match="reserved column"):
+        writer.write([{"id": "one", "valid_from": "user-data"}], _target())
+    with pytest.raises(BigQueryWriteError, match="business-key"):
+        writer.write(
+            [{"id": "one"}],
+            WriteTarget(project="unit-project", dataset="raw", table="snapshots"),
+        )
+
+
+@pytest.mark.parametrize(
+    "writer",
+    [
+        BigQuerySnapshotWriter(
+            project="unit-project",
+            snapshot_field="snapshot_at",
+            client=_Client(),
+        ),
+        BigQueryScd2Writer(project="unit-project", client=_Client()),
+    ],
+)
+def test_new_writers_reject_project_mismatch(writer: WritePattern) -> None:
+    target = WriteTarget(
+        project="other-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+    )
+
+    with pytest.raises(BigQueryWriteError, match="does not match"):
+        writer.write(
+            [{"id": "one", "snapshot_at": "2026-07-29T12:00:00Z"}],
+            target,
+        )

@@ -303,14 +303,15 @@ Knowledge Catalog API calls free but charges for stored aspect metadata, so clou
 implicit. See [Knowledge Catalog pricing](https://cloud.google.com/products/knowledge-catalog/pricing)
 and [Dataplex aspect management](https://docs.cloud.google.com/dataplex/docs/enrich-entries-metadata).
 
-Current v0 limits are explicit: production SCD1 plus sandbox full-replacement writes,
-whole-endpoint batches held in memory, no automatic target-schema evolution, and bootstrap
-coverage for BigQuery datasets only. Public Job Board extraction is a full refresh; it does not
-delete jobs that disappear from a board. The guarded mode verifies budget wiring but does not
-provision or continuously monitor it. Transform execution currently supports full view/table
-rebuilds; incremental models, live catalog publication, additional production write modes,
-IAM/WIF, and Secret Manager provisioning remain future slices. The tracked completion ledger is
-in [`docs/spec-alignment.md`](docs/spec-alignment.md).
+Current v0 limits are explicit: the writer package now executes SCD1, cursor-validated incremental,
+partitioned snapshot, SCD2 history, and sandbox replacement, but whole endpoint batches are held in
+memory and automatic target-schema evolution is not implemented. Public Job Board extraction is a
+full refresh and does not delete jobs that disappear from a board. The CLI bootstrap can plan
+Secret Manager, IAM/WIF, scheduled runtime, and a simulation-first cost guard, but deploying those
+opt-in services may be billable. Transform execution supports full view/table rebuilds;
+incremental models, live catalog publication, visual graph execution, and enterprise-source proof
+remain future slices. The tracked completion ledger is in
+[`docs/spec-alignment.md`](docs/spec-alignment.md).
 
 ## The agent workforce & the `/feature` workflow
 

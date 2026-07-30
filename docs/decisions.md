@@ -18,3 +18,12 @@
   plan, and confirmation that explicitly names the destructive behavior.
 - Budget notifications are delayed and not a spending cap. Function deployment uses billable GCP
   services, so its plan is never represented as guaranteeing a zero-dollar outcome.
+
+## 2026-07-29 — BigQuery history and append semantics
+
+- Incremental batches use cursor validation plus SCD1 key merge; extraction and watermark state
+  own the lower bound, while the writer owns rerun idempotence.
+- Snapshots never update/delete history. They use a configured date/timestamp partition and
+  suppress exact rows both across reruns and within one incoming batch.
+- SCD2 computes changed rows once, then closes and inserts versions in one transaction. System
+  columns are reserved and nested values compare through canonical BigQuery JSON rendering.
