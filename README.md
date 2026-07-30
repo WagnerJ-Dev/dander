@@ -262,13 +262,33 @@ missing/invalid sidecars, non-query SQL, and unsupported incremental materializa
 the first BigQuery query. Generic tests currently support not-null, unique, accepted-values, and
 relationships.
 
+### Compile the metadata spine
+
+The same model sidecar also projects into a deterministic semantic registry and Dataplex Knowledge
+Catalog aspects:
+
+```bash
+uv run dander catalog \
+  --project "$PROJECT_ID" \
+  --select stg_greenhouse__jobs \
+  --output .dander/catalog.json
+```
+
+Local compilation is the default. `--publish-dataplex` explicitly attaches overview, contacts,
+schema, and generic system aspects to the corresponding BigQuery entry; it can be combined with
+`--guarded-free-tier`. Publication never deletes unrelated aspects. Google currently makes
+Knowledge Catalog API calls free but charges for stored aspect metadata, so cloud mutation is not
+implicit. See [Knowledge Catalog pricing](https://cloud.google.com/products/knowledge-catalog/pricing)
+and [Dataplex aspect management](https://docs.cloud.google.com/dataplex/docs/enrich-entries-metadata).
+
 Current v0 limits are explicit: production SCD1 plus sandbox full-replacement writes,
 whole-endpoint batches held in memory, no automatic target-schema evolution, and bootstrap
 coverage for BigQuery datasets only. Public Job Board extraction is a full refresh; it does not
 delete jobs that disappear from a board. The guarded mode verifies budget wiring but does not
 provision or continuously monitor it. Transform execution currently supports full view/table
-rebuilds; incremental models, catalog publication, additional production write modes, IAM/WIF,
-and Secret Manager provisioning remain future slices.
+rebuilds; incremental models, live catalog publication, additional production write modes,
+IAM/WIF, and Secret Manager provisioning remain future slices. The tracked completion ledger is
+in [`docs/spec-alignment.md`](docs/spec-alignment.md).
 
 ## The agent workforce & the `/feature` workflow
 

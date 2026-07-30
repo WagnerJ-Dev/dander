@@ -7,16 +7,15 @@ the same metadata that compiles the SQL also documents the asset for the catalog
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from dander.catalog.spine import CatalogAsset
 
 
-class CatalogPublisher(ABC):
-    """Publishes/refreshes catalog aspects for a table or model."""
+class CatalogPublisher(Protocol):
+    """Publishes generated metadata for a catalog asset."""
 
-    @abstractmethod
-    def publish(self, asset: str, aspects: Mapping[str, Any]) -> None:
-        """Upsert ``aspects`` (source system, sensitivity, last-refreshed, …) for ``asset``."""
+    def publish(self, asset: CatalogAsset) -> str:
+        """Publish one asset and return the provider resource name."""
+        ...

@@ -12,6 +12,13 @@ from rich.console import Console
 from rich.table import Table
 
 from dander.bootstrap import TerraformBootstrap, TerraformBootstrapError
+from dander.catalog import (
+    CatalogPublishError,
+    DataplexCatalogPublisher,
+    MetadataSpine,
+    SemanticRegistryError,
+    SemanticRegistryPublisher,
+)
 from dander.core.config import Settings
 from dander.ingestion import DltRestSource, Endpoint, SourceConfig, load_source_config
 from dander.runtime import PipelineRunner
@@ -27,6 +34,7 @@ from dander.security import (
 from dander.state import BigQueryWatermarkStore, SqliteWatermarkStore
 from dander.transform import (
     BigQueryTransformRunner,
+    TransformProject,
     TransformProjectError,
     TransformRunError,
 )
@@ -44,6 +52,7 @@ _SOURCE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _DEFAULT_CONNECTORS_DIR = Path("connectors")
 _DEFAULT_INFRA_DIR = Path("infra")
 _DEFAULT_MODELS_DIR = Path("models")
+_DEFAULT_CATALOG_PATH = Path(".dander/catalog.json")
 
 
 @app.command()
@@ -254,6 +263,69 @@ def test_models(
     except (TransformProjectError, TransformRunError) as error:
         raise ClickException(str(error)) from error
     _print_transform_result("Tested", result.models, result.assertions)
+
+
+@app.command()
+def catalog(
+    project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
+    selected: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--select",
+        help="Catalog one model and its dependencies. Repeat to select multiple models.",
+    ),
+    models_dir: Path = typer.Option(_DEFAULT_MODELS_DIR, "--models-dir"),  # noqa: B008
+    output: Path = typer.Option(_DEFAULT_CATALOG_PATH, "--output"),  # noqa: B008
+    publish_dataplex: bool = typer.Option(
+        False,
+        "--publish-dataplex",
+        help="Attach generated aspects to BigQuery catalog entries; may incur metadata storage.",
+    ),
+    location: str = typer.Option(
+        "us",
+        "--location",
+        help="Dataplex location for the BigQuery system entry.",
+    ),
+    guarded_free_tier: bool = typer.Option(
+        False,
+        "--guarded-free-tier",
+        help="Require the <=$5 budget guard before Dataplex publication.",
+    ),
+    budget_name: str = typer.Option("dander-sbx-cap", "--budget-name", hidden=True),
+) -> None:
+    """Compile model metadata into a local registry and optionally publish Dataplex aspects."""
+    resolved_project = project or Settings().gcp_project_id
+    if not resolved_project:
+        raise ClickException("GCP project is required via --project or GCP_PROJECT_ID")
+    try:
+        transform_project = TransformProject.load(models_dir, project_id=resolved_project)
+        assets = MetadataSpine().compile(transform_project, selected=selected)
+        manifest = MetadataSpine().manifest(assets)
+        registry_path = SemanticRegistryPublisher().publish(manifest, output)
+    except (SemanticRegistryError, TransformProjectError) as error:
+        raise ClickException(str(error)) from error
+
+    published = 0
+    if publish_dataplex:
+        _require_transform_guard(
+            resolved_project,
+            guarded_free_tier=guarded_free_tier,
+            budget_name=budget_name,
+        )
+        try:
+            publisher = DataplexCatalogPublisher(
+                project=resolved_project,
+                location=location,
+            )
+            for asset in assets:
+                publisher.publish(asset)
+                published += 1
+        except CatalogPublishError as error:
+            raise ClickException(str(error)) from error
+
+    console.print(
+        f"[green]Cataloged {len(assets)} model(s) in {registry_path}; "
+        f"published {published} Dataplex entr{'y' if published == 1 else 'ies'}.[/green]"
+    )
 
 
 def _require_transform_guard(

@@ -2,47 +2,47 @@
 
 ## Finished
 
-- Added typed SQL-model/YAML discovery with fail-closed metadata validation.
-- Added dependency ordering, restricted `ref()` compilation, and read-only BigQuery SQL checks.
-- Added view/table materialization plus four generic data-test kinds.
-- Added `dander build` and `dander test` with selection and guarded-free-tier support.
-- Built `staging.stg_greenhouse__jobs` live with 21 unique, non-null public jobs.
+- Added a canonical immutable metadata-spine projection from transform YAML.
+- Added deterministic, atomic semantic-registry JSON for agents and local tooling.
+- Added Dataplex overview, contacts, schema, and generic system-aspect generation.
+- Added a non-deleting, aspect-only `modifyEntry` publisher for BigQuery system entries.
+- Added local-first `dander catalog`; cloud publication requires an explicit flag.
 
 ## Try It
 
 ```bash
-uv run dander build --project "$PROJECT_ID" \
-  --select stg_greenhouse__jobs --guarded-free-tier
-uv run dander test --project "$PROJECT_ID" \
-  --select stg_greenhouse__jobs --guarded-free-tier
+uv run dander catalog --project "$PROJECT_ID" \
+  --select stg_greenhouse__jobs \
+  --output .dander/catalog.json
 ```
 
-Repeat `--select` for multiple roots; omit it to build all discovered models.
+Add `--publish-dataplex --location us --guarded-free-tier` only when accepting metadata-storage
+charges. Local output is ignored by Git.
 
 ## Checks
 
 - `uv run ruff check .` and `uv run ruff format --check .` — passed.
 - `uv run mypy src tests` — passed in strict mode.
-- `uv run pytest` — 338 passed.
+- `uv run pytest` — 348 passed.
 - `terraform fmt -check -recursive` and `terraform validate` — passed.
-- Guarded live build/test — 3 assertions passed; 21 rows, 21 unique ids, zero null ids.
+- Real Greenhouse registry compile and read-only live Dataplex BigQuery-entry lookup — passed.
 
 ## Decisions
 
-- `raw_<table>` refs map conventionally to raw relations; all other refs name discovered models.
-- Transform SQL must compile to one read-only query before Dander wraps it in controlled DDL.
-- Incremental materialization fails closed until it has an explicit idempotent write contract.
+- The semantic registry excludes timestamps so identical metadata produces identical bytes.
+- Reusable system aspects avoid proprietary aspect-type provisioning.
+- Catalog writes are explicit because API calls are free but stored aspect metadata is billable.
 
 ## Remaining
 
-- Project the model YAML into Dataplex aspects and a local semantic manifest.
 - Make `dander init` provision the complete runtime stack through one command.
 - Implement idempotent incremental/SCD2/snapshot materializations.
+- Execute the visual pipeline mapping/join/custom-code model.
+- Prove one concrete hand-rolled enterprise connector.
 - Add Harvest v3 credentials only if Greenhouse account access becomes available.
-- Stream/chunk large endpoints and add controlled target-schema evolution.
 
 ## Review First
 
-- `src/dander/transform/project.py`
-- `src/dander/transform/runner.py`
-- `models/staging/stg_greenhouse__jobs.yml`
+- `src/dander/catalog/spine.py`
+- `src/dander/catalog/dataplex.py`
+- `docs/spec-alignment.md`

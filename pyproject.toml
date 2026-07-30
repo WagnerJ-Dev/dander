@@ -8,6 +8,7 @@ license = { text = "Apache-2.0" }
 dependencies = [
   "dlt[bigquery]>=1.0",            # standard-REST ingestion path (hybrid decision)
   "google-cloud-bigquery>=3.25",
+  "google-cloud-dataplex>=2.20,<3",
   "google-cloud-secret-manager>=2.20",
   "google-auth>=2.35",
   "pydantic>=2.7",                 # config + boundary models
