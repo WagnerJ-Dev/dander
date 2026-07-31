@@ -60,7 +60,7 @@ jobs:
           terraform -chdir=bootstrap-admin init -backend=false -input=false
           terraform -chdir=bootstrap-admin validate
       - name: Static security analysis
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: config
           scan-ref: infra
@@ -84,7 +84,7 @@ jobs:
           docker run --rm dander-ci:${{ github.sha }} test -f /app/connectors/hubspot_test.yaml
           docker run --rm dander-ci:${{ github.sha }} test -f /app/models/staging/stg_hubspot__companies.yml
       - name: Scan image
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: dander-ci:${{ github.sha }}
           format: table
