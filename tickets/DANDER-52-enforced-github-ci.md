@@ -26,6 +26,7 @@ scanning. Live WIF authentication belongs only to the later manual proof workflo
 ## Implementation Notes
 
 `.github/workflows/ci.yml` runs the four stable jobs; repository owners still need to require them
-in branch protection.
+in branch protection. The container job also asserts the non-root UID and bundled HubSpot/model
+proof assets before vulnerability scanning.
 
 ## Review Log

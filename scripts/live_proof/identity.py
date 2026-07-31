@@ -45,6 +45,11 @@ def run(args: argparse.Namespace) -> None:
             "--filter=status:ACTIVE",
             "--format=value(account)",
         )
+        caller_type = (
+            "service_account"
+            if caller.endswith(".iam.gserviceaccount.com")
+            else "external_identity"
+        )
         passed = (
             impersonated == args.bootstrap_service_account
             and described == args.bootstrap_service_account
@@ -54,7 +59,7 @@ def run(args: argparse.Namespace) -> None:
             started_at_utc=started,
             ended_at_utc=_now(),
             operation="WIF caller and bootstrap service-account impersonation verification",
-            resource_ids=resource_ids + (f"caller:{caller}",),
+            resource_ids=resource_ids + (f"caller_type:{caller_type}",),
             hashes={},
             failure_reason=None
             if passed

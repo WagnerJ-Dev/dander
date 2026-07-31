@@ -34,6 +34,9 @@ both behind one `Source` interface) → explicit, idempotent BigQuery **write pa
 See `steering/00-project-overview.md` for the full module map and decision log.
 
 Repository checks and branch-protection guidance live in [`docs/ci.md`](docs/ci.md).
+The approval-gated, WIF-authenticated live proof is documented in
+[`docs/live-proof.md`](docs/live-proof.md); keep the pull request draft until its sanitized
+workflow artifact is reviewed.
 
 ## Stack
 

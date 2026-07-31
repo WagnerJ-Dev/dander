@@ -35,7 +35,7 @@ def test_identity_proof_records_impersonation_and_caller(
 
     proof = json.loads((tmp_path / "iam.json").read_text(encoding="utf-8"))
     assert proof["status"] == "passed"
-    assert "caller:github-proof@proof-project.iam.gserviceaccount.com" in proof["resource_ids"]
+    assert "caller_type:service_account" in proof["resource_ids"]
 
 
 def test_identity_proof_fails_closed_on_mismatch(

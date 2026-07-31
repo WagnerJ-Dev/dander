@@ -26,6 +26,7 @@ boundary for every platform command.
 ## Implementation Notes
 
 Implemented in `infra/versions.tf`, `TerraformBootstrap`, the explicit platform CLI commands, and
-the workflow identity proof at `scripts/live_proof/identity.py`.
+the workflow identity proof at `scripts/live_proof/identity.py`. The proof retains only caller
+type and bootstrap service-account identity, not the active caller email or token.
 
 ## Review Log
