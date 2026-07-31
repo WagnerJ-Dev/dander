@@ -40,7 +40,15 @@ def test_admin_bootstrap_plans_and_applies_saved_plan(
     )
 
     assert plan == tmp_path.resolve() / "dander-admin-bootstrap.tfplan"
-    assert commands[0][:3] == ("terraform", "init", "-backend=false")
+    assert commands[0] == (
+        "terraform",
+        "init",
+        "-reconfigure",
+        "-input=false",
+        "-backend-config=bucket=unit-state-bucket",
+        "-backend-config=prefix=dander/bootstrap-admin/state",
+    )
+    assert not any("credentials" in argument for argument in commands[0])
     assert "-var=state_bucket=unit-state-bucket" in commands[1]
     assert "-var=admin_member=user:operator@example.invalid" in commands[1]
     assert commands[2] == ("terraform", "apply", "dander-admin-bootstrap.tfplan")

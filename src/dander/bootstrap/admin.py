@@ -18,6 +18,7 @@ _PRINCIPAL = re.compile(r"^(?:user|serviceAccount|group):[^\r\n]+$")
 _SERVICE_ACCOUNT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 _GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GITHUB_REF = re.compile(r"^refs/(?:heads|tags)/[A-Za-z0-9._/-]+$")
+_STAGE_ZERO_STATE_PREFIX = "dander/bootstrap-admin/state"
 
 
 class AdministrativeBootstrapError(RuntimeError):
@@ -73,7 +74,14 @@ class AdministrativeBootstrap:
             github_ref=github_ref,
         )
         plan_path = self._infra_dir / "dander-admin-bootstrap.tfplan"
-        self._run("terraform", "init", "-backend=false", "-input=false")
+        self._run(
+            "terraform",
+            "init",
+            "-reconfigure",
+            "-input=false",
+            f"-backend-config=bucket={state_bucket}",
+            f"-backend-config=prefix={_STAGE_ZERO_STATE_PREFIX}",
+        )
         self._run(
             "terraform",
             "plan",

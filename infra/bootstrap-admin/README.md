@@ -5,30 +5,55 @@ state bucket, the `dander` Artifact Registry repository, the `dander-bootstrap` 
 the project provisioning roles required by the main platform, and explicit impersonation bindings
 for approved operators and the proof workflow.
 
-The current migration work is plan-only preparation. It does not apply this root, mutate GCP, change
-GitHub settings, or transfer state ownership. After a separately approved apply, the main platform
-Terraform must use `bootstrap_service_account` set to the emitted service-account email. The
-stage-zero caller remains outside the runtime and GitHub deploy identities.
+The stage-zero state is permanently stored in an existing GCS bucket. The current migration work is
+code-only preparation: it does not migrate local state, mutate GCP, change GitHub settings, or
+transfer state ownership. After a separately approved apply, the main platform Terraform must use
+`bootstrap_service_account` set to the emitted service-account email. The stage-zero caller remains
+outside the runtime and GitHub deploy identities.
+
+## Permanent GCS backend
+
+The administrative wrapper initializes this root with the following partial backend configuration:
+
+```text
+bucket = dander-sbx-harrison-20260729-tfstate
+prefix = dander/bootstrap-admin/state
+```
+
+The bucket must already exist before stage-zero planning. GCS is the permanent stage-zero backend;
+the existing platform state remains at
+`gs://dander-sbx-harrison-20260729-tfstate/dander/state/default.tfstate`. The separate
+`dander/bootstrap-admin/state` prefix prevents stage-zero state from sharing the platform-state
+object.
+
+Backend credentials are intentionally absent from Terraform configuration. Terraform uses the
+operator's authenticated Google application-default credential context at initialization time.
+Do not disable GCS locking, and do not migrate state until Object Versioning is verified on the
+bucket. The backend design does not perform that migration automatically.
 
 ## Durable stage-zero state
 
-Stage-zero state and review artifacts must live in the operator-managed directory outside this
-repository, normally:
+Any provisional local stage-zero state and review artifacts must live in the operator-managed
+directory outside this repository, normally:
 
 `~/Library/Application Support/Dander/terraform/bootstrap-admin/<project>/`
 
-Keep the directory at `0700`, state/backup/plan files at `0600`, and never commit or upload them.
+Keep the directory at `0700`, state/backup/plan files at `0600`, and treat local state as migration
+input and recovery material only. Never commit or upload it.
 Do not reuse the obsolete `/tmp/dander-bootstrap-plan.p1DiGi/bootstrap.tfplan` or copy temporary
 state from `/tmp`; recreate imports into a fresh stage-zero state file.
 
+State, plans, backups, secrets, raw HubSpot responses, and `.terraform/` contents must never be
+committed to or uploaded to GitHub. Locally generated evidence belongs under the ignored repository
+`evidence/` path or in the secured operator directory, not in a commit or PR attachment.
+
 ## State retention and recovery
 
-Stage zero creates the remote bucket that holds the main platform's Terraform state, so this root
-uses operator-managed local state for its own one-time bootstrap record. Before recreating imports,
-make a timestamped, metadata-recorded backup of the existing main platform state. Retain encrypted,
-access-controlled backups with the operator's infrastructure records. The remote bucket is
-versioned, uses uniform access and public-access prevention, and has `force_destroy = false`; keep
-its object generations as recovery history and do not add routine lifecycle deletion.
+Before any separately approved state migration, make a timestamped, metadata-recorded backup of the
+existing main platform state. Retain encrypted, access-controlled backups with the operator's
+infrastructure records. The remote bucket must be Object Versioned, uses uniform access and
+public-access prevention, and has `force_destroy = false`; keep its object generations as recovery
+history and do not add routine lifecycle deletion.
 
 ## Separate state-ownership cutover
 
