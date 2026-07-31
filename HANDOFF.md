@@ -18,7 +18,7 @@
 - Pre-edit safety checks passed: approved `main` commit, clean worktree, no Terraform operation, and unchanged platform/stage-zero generations.
 - Focused proof: 4 passed; full pytest: 471 passed; Ruff, formatting, mypy, dependency audit, Terraform format, and backend-disabled validation for both roots passed.
 - Docker build/run was attempted but the local Docker daemon was unavailable; GitHub CI remains authoritative for the container check.
-- GitHub CI run `30666542567`: all four required jobs passed, including Container build and scan.
+- GitHub CI run `30666687920` passed all four required jobs for final head `6bb45f49ef731527922910b42760c16d54d884d4`, including Container build and scan.
 
 ## Decisions
 
@@ -28,9 +28,8 @@
 
 ## Remaining
 
-- Commit, push, and open the draft PR.
-- Inspect required GitHub CI checks.
-- Stop at the Phase 3B evidence gate; do not merge or cut over ownership.
+- Draft PR #4 is at the Phase 3B evidence gate.
+- Do not merge the PR or use it for a live ownership cutover without Harrison's explicit approval.
 
 ## Review First
 
