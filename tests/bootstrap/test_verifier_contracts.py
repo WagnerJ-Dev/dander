@@ -69,6 +69,41 @@ def test_runtime_project_iam_distinguishes_missing_and_broad_roles(tmp_path: Pat
     assert broad.status is VerificationStatus.BROAD_BINDING_DETECTED
 
 
+def test_runtime_billing_iam_is_checked_at_billing_account_scope(tmp_path: Path) -> None:
+    service_account = "dander-runtime@proof-project.iam.gserviceaccount.com"
+    payloads: dict[tuple[str, ...], object] = {
+        (
+            "gcloud",
+            "billing",
+            "accounts",
+            "get-iam-policy",
+            "ABCDEF-123456-ABCDEF",
+            "--format=json",
+        ): {
+            "bindings": [
+                {
+                    "role": "roles/billing.viewer",
+                    "members": [f"serviceAccount:{service_account}"],
+                }
+            ]
+        }
+    }
+    check = _verifier(tmp_path, payloads)._check_runtime_billing_iam(
+        service_account, billing_account_id="ABCDEF-123456-ABCDEF"
+    )
+    assert check.ok
+    assert check.status is VerificationStatus.VERIFIED
+
+
+def test_empty_runtime_secret_scope_does_not_require_secret_manager_inventory(
+    tmp_path: Path,
+) -> None:
+    check = _verifier(tmp_path, {})._check_runtime_secret_scope(
+        "dander-runtime@proof-project.iam.gserviceaccount.com", ()
+    )[0]
+    assert check.ok
+
+
 def test_runtime_job_accepts_gcloud_v1_shape(tmp_path: Path) -> None:
     image = "us-central1-docker.pkg.dev/proof-project/dander/dander@sha256:" + "a" * 64
     payloads: dict[tuple[str, ...], object] = {

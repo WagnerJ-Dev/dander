@@ -108,6 +108,7 @@ uv run dander verify deployment \
 ```
 
 The command checks project state, BigQuery datasets, remote GCS state, optional Cloud Run and
-Scheduler resources, runtime IAM breadth, and named Secret Manager containers. A failed check is
-retained in the JSON summary and exits non-zero; the artifact contains only statuses, stable names,
-counts, and timestamps. The runtime image can be pinned with `--runtime-image`.
+Scheduler resources, project- and billing-account-scoped runtime IAM, dataset bindings, and named
+Secret Manager containers. A failed check is retained in the JSON summary and exits non-zero; the
+artifact contains only statuses, stable names, counts, and timestamps. The runtime image can be
+pinned with `--runtime-image`.

@@ -163,8 +163,18 @@ class DeploymentVerifier:
             if runtime_image is None:
                 runtime_image = discovered_image
             checks.append(
-                self._check_runtime_iam(runtime_service_account, publish_dataplex=publish_dataplex)
+                self._check_runtime_iam(
+                    runtime_service_account,
+                    publish_dataplex=publish_dataplex,
+                    billing_account_id=billing_account_id,
+                )
             )
+            if billing_account_id:
+                checks.append(
+                    self._check_runtime_billing_iam(
+                        runtime_service_account, billing_account_id=billing_account_id
+                    )
+                )
             checks.extend(self._check_runtime_datasets(runtime_service_account, datasets))
             checks.extend(self._check_runtime_secret_scope(runtime_service_account, secret_ids))
             checks.append(self._check_runtime_service_account_policy(runtime_service_account))
@@ -313,6 +323,7 @@ class DeploymentVerifier:
         service_account: str | None,
         *,
         publish_dataplex: bool,
+        billing_account_id: str | None = None,
     ) -> VerificationCheck:
         if not service_account:
             return VerificationCheck("runtime_iam", False, "runtime service account unavailable")
@@ -346,7 +357,11 @@ class DeploymentVerifier:
                 "roles/secretmanager.admin",
                 "roles/iam.serviceAccountTokenCreator",
             }
-            required = {"roles/bigquery.jobUser", "roles/pubsub.viewer", "roles/billing.viewer"}
+            required = {"roles/bigquery.jobUser", "roles/pubsub.viewer"}
+            # Terraform grants billing.viewer at billing-account scope. Callers that do not
+            # provide that account retain the legacy project-level contract for compatibility.
+            if billing_account_id is None:
+                required.add("roles/billing.viewer")
             if publish_dataplex:
                 required.add("roles/dataplex.catalogEditor")
             elif "roles/dataplex.catalogEditor" in roles:
@@ -378,6 +393,64 @@ class DeploymentVerifier:
             )
         except (DeploymentVerificationError, json.JSONDecodeError, AttributeError, TypeError):
             return VerificationCheck("runtime_iam", False, "unavailable")
+
+    def _check_runtime_billing_iam(
+        self,
+        service_account: str | None,
+        *,
+        billing_account_id: str,
+    ) -> VerificationCheck:
+        """Verify the runtime's billing-account metadata access is narrow and present."""
+        if not service_account:
+            return VerificationCheck(
+                "runtime_billing_iam",
+                False,
+                "runtime service account unavailable",
+                VerificationStatus.RESOURCE_UNAVAILABLE,
+            )
+        try:
+            payload = json.loads(
+                self._run(
+                    (
+                        "gcloud",
+                        "billing",
+                        "accounts",
+                        "get-iam-policy",
+                        billing_account_id,
+                        "--format=json",
+                    ),
+                    self.infra_dir,
+                )
+            )
+            roles = self._roles_for_member(payload, f"serviceAccount:{service_account}")
+            broad = roles.intersection({"roles/billing.admin", "roles/billing.accountAdmin"})
+            if broad:
+                return VerificationCheck(
+                    "runtime_billing_iam",
+                    False,
+                    "broad billing-account role detected",
+                    VerificationStatus.BROAD_BINDING_DETECTED,
+                )
+            if "roles/billing.viewer" not in roles:
+                return VerificationCheck(
+                    "runtime_billing_iam",
+                    False,
+                    "billing-account viewer binding missing",
+                    VerificationStatus.MISSING_REQUIRED_BINDING,
+                )
+            return VerificationCheck(
+                "runtime_billing_iam",
+                True,
+                "billing-account viewer binding verified",
+                VerificationStatus.VERIFIED,
+            )
+        except (DeploymentVerificationError, json.JSONDecodeError, AttributeError, TypeError):
+            return VerificationCheck(
+                "runtime_billing_iam",
+                False,
+                "billing-account IAM policy unavailable",
+                VerificationStatus.RESOURCE_UNAVAILABLE,
+            )
 
     def _check_runtime_datasets(
         self,
@@ -469,6 +542,8 @@ class DeploymentVerifier:
                     VerificationStatus.RESOURCE_UNAVAILABLE,
                 )
             ]
+        if not requested_secrets:
+            return [VerificationCheck("secret_iam_scope", True, "no runtime secrets requested")]
         try:
             listed = json.loads(
                 self._run(
@@ -586,9 +661,7 @@ class DeploymentVerifier:
                 )
                 for name in sorted(missing)
             )
-        return checks or [
-            VerificationCheck("secret_iam_scope", True, "no runtime secrets requested")
-        ]
+        return checks
 
     def _check_runtime_service_account_policy(
         self,

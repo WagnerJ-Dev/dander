@@ -495,7 +495,7 @@ def verify_deployment(
     expect_cost_guard: bool = typer.Option(
         False,
         "--expect-cost-guard",
-        help="Also verify that billing budget metadata is readable.",
+        help="Also verify the named budget, notification topic, function, and billing linkage.",
     ),
     billing_account_id: str | None = typer.Option(
         None,

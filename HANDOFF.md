@@ -14,7 +14,7 @@
 ## Checks
 
 - `uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy src tests`: passed.
-- `uv run pytest`: 455 passed.
+- `uv run pytest`: 461 passed.
 - `pip-audit` on the exported frozen requirements: no known vulnerabilities.
 - Terraform format/validate passed for `infra` and `infra/bootstrap-admin`.
 - Docker build was attempted but the base-image pull stalled locally.
@@ -28,7 +28,7 @@
 ## Remaining
 
 - Do not run the deployed proof job until the cost-guard function is restored to simulation mode; the read-only audit found `SIMULATE_DEACTIVATION=false`.
-- Reconcile the existing sandbox with the stronger verifier (Secret Manager API/secret, runtime billing viewer, and staging/marts dataset bindings are missing).
+- Reconcile the existing sandbox with the stronger verifier (runtime billing viewer and staging/marts dataset bindings are missing; no secret is requested by the current proof).
 - Configure the GitHub environment/WIF and run the approved live proof on a clean billing-linked project.
 - Create the HubSpot private app/token and store it only as the environment secret.
 - Review the resulting evidence artifact and update release status from retained evidence.
