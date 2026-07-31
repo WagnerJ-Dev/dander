@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from typing import TYPE_CHECKING
@@ -18,6 +19,7 @@ _PRINCIPAL = re.compile(r"^(?:user|serviceAccount|group):[^\r\n]+$")
 _SERVICE_ACCOUNT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 _GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GITHUB_REF = re.compile(r"^refs/(?:heads|tags)/[A-Za-z0-9._/-]+$")
+_STAGE_ZERO_STATE_PREFIX = "dander/bootstrap-admin/state"
 
 
 class AdministrativeBootstrapError(RuntimeError):
@@ -27,8 +29,16 @@ class AdministrativeBootstrapError(RuntimeError):
 class AdministrativeBootstrap:
     """Create only the state bucket and identity preconditions for platform Terraform."""
 
-    def __init__(self, infra_dir: Path) -> None:
+    def __init__(self, infra_dir: Path, operator_artifact_dir: Path) -> None:
         self._infra_dir = infra_dir.resolve()
+        self._repository_dir = self._infra_dir.parent.parent
+        self._operator_artifact_dir = operator_artifact_dir.expanduser().resolve()
+        if self._is_within(self._operator_artifact_dir, self._repository_dir):
+            raise AdministrativeBootstrapError(
+                "Operator artifact directory must be outside the repository checkout"
+            )
+        self._tf_data_dir = self._operator_artifact_dir / "terraform-data"
+        self._plan_path = self._operator_artifact_dir / "dander-admin-bootstrap.tfplan"
 
     def execute(
         self,
@@ -72,8 +82,16 @@ class AdministrativeBootstrap:
             github_repository=github_repository,
             github_ref=github_ref,
         )
-        plan_path = self._infra_dir / "dander-admin-bootstrap.tfplan"
-        self._run("terraform", "init", "-backend=false", "-input=false")
+        self._prepare_operator_directories()
+        plan_path = self._plan_path
+        self._run(
+            "terraform",
+            "init",
+            "-reconfigure",
+            "-input=false",
+            f"-backend-config=bucket={state_bucket}",
+            f"-backend-config=prefix={_STAGE_ZERO_STATE_PREFIX}",
+        )
         self._run(
             "terraform",
             "plan",
@@ -86,11 +104,56 @@ class AdministrativeBootstrap:
             f"-var=billing_account_id={billing_account_id}",
             f"-var=github_repository={github_repository}",
             f"-var=github_ref={github_ref}",
-            f"-out={plan_path.name}",
+            f"-out={plan_path}",
         )
+        try:
+            if not plan_path.is_file() or plan_path.is_symlink():
+                raise AdministrativeBootstrapError(
+                    f"Terraform did not create a regular saved plan at {plan_path}"
+                )
+            plan_path.chmod(0o600)
+        except OSError as error:
+            raise AdministrativeBootstrapError(
+                f"Could not secure the saved Terraform plan at {plan_path}"
+            ) from error
         if apply:
-            self._run("terraform", "apply", plan_path.name)
+            self._run("terraform", "apply", str(plan_path))
         return plan_path
+
+    @staticmethod
+    def _is_within(candidate: Path, parent: Path) -> bool:
+        return candidate == parent or parent in candidate.parents
+
+    def _prepare_operator_directories(self) -> None:
+        try:
+            if self._tf_data_dir.is_symlink():
+                raise AdministrativeBootstrapError("terraform-data must not be a symlink")
+            if self._tf_data_dir.exists() and not self._tf_data_dir.is_dir():
+                raise AdministrativeBootstrapError("terraform-data must be a directory")
+            resolved_tf_data_dir = self._tf_data_dir.resolve()
+            if not self._is_within(resolved_tf_data_dir, self._operator_artifact_dir):
+                raise AdministrativeBootstrapError(
+                    "Resolved terraform-data must remain inside the operator artifact directory"
+                )
+            if self._is_within(resolved_tf_data_dir, self._repository_dir):
+                raise AdministrativeBootstrapError(
+                    "Resolved terraform-data must remain outside the repository checkout"
+                )
+            if self._plan_path.is_symlink():
+                raise AdministrativeBootstrapError("Saved Terraform plan must not be a symlink")
+            if self._plan_path.exists() and not self._plan_path.is_file():
+                raise AdministrativeBootstrapError("Saved Terraform plan must be a regular file")
+            self._operator_artifact_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            self._operator_artifact_dir.chmod(0o700)
+            self._tf_data_dir.mkdir(mode=0o700, exist_ok=True)
+            self._tf_data_dir.chmod(0o700)
+            if self._plan_path.exists():
+                self._plan_path.chmod(0o600)
+                self._plan_path.unlink()
+        except OSError as error:
+            raise AdministrativeBootstrapError(
+                "Could not create or secure the operator artifact directory"
+            ) from error
 
     @staticmethod
     def _validate(
@@ -125,8 +188,16 @@ class AdministrativeBootstrap:
             raise AdministrativeBootstrapError("Invalid GitHub ref")
 
     def _run(self, *args: str) -> None:
+        environment = os.environ.copy()
+        environment["TF_DATA_DIR"] = str(self._tf_data_dir)
         try:
-            subprocess.run(args, cwd=self._infra_dir, check=True)
+            subprocess.run(
+                args,
+                cwd=self._infra_dir,
+                env=environment,
+                umask=0o077,
+                check=True,
+            )
         except FileNotFoundError as error:
             raise AdministrativeBootstrapError(
                 "Terraform is not installed or is not available on PATH"

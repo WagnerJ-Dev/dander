@@ -12,12 +12,34 @@
 
 ## 2026-07-31 — Stage-zero state retention
 
-- `infra/bootstrap-admin` keeps its bootstrap state local and operator-managed because it creates
-  the remote bucket used by the main platform root. Operators must keep encrypted, access-controlled
-  backups outside the repository.
+- `infra/bootstrap-admin` retains only migration input and recovery material in secured,
+  operator-managed local storage; its active bootstrap state is held in the permanent GCS backend.
+  Operators must keep local state and backups encrypted and access-controlled outside the repository.
 - The created platform-state bucket is versioned, non-public, uniformly access-controlled, and
   non-destructive (`force_destroy = false`); prior object generations are retained for recovery and
   are not removed by routine migrations.
+
+## 2026-07-31 — Permanent stage-zero GCS backend
+
+- `infra/bootstrap-admin` uses the existing GCS bucket with the fixed
+  `dander/bootstrap-admin/state` prefix as its permanent backend; the platform root continues to
+  use `dander/state`.
+- The backend is partial by design: bucket and prefix are supplied at initialization, while
+  credentials come from the operator's authenticated Google context and never enter Terraform
+  configuration.
+- Local stage-zero state is migration input and recovery material only. Object Versioning and GCS
+  locking must be verified before migration, and state, plans, backups, secrets, raw HubSpot
+  responses, and `.terraform/` contents remain outside GitHub.
+
+## 2026-07-31 — Stage-zero operator artifact boundary
+
+- `AdministrativeBootstrap` requires an operator artifact directory that resolves outside the
+  repository checkout. It stores the saved plan there and places Terraform's `TF_DATA_DIR` in its
+  dedicated `terraform-data` child directory.
+- The operator artifact and Terraform data directories are mode `0700`; completed plans are mode
+  `0600`. Terraform continues to run from `infra/bootstrap-admin`, and apply accepts only the exact
+  absolute saved-plan path. Every Terraform subprocess uses `umask 077`, and pre-existing
+  `terraform-data` or plan symlinks are rejected before Terraform starts.
 
 ## 2026-07-30 — Reproducible bootstrap verification
 

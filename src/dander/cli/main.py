@@ -309,11 +309,16 @@ def init_admin_plan(
     billing_account_id: str = typer.Option("", "--billing-account"),
     github_repository: str = typer.Option("", "--github-repository"),
     github_ref: str = typer.Option("refs/heads/main", "--github-ref"),
+    operator_artifact_dir: Path = typer.Option(  # noqa: B008
+        ...,
+        "--operator-artifact-dir",
+        help="Secured directory outside the repository for plans and Terraform metadata.",
+    ),  # noqa: B008
     infra_dir: Path = typer.Option(_DEFAULT_BOOTSTRAP_ADMIN_DIR, hidden=True),  # noqa: B008
 ) -> None:
     """Plan stage-zero state bucket and bootstrap identity resources."""
     try:
-        plan_path = AdministrativeBootstrap(infra_dir).execute(
+        plan_path = AdministrativeBootstrap(infra_dir, operator_artifact_dir).execute(
             project=project,
             state_bucket=state_bucket,
             admin_member=admin_member,
@@ -345,6 +350,11 @@ def init_admin_apply(
     billing_account_id: str = typer.Option("", "--billing-account"),
     github_repository: str = typer.Option("", "--github-repository"),
     github_ref: str = typer.Option("refs/heads/main", "--github-ref"),
+    operator_artifact_dir: Path = typer.Option(  # noqa: B008
+        ...,
+        "--operator-artifact-dir",
+        help="Secured directory outside the repository for plans and Terraform metadata.",
+    ),  # noqa: B008
     infra_dir: Path = typer.Option(_DEFAULT_BOOTSTRAP_ADMIN_DIR, hidden=True),  # noqa: B008
 ) -> None:
     """Apply the reviewed stage-zero plan after explicit confirmation."""
@@ -353,7 +363,7 @@ def init_admin_apply(
     ):
         raise typer.Abort()
     try:
-        plan_path = AdministrativeBootstrap(infra_dir).execute(
+        plan_path = AdministrativeBootstrap(infra_dir, operator_artifact_dir).execute(
             project=project,
             state_bucket=state_bucket,
             admin_member=admin_member,
