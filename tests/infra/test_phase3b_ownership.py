@@ -53,7 +53,7 @@ def test_scope_matches_stage_zero_and_excludes_bucket_and_broad_removal() -> Non
     assert 'format        = "DOCKER"' in stage_zero
     assert "google_artifact_registry_repository.images" not in platform
     assert 'data "google_artifact_registry_repository" "images"' in scheduled_job
-    assert 'count  = var.enable_scheduled_job ? 1 : 0' in platform
+    assert "count  = var.enable_scheduled_job ? 1 : 0" in platform
     assert STATE_BUCKET_ADDRESS not in source
     assert "from = module.scheduled_job[0]" not in source
     assert "removed {\n  # The live state address" in source
