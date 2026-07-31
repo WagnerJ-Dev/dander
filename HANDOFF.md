@@ -6,8 +6,7 @@
 - Split Terraform into stage-zero administration and impersonated platform bootstrap; stage zero owns state and Artifact Registry prerequisites.
 - Added sanitized evidence schemas, resource-scoped IAM/cost verification, HubSpot connector/proof, Storage Write/transform/Dataplex proof scripts, and a protected manual workflow.
 - Hardened the HubSpot watermark/evidence path, ensured runtime-only secrets create their Secret Manager container, and retained cost-guard evidence separately from bootstrap checks.
-- Established `harrisonoconnorhover/dander` as the admin-owned CI/evidence surface; fork PR #1 is open from `codex/dander-v0` into `main` at `2918e87`.
-- Repaired fork CI compatibility and container assertions; fork run `30632589535` is green for `e22eb82`.
+- Established harrisonoconnorhover/dander as the admin-owned CI/evidence surface; fork PR #1 is open from codex/dander-v0 into main.
 
 ## Try It
 
@@ -23,7 +22,8 @@
 - `pip-audit` on the exported frozen requirements: no known vulnerabilities.
 - Terraform format/validate passed for `infra` and `infra/bootstrap-admin`.
 - Docker build was attempted but the base-image pull stalled locally.
-- `git diff --check`: passed; fork CI run `30632589535` passed Python, Terraform, secret, and container jobs.
+- `git diff --check`: passed.
+- Last verified fork CI: run 30632748270 passed on commit 4d2e55d.
 
 ## Decisions
 
