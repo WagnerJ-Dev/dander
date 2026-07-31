@@ -1,5 +1,6 @@
 # ── Secrets & local config (NEVER commit) ─────────────────────────────
 .env
+.dander/
 .env.*
 !.env.example
 *.pem
@@ -17,6 +18,7 @@ secrets/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+*.tfplan
 crash.log
 override.tf
 override.tf.json

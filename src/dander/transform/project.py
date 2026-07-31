@@ -1,0 +1,184 @@
+"""Model discovery, dependency resolution, and safe BigQuery SQL compilation."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import sqlglot
+from jinja2 import Environment, StrictUndefined, TemplateError
+from sqlglot import exp
+
+from dander.transform.config import ModelMetadata, TransformConfigError, load_model_metadata
+from dander.transform.model import parse_refs
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+_PROJECT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_RAW_PREFIX = "raw_"
+
+
+class TransformProjectError(ValueError):
+    """Raised before execution when a transform project cannot be resolved safely."""
+
+
+@dataclass(frozen=True)
+class TransformModel:
+    """A SQL model paired with its validated metadata and dependency declarations."""
+
+    metadata: ModelMetadata
+    sql: str
+    refs: tuple[str, ...]
+    sql_path: Path
+
+    @property
+    def name(self) -> str:
+        """Return the canonical model name."""
+        return self.metadata.model
+
+
+class TransformProject:
+    """Discovered transform models and their project-scoped relation resolver."""
+
+    def __init__(self, *, project_id: str, models: Iterable[TransformModel]) -> None:
+        if not _PROJECT_ID.fullmatch(project_id):
+            raise TransformProjectError("Invalid GCP project id")
+        indexed: dict[str, TransformModel] = {}
+        for model in models:
+            if model.name in indexed:
+                raise TransformProjectError(f"Duplicate model name: {model.name}")
+            indexed[model.name] = model
+        if not indexed:
+            raise TransformProjectError("No SQL models were found")
+        self.project_id = project_id
+        self.models = indexed
+        self._validate_references()
+
+    @classmethod
+    def load(cls, models_dir: Path, *, project_id: str) -> TransformProject:
+        """Discover every SQL model beneath a directory and load its YAML sidecar.
+
+        Args:
+            models_dir: Root containing model SQL and YAML files.
+            project_id: GCP project used to qualify compiled relations.
+
+        Returns:
+            A validated transform project.
+
+        Raises:
+            TransformProjectError: If discovery, metadata, or model naming is invalid.
+        """
+        discovered: list[TransformModel] = []
+        for sql_path in sorted(models_dir.rglob("*.sql")):
+            sidecar = sql_path.with_suffix(".yml")
+            if not sidecar.exists():
+                alternate = sql_path.with_suffix(".yaml")
+                sidecar = alternate if alternate.exists() else sidecar
+            if not sidecar.exists():
+                raise TransformProjectError(f"Missing YAML sidecar for model: {sql_path}")
+            try:
+                metadata = load_model_metadata(sidecar)
+                sql = sql_path.read_text()
+            except (OSError, TransformConfigError) as error:
+                raise TransformProjectError(str(error)) from error
+            if metadata.model != sql_path.stem:
+                raise TransformProjectError(
+                    f"Model name {metadata.model!r} does not match SQL file {sql_path.name!r}"
+                )
+            discovered.append(
+                TransformModel(
+                    metadata=metadata,
+                    sql=sql,
+                    refs=tuple(parse_refs(sql)),
+                    sql_path=sql_path,
+                )
+            )
+        return cls(project_id=project_id, models=discovered)
+
+    def ordered(self, selected: Iterable[str] | None = None) -> tuple[TransformModel, ...]:
+        """Return selected models plus model dependencies in topological order.
+
+        Args:
+            selected: Optional model names. Raw relations are dependencies but not build targets.
+
+        Returns:
+            Models ordered so every model dependency precedes its consumer.
+
+        Raises:
+            TransformProjectError: If selection is unknown or the model graph has a cycle.
+        """
+        roots = tuple(selected) if selected is not None else tuple(sorted(self.models))
+        if unknown := sorted(set(roots) - self.models.keys()):
+            raise TransformProjectError(f"Unknown selected models: {', '.join(unknown)}")
+
+        state: dict[str, int] = {}
+        ordered: list[TransformModel] = []
+        stack: list[str] = []
+
+        def visit(name: str) -> None:
+            marker = state.get(name, 0)
+            if marker == 2:
+                return
+            if marker == 1:
+                start = stack.index(name)
+                cycle = [*stack[start:], name]
+                raise TransformProjectError(f"Model dependency cycle: {' -> '.join(cycle)}")
+            state[name] = 1
+            stack.append(name)
+            model = self.models[name]
+            for reference in model.refs:
+                if reference in self.models:
+                    visit(reference)
+            stack.pop()
+            state[name] = 2
+            ordered.append(model)
+
+        for root in roots:
+            visit(root)
+        return tuple(ordered)
+
+    def relation_for_model(self, model: TransformModel) -> str:
+        """Return a quoted fully-qualified output relation."""
+        return self._relation(model.metadata.dataset, model.name)
+
+    def relation_for_ref(self, reference: str) -> str:
+        """Resolve a model reference or conventional `raw_<table>` source reference."""
+        if reference in self.models:
+            return self.relation_for_model(self.models[reference])
+        if reference.startswith(_RAW_PREFIX):
+            table = reference.removeprefix(_RAW_PREFIX)
+            if _IDENTIFIER.fullmatch(table):
+                return self._relation("raw", table)
+        raise TransformProjectError(f"Unknown model reference: {reference}")
+
+    def compile(self, model: TransformModel) -> str:
+        """Render refs and validate that the model is exactly one BigQuery query."""
+        environment = Environment(undefined=StrictUndefined, autoescape=False)
+        environment.globals.clear()
+        try:
+            compiled = environment.from_string(model.sql).render(ref=self.relation_for_ref).strip()
+        except (TemplateError, TransformProjectError) as error:
+            raise TransformProjectError(f"Cannot compile model {model.name}") from error
+        if compiled.endswith(";"):
+            compiled = compiled[:-1].rstrip()
+        try:
+            expression = sqlglot.parse_one(compiled, read="bigquery")
+        except sqlglot.errors.ParseError as error:
+            raise TransformProjectError(f"Invalid BigQuery SQL in model {model.name}") from error
+        if not isinstance(expression, exp.Query):
+            raise TransformProjectError(f"Model {model.name} must contain one read-only query")
+        return compiled
+
+    def _validate_references(self) -> None:
+        for model in self.models.values():
+            for reference in model.refs:
+                self.relation_for_ref(reference)
+
+    def _relation(self, dataset: str, table: str) -> str:
+        if not _IDENTIFIER.fullmatch(dataset) or not _IDENTIFIER.fullmatch(table):
+            raise TransformProjectError("Unsafe BigQuery relation identifier")
+        return f"`{self.project_id}.{dataset}.{table}`"

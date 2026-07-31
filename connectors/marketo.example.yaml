@@ -1,0 +1,27 @@
+# Marketo Engage Asset API example. Replace MUNCHKIN_ID in both URLs with the subscription value.
+# Adobe requires client credentials on the token URL; Dander never logs or stores their values.
+name: marketo
+base_url: https://MUNCHKIN_ID.mktorest.com/rest
+auth_strategy: oauth2_client_credentials
+auth_refs:
+  client_id: MARKETO_CLIENT_ID
+  client_secret: MARKETO_CLIENT_SECRET
+auth_options:
+  token_url: https://MUNCHKIN_ID.mktorest.com/identity/oauth/token
+  credential_placement: query
+rate_limit:
+  requests_per_second: 5
+  burst: 10
+  backoff: exponential
+  max_retries: 5
+
+endpoints:
+  - name: programs
+    path: /asset/v1/programs.json
+    pagination:
+      kind: offset
+      offset_param: offset
+      limit_param: maxReturn
+      page_size: 200
+    data_selector: result
+    primary_key: [id]

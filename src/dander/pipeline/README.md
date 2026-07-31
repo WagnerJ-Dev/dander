@@ -4,12 +4,12 @@
 
 `dander.pipeline` owns the **declarative pipeline graph** — the durable primitive behind both a
 future drag-drop UI and fully code-authored pipelines. A graph is a list of `nodes` (data objects /
-tasks) and `edges` (connections between them, i.e. how data flows). This package does **not**
-execute anything: it defines the on-disk shape (YAML/JSON), validates that a graph is structurally
-and semantically sound, and derives read-only structure (adjacency, topological order) from it.
-Execution — expression evaluation, join/SQL generation, ingestion, materialization — happens in the
-Ingestion/Transform/Writer layers described in the module map in
-`steering/00-project-overview.md`; the graph only records *intent*.
+tasks) and `edges` (connections between them, i.e. how data flows). The package defines the
+on-disk shape (YAML/JSON), validates that a graph is structurally and semantically sound, derives
+read-only structure (adjacency, topological order), safely compiles the supported graph subset to
+BigQuery SQL, and prepares configured target writers. Ingestion, query submission, and scheduled
+execution remain in the Ingestion/Transform/Writer/Orchestration layers described in
+`steering/00-project-overview.md`.
 
 This doc is accurate to the pipeline package as merged. If the code and this doc ever disagree, the
 code is right and this doc has drifted — please fix it.
@@ -21,6 +21,7 @@ code is right and this doc has drifted — please fix it.
 | `dander.pipeline.graph` | The model: `Node`, `NodeField`, `Edge`, `FieldMapping`, `Transformation`, `JoinSpec`, `CursorStrategy`, `PipelineGraph`, and YAML/JSON load/dump. Pure value objects — no validation logic beyond Pydantic's own boundary constraints. |
 | `dander.pipeline.graph_ops` | The correctness layer: structural `validate`, `topological_order`, `AdjacencyIndex`, and field-wiring `validate_field_wiring`. Pure functions of a `PipelineGraph` — nothing is persisted onto the model. |
 | `dander.pipeline.node_config` | The discriminated, per-node-type `Node.config` models — `NodeType`, `NodeConfig`, `SourceNodeConfig`, `TransformNodeConfig`, `TargetNodeConfig` — and the routing function `Node` delegates to. See *Typed per-node-type config* below. |
+| `dander.pipeline.compiler` | Safe compilation of executable linear/two-input graphs to explicit BigQuery SQL, plus side-effect-free target-writer preparation. |
 | `dander.pipeline.request_spec` | `SourceNodeConfig`'s declarative request/payload spec — `HttpMethod`, `RequestSpec` — and the secret/field-reference grammar its header/param/body values must follow. See *Source request/payload spec* below. |
 | `dander.pipeline.errors` | The typed `GraphValidationError` hierarchy raised by `graph_ops`. |
 
@@ -30,8 +31,10 @@ The package `__init__.py` (`dander.pipeline`) re-exports the graph shape (`Node`
 `PipelineGraph`, the four `load_*`/`dump_*` functions), the `graph_ops` functions
 (`validate`, `validate_field_wiring`, `topological_order`, `AdjacencyIndex`), the full `errors`
 hierarchy, and the typed node-config classes (`NodeType`, `NodeConfig`, `SourceNodeConfig`,
-`TransformNodeConfig`, `TargetNodeConfig`, `HttpMethod`, `RequestSpec`). **It does not currently
-re-export the finer-grained model classes** — `NodeField`, `FieldMapping`, `Transformation`,
+`TransformNodeConfig`, `TargetNodeConfig`, `HttpMethod`, `RequestSpec`), the executable
+join/writer configuration classes, and compiler entry points (`compile_target`,
+`prepare_target_writer`). **It does not currently re-export the finer-grained graph model
+classes** — `NodeField`, `FieldMapping`, `Transformation`,
 `TransformationKind`, `JoinSpec`, `JoinKeyPair`, `JoinType`, `CursorStrategy`, `CursorKind` —
 those must be imported from the submodule directly:
 
@@ -122,15 +125,34 @@ node **ids** on `Edge`.
 Transform layer — was a genuine fork; the graph took the in-scope, declarative interpretation. See
 Implementation Notes below for the Decision Log status of this call.)*
 
+## Executable linear pipelines
+
+`compile_target` turns a validated graph into an explicit-column BigQuery `SELECT`. It supports
+linear mappings plus two-input joins whose output is a distinct transform node, JSON constants,
+scalar expressions, target casts, and the built-in custom-transform registry. Expressions are
+parsed with sqlglot, must reference exactly their declared `inputs`, may use only allow-listed
+scalar functions, and cannot contain queries, tables, stars, or parameters. No expression is
+passed to Python `eval`.
+
+`prepare_target_writer` resolves a target's `WriterConfig` to the concrete SCD1, SCD2, snapshot,
+incremental, or replace writer and a `WriteTarget`. Constructing it has no network side effect;
+calling its `write()` method performs the configured BigQuery write.
+
+An executable join is authored on `TransformNodeConfig.join`: `left_input` and `right_input` must
+match its two incoming edges, `keys` name equality columns on those inputs, and the transform node
+is the output. The older `Edge.join` shape remains readable for backward compatibility but fails
+closed during compilation because it makes the edge target both a right input and the output.
+
 ## Node cursor / watermark strategy
 
 A `Node` may carry an optional `cursor: CursorStrategy | None` (DANDER-18) declaring how a
 source/ingestion node resumes incrementally. `None` (the default) is a plain node, unchanged and
 backward-compatible with graphs that predate cursor strategies. `CursorStrategy` is opaque and
-inert: **no state is ever read, written, or persisted here** — it records cursor *intent* only,
-for a future Orchestration/State layer to honor (see `dander.state.watermark.WatermarkStore` and
-the control-table/idempotency design in `steering/00-project-overview.md` /
-`steering/02-engineering.md`).
+inert: **no state is read, written, or persisted by the graph model** — it records cursor intent.
+Endpoint execution can honor the equivalent connector cursor through
+`dander.state.watermark.WatermarkStore`; graph-to-runtime cursor binding beyond that connector
+path remains an orchestration concern (see the control-table/idempotency design in
+`steering/00-project-overview.md` / `steering/02-engineering.md`).
 
 - `field: str` — the cursor field name the source advances on (e.g. `updated_at`). Referenced by
   name only, never a value. Required and non-empty after stripping (a whitespace-only `field`
@@ -189,9 +211,8 @@ preserved losslessly rather than rejected) and are **distinct classes**, so a `s
 node's `type`, without echoing any config value. A modeled node with no `config` key loads as an
 empty typed model (e.g. `TargetNodeConfig()`), so this is fully backward compatible with
 DANDER-2..9 graphs. `SourceNodeConfig` currently carries one dedicated field beyond the inherited
-`extra` bucket — `request` — described next; `TransformNodeConfig`/`TargetNodeConfig` remain
-open placeholders pending later tickets (transform materialization detail; DANDER-16's
-write-pattern/destination-table config).
+`extra` bucket — `request` — described next. `TransformNodeConfig` carries executable join
+configuration, and `TargetNodeConfig` carries its validated writer/destination contract.
 
 ## Source request/payload spec
 
@@ -440,16 +461,16 @@ On-disk / alias keys to know, so both serializations are covered:
 
 ## Scope boundary
 
-This package is **declarative only**. It does not:
+This package combines declarative modeling with a bounded execution bridge. It does not:
 
-- Evaluate a `Transformation`'s `expression` or interpret its `constant`.
-- Generate or execute SQL for a `JoinSpec`.
+- execute arbitrary expressions, Python code, or legacy edge-level `JoinSpec` joins;
+- submit generated SQL or materialize a BigQuery relation;
 - Read/write BigQuery, call any SaaS API, or move data.
 
-Those responsibilities live in the Ingestion, Transform, and BigQuery Writer modules described in
-the module map in `steering/00-project-overview.md`. The pipeline graph is the shared declarative
-primitive those layers (and a future drag-drop UI) will consume — it is not itself one of the six
-named modules in that table.
+`compile_target` parses allow-listed scalar expressions and emits explicit-column SQL for the
+supported graph subset. `prepare_target_writer` constructs a concrete writer; only a later call to
+that writer's `write()` method performs I/O. Ingestion, transform submission, hosted scheduling,
+and write execution otherwise remain in their named modules.
 
 Related tickets: `tickets/DANDER-2-pipeline-graph-model.md` (base `Node`/`Edge`/`PipelineGraph` +
 serialization), `DANDER-3` (structural validation), `DANDER-4` (node field schema), `DANDER-5`
@@ -461,14 +482,10 @@ Relevant steering: `steering/00-project-overview.md`, `steering/01-security.md`,
 
 ## Decision Log status
 
-DANDER-7 shipped (`status: done`) and put join semantics **on the graph** rather than deferring them
-entirely to the Transform layer — a real product decision per that ticket's "product flag." As of
-this doc, `steering/00-project-overview.md`'s Decision Log does **not** yet contain an entry
-recording that call; this is flagged as a gap rather than silently invented here (see
-Implementation Notes in `tickets/DANDER-9-pipeline-fields-mappings-docs.md`).
+DANDER-7 put declarative join semantics on graph edges. The later executable-join decision is
+recorded in `docs/decisions.md`: executable joins belong to a distinct transform output node,
+while the edge-level shape remains loadable but fails closed during compilation.
 
-DANDER-18 similarly put the watermark/cursor **strategy** on the graph node (`Node.cursor`) rather
-than leaving cursor declaration entirely to the Orchestration/State layer — the same
-graph-vs-downstream-layer fork as DANDER-7's join call. As of this doc,
-`steering/00-project-overview.md`'s Decision Log does **not** yet contain an entry recording this
-call either; flagged here rather than silently added.
+DANDER-18 put cursor strategy on the graph node (`Node.cursor`). Endpoint cursor execution and
+watermark persistence now exist, while a general visual-graph-to-runtime cursor binding remains
+outside this package.

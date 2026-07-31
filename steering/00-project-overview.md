@@ -52,12 +52,48 @@ This touches HR/comp data (Workday, Xactly) and customer data (Salesforce, NetSu
 regulated company. **Clear internal OSS/legal review before publishing.** Treat this as a
 blocking gate on any public release, separate from engineering readiness.
 
+**Local interpretation recorded 2026-07-30:** the systems above are hypothetical connector
+categories. They do not establish that Dander derives from, connects to, or contains data from an
+existing company. Do not infer employer ownership, regulated-company affiliation, customer
+records, or HR records. Provenance/privacy review becomes applicable if actual employer-owned
+material, credentials, or non-public data is introduced.
+
 ---
 
 ## Decision Log
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-07-29 — **The metadata spine is deterministic and local-first** — one validated model YAML
+  projects to transforms/tests, stable semantic JSON, and reusable Dataplex system aspects;
+  catalog mutation requires an explicit flag because stored aspect metadata is billable.
+- 2026-07-29 — **The first transform slice builds and tests public jobs as views/tables** — typed
+  YAML, fail-closed DAG resolution, restricted `ref()` rendering, and generic assertions prove the
+  owned raw-to-staging path; incremental materialization waits for an explicit idempotent contract.
+- 2026-07-29 — **The first hosted runtime is a daily, paused-first Cloud Run Job** — the public
+  connector needs no stored credential; separate least-privilege runtime and scheduler identities,
+  an immutable image digest, and bounded image retention minimize both access and cost exposure.
+- 2026-07-29 — **Greenhouse has separate public and private connector paths** — the public Job
+  Board connector gives a real, credential-free first run; the canonical private connector uses
+  Harvest v3 OAuth client credentials, while v1 remains explicitly legacy only until its announced
+  2026-08-31 shutdown.
+- 2026-07-29 — **The cost guard is simulation-first, idempotent, and budget-specific** — malformed
+  or unrelated notifications are ignored; deployment proves the trigger without mutation before
+  live mode is enabled, and a dedicated service account can only manage project billing and logs.
+- 2026-07-29 — **Billing-linked testing gets a fail-closed guardrail preflight, not a “hard cap”**
+  — the production SCD1/Secret Manager path may run only after Dander observes billing enabled, a
+  project-scoped budget no greater than $5, 80%/100% thresholds, and conventional Pub/Sub wiring;
+  billing latency and subscriber health remain explicit residual risks.
+- 2026-07-29 — **Strict $0 sandbox = billing-disabled BigQuery + full replacement + local state**
+  — BigQuery Sandbox disallows DML, so this explicitly non-production mode verifies billing is
+  disabled before creating anything, uses load jobs instead of `MERGE`, and never resumes from its
+  diagnostic SQLite cursor. Terraform, Secret Manager, GCS, and Cloud Run stay out of this mode.
+- 2026-07-29 — **First runnable slice = Greenhouse → BigQuery SCD1** — proves the documented
+  low-friction-source path before enterprise connectors; dlt owns REST pagination, Dander owns
+  audited secret resolution, staging-table idempotency, and post-write watermark commits.
+- 2026-07-29 — **Endpoint cursor field and request parameter are distinct** — source responses and
+  request filters can use different names (Greenhouse `updated_at` / `updated_after`), so connector
+  config carries both instead of overloading one ambiguous string.
 - 2026-07-09 — **Ingestion = hybrid** — dlt for standard REST sources (pagination/retry/incremental/schema-evolution/BQ-load); hand-rolled `EnterpriseSource` for Workday/NetSuite/Xactly where dlt's generics fall short. Both implement the `Source` interface so downstream layers are path-agnostic.
 - 2026-07-09 — **Transform = own engine** — Jinja2 `ref()` → sqlglot DAG → topological execution + generic tests, reusing the writer's materializations. Ownership/customization was the original motivation; the metadata spine is native to it; avoids the Fivetran-consolidation risk of dbt/SQLMesh.
 - 2026-07-09 — **Stack = Python 3.12** (app + Typer CLI), **BigQuery SQL** (transforms), **Terraform/HCL** (infra), **YAML** (config). Package: src-layout, hatchling build, uv-managed.

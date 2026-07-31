@@ -42,9 +42,9 @@ class GenericTestKind(StrEnum):
     """The closed set of generic data-quality test kinds a `FieldTest` may declare.
 
     A `StrEnum` (not a bare `Literal`), matching the `TransformationKind`/`JoinType`/
-    `TriggerKind` convention elsewhere in this module: a named, importable type for the future
-    Transform/test-runner layer to branch on, while serializing to/from a plain string value
-    stably in YAML and JSON. An out-of-set value fails validation with a clear error.
+    `TriggerKind` convention elsewhere in this module: a named, importable type for a graph test
+    runner to branch on, while serializing to/from a plain string value stably in YAML and JSON.
+    An out-of-set value fails validation with a clear error.
 
     Attributes:
         NOT_NULL: The field must never be null. No additional payload.
@@ -66,12 +66,10 @@ class FieldTest(BaseModel):
     """A single declarative generic data-quality test attached to a `NodeField`.
 
     This model is opaque and inert: it records test *intent* only — **no test is ever executed
-    here**. Executing a `not_null`/`unique`/`accepted_values`/`relationships` assertion against
-    real data belongs entirely to the future Transform/test-runner layer, per
-    `steering/00-project-overview.md`. Whether a `relationships` test's `to`/`field` actually
-    resolves against another node's declared field is likewise deferred — that is DANDER-8-style
-    cross-node lineage validation (see `dander.pipeline.graph_ops.validate_field_wiring`), not
-    enforced here.
+    here**. The transform engine executes equivalent tests declared in model sidecars, but a
+    bridge from these graph-level `FieldTest` values to that runner is not implemented. Whether
+    a `relationships` test's `to`/`field` resolves against another node's declared field is
+    likewise not enforced here (see `dander.pipeline.graph_ops.validate_field_wiring`).
 
     Modeled with the same shape as `Transformation`/`Trigger` (a `kind` discriminator plus
     kind-specific payload fields validated by a single `@model_validator`), rather than a
@@ -164,15 +162,15 @@ class NodeField(BaseModel):
             values is deferred, mirroring how `Node.type` is handled.
         cast_to: Optional target/cast type override for this field (raw-vs-target distinction).
             `None` (the default) means no override — the field is used as `type` declares.
-            Declarative only: no casting is ever applied here — executing the cast belongs to
-            the future BigQuery Writer layer, per `steering/00-project-overview.md`.
+            `dander.pipeline.compiler` applies supported scalar casts when it compiles an
+            executable graph.
         nullable: Whether the field may be null. Defaults to `True` since most source fields
             are nullable; set `False` to opt into a not-null guarantee.
         description: Optional human-readable documentation for the field.
         tests: Declarative generic data-quality tests attached to this field (see `FieldTest`).
             Defaults to empty — a field with no tests loads and dumps just as a DANDER-4 field
-            did. Declarative only: no test is ever executed here — executing it belongs to the
-            future Transform/test-runner layer, per `steering/00-project-overview.md`.
+            did. The graph compiler does not execute these tests; the transform engine's
+            sidecar-based test contract is a separate, implemented path.
         metadata: Free-form tags/labels only (e.g. a `sensitivity`/`pii` classification,
             ownership). Per `steering/01-security.md`, this must never hold a real field value
             or sample data — labels/tags only.
@@ -211,16 +209,16 @@ class TriggerKind(StrEnum):
 class Trigger(BaseModel):
     """A declarative trigger/schedule attachable to a pipeline or a node.
 
-    This model is opaque and inert: it is **declarative model only**, recording trigger *intent*
-    for a future Orchestration/State layer to consume per `steering/00-project-overview.md`. No
-    scheduler is implemented and nothing here is ever evaluated or executed — in particular, a
-    `cron` expression is stored as an **opaque string** and is never parsed, validated as a cron
-    grammar, or scheduled here.
+    This model is opaque and inert: it is **declarative model only**, recording trigger intent.
+    Dander can provision a fixed Cloud Scheduler job for its hosted public pipeline, but that
+    scheduler is not generated from this graph model. Nothing here evaluates a trigger; in
+    particular, a `cron` expression is stored as an opaque string and is never parsed, validated
+    as a cron grammar, or scheduled here.
 
     Modeled with the same shape as `Transformation` (a `kind` discriminator plus kind-specific
     payload fields validated by a single `@model_validator`), rather than a discriminated union
     of one model per kind, for internal consistency with the rest of this module and a single
-    importable type for the future Orchestration layer to branch on.
+    importable type for a graph-aware orchestration layer to branch on.
 
     Attributes:
         kind: The trigger discriminator. Required — unlike `Transformation`'s `DIRECT` default,
@@ -231,8 +229,8 @@ class Trigger(BaseModel):
         depends_on: Upstream identifiers for the `DEPENDENCY` kind, named **by name/id only,
             never values** (`steering/01-security.md`) — an upstream pipeline name at graph
             level, or an upstream node id at node level. Existence/resolution of these
-            identifiers is deferred to the future Orchestration layer. At least one required
-            when `kind` is `DEPENDENCY`; must be empty otherwise.
+            identifiers is deferred to graph-aware orchestration. At least one required when
+            `kind` is `DEPENDENCY`; must be empty otherwise.
         event: Optional opaque event name for the `MANUAL` kind. `None` means a purely
             manual/on-demand trigger; a set string names an external event. Must be unset for
             the other kinds.
@@ -295,9 +293,8 @@ class CursorKind(StrEnum):
 
     A `StrEnum` (not a bare `Literal`), matching the `TransformationKind`/`JoinType`/
     `TriggerKind`/`GenericTestKind` convention elsewhere in this module: a named, importable type
-    for the future Orchestration/State layer (see `dander.state.watermark.WatermarkStore`) to
-    branch on, while it serializes to/from a plain string value stably in YAML and JSON. An
-    out-of-set value fails Pydantic validation with a clear error.
+    for orchestration to branch on, while it serializes to/from a plain string value stably in
+    YAML and JSON. An out-of-set value fails Pydantic validation with a clear error.
 
     Attributes:
         TIMESTAMP: A time-ordered cursor (e.g. an ``updated_at`` field) — the resume bound is a
@@ -321,13 +318,13 @@ class CursorStrategy(BaseModel):
     — **no state is ever read, written, or persisted here**. Persisting the last-successful
     cursor value per (source, entity) is the Orchestration/State layer's job, per
     `steering/00-project-overview.md` ("Track a watermark/cursor per source+entity in a control
-    table; resume from last success", `steering/02-engineering.md`) and the `WatermarkStore` ABC
-    in `dander.state.watermark` — this model is the declarative seam a future store implementation
-    would honor, not the store itself.
+    table; resume from last success", `steering/02-engineering.md`) and the implemented
+    `WatermarkStore` backends in `dander.state.watermark`. Endpoint execution uses those stores;
+    general graph-to-endpoint cursor binding is not implemented in this model.
 
     Modeled with the same shape as `Transformation`/`Trigger`/`FieldTest` (a `kind` discriminator
     plus a free-form payload), for internal consistency with the rest of this module and a single
-    importable type for that future layer to branch on.
+    importable type for orchestration to branch on.
 
     Attributes:
         field: The cursor field name the source advances on (e.g. ``updated_at``). Referenced
@@ -338,7 +335,7 @@ class CursorStrategy(BaseModel):
             default cursor kind; a strategy with no declared kind is meaningless.
         params: Free-form, kind-specific parameters (e.g. a timestamp format hint), matching the
             `Node.config`/`Transformation.arguments` precedent. Opaque and inert: stored
-            as-authored for the future Orchestration/State layer, never interpreted here, and —
+            as-authored for orchestration, never interpreted here, and —
             per `steering/01-security.md` — never a place for a secret/credential; names and
             parameters only.
         metadata: Free-form tags/labels only (never data/secrets), consistent with
@@ -418,8 +415,8 @@ class NodeVisual(BaseModel):
 
     This model is purely additive, presentation-only metadata: it is inert and carries no data
     values or execution semantics, and nothing in this codebase ever reads it to make a decision —
-    exactly like `Node.trigger`/`Node.cursor` are inert declarative intent for their respective
-    future layers. It is kept as its own clearly-named concern, separate from the free-form
+    exactly like `Node.trigger`/`Node.cursor` are inert declarative intent in this model. It is
+    kept as its own clearly-named concern, separate from the free-form
     `Node.config` (data-shaping intent), so a visual editor's layout state never blurs into a
     node's core identity or data semantics.
 
@@ -473,10 +470,11 @@ class Node(BaseModel):
             incremental_cursor` field name — see `CursorStrategy.from_incremental_cursor` for the
             migration bridge. State persistence is out of scope here (see
             `steering/00-project-overview.md`, `steering/02-engineering.md`, and
-            `dander.state.watermark.WatermarkStore`) — this only declares the strategy a future
-            store would honor. Whether `cursor` is semantically meaningful on a given `node.type`
-            is not enforced here, matching the deferred-`Node.type`-validation treatment of
-            `Trigger`/`JoinSpec`.
+            `dander.state.watermark.WatermarkStore`) — this model only declares the strategy.
+            Endpoint execution has concrete watermark stores, but general graph-to-endpoint
+            binding is not implemented. Whether `cursor` is semantically meaningful on a given
+            `node.type` is not enforced here, matching the deferred-`Node.type`-validation
+            treatment of `Trigger`/`JoinSpec`.
         visual: Optional presentation/layout metadata for the future drag-drop UI named in this
             module's docstring (DANDER-19). `None` (the default) means the node carries no visual
             metadata and loads/dumps exactly as a pre-DANDER-19 node did. Purely additive and
@@ -890,8 +888,8 @@ class PipelineGraph(BaseModel):
         edges: The graph's edges.
         trigger: Optional declarative pipeline-level trigger/schedule (DANDER-14). `None` (the
             default) means the graph carries no trigger and loads/dumps exactly as a pre-
-            DANDER-14 graph did. Declarative only — see `Trigger` — a future Orchestration layer
-            executes it, not this module.
+            DANDER-14 graph did. Declarative only — see `Trigger`; the separately provisioned
+            Cloud Scheduler runtime does not consume this model.
     """
 
     model_config = ConfigDict(populate_by_name=True)

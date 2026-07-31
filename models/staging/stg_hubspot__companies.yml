@@ -1,0 +1,37 @@
+# Metadata spine for the owned HubSpot developer-test-account proof.
+model: stg_hubspot__companies
+description: Invented HubSpot proof companies normalized for the Dander authenticated ingestion path.
+owner: data-eng
+materialization: incremental
+dataset: staging
+source_system: hubspot_test
+sensitivity: synthetic
+unique_key: [company_id]
+incremental_cursor: updated_at
+
+columns:
+  - name: company_id
+    type: STRING
+    description: Stable HubSpot company identifier.
+  - name: company_name
+    type: STRING
+    description: Invented company name used for the proof run.
+  - name: domain
+    type: STRING
+    description: Controlled proof-domain value when present.
+  - name: created_at
+    type: TIMESTAMP
+    description: HubSpot creation timestamp.
+  - name: updated_at
+    type: TIMESTAMP
+    description: HubSpot last-update timestamp used for incremental materialization.
+  - name: archived
+    type: BOOL
+    description: HubSpot archive state.
+
+tests:
+  - column: company_id
+    not_null: true
+    unique: true
+  - column: archived
+    accepted_values: [true, false]

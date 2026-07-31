@@ -27,7 +27,8 @@ interface (`get_credentials(system_name)`):
 | Salesforce | OAuth2 (JWT bearer / connected-app) |
 | Workday | SOAP/RaaS basic-auth, or REST OAuth2 + cert |
 | NetSuite | OAuth 1.0a token-based (TBA) |
-| Greenhouse (Harvest) | API key over basic auth |
+| Greenhouse (Harvest v3) | OAuth2 client credentials |
+| Greenhouse (public Job Board GET) | No authentication |
 | Marketo | OAuth2 client credentials |
 | Xactly | hand-rolled (niche) |
 

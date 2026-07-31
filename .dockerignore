@@ -1,0 +1,12 @@
+*
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!src/**
+!connectors/
+!connectors/**
+!models/
+!models/**

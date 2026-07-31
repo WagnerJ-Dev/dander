@@ -8,13 +8,16 @@ which path produced the records.
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from dander.ingestion.pagination import NoPagination, PaginationStrategy
+
+_FIELD_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -43,7 +46,14 @@ class Endpoint(BaseModel):
             `CursorStrategy` from a legacy endpoint should call
             `CursorStrategy.from_incremental_cursor(endpoint.incremental_cursor)` rather than
             reading this field directly for new code.
+        cursor_param: Optional request query-parameter name that receives the persisted cursor.
+            Defaults to `incremental_cursor` when omitted. This distinction is necessary for APIs
+            such as Greenhouse, whose response field is `updated_at` while its filter parameter is
+            `updated_after`.
         primary_key: Field name(s) forming this endpoint's business key.
+        data_selector: Optional JSONPath selecting records from an enveloped response.
+        query_params: Non-secret scalar query parameters applied to every request. Authentication
+            material must use the source's auth strategy instead.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -52,7 +62,54 @@ class Endpoint(BaseModel):
     path: str
     pagination: PaginationStrategy = Field(default_factory=NoPagination)
     incremental_cursor: str | None = None
+    cursor_param: str | None = None
     primary_key: list[str] = Field(default_factory=list)
+    data_selector: str | None = None
+    query_params: dict[str, str | int | bool] = Field(default_factory=dict)
+    field_types: dict[str, str] = Field(
+        default_factory=dict,
+        description="Explicit BigQuery type overrides applied by hand-rolled enterprise sources.",
+    )
+
+    @field_validator("field_types")
+    @classmethod
+    def _validate_field_types(cls, value: dict[str, str]) -> dict[str, str]:
+        """Restrict enterprise casts to supported BigQuery scalar types."""
+        supported = {"BOOL", "DATE", "FLOAT64", "INT64", "NUMERIC", "STRING", "TIMESTAMP"}
+        normalized = {field: data_type.upper() for field, data_type in value.items()}
+        if any(not _FIELD_NAME.fullmatch(field) for field in normalized):
+            raise ValueError("field_types keys must be field identifiers")
+        if unknown := sorted(set(normalized.values()) - supported):
+            raise ValueError(f"Unsupported field type: {unknown[0]}")
+        return normalized
+
+    @field_validator("query_params")
+    @classmethod
+    def _validate_query_params(
+        cls, value: dict[str, str | int | bool]
+    ) -> dict[str, str | int | bool]:
+        """Keep static request parameters non-secret and request-safe."""
+        sensitive_names = {
+            "api_key",
+            "apikey",
+            "authorization",
+            "client_secret",
+            "credential",
+            "key",
+            "password",
+            "secret",
+            "token",
+        }
+        for name in value:
+            normalized = name.lower().replace("-", "_")
+            if not name or "\r" in name or "\n" in name:
+                raise ValueError("query_params keys must be non-empty single-line names")
+            if normalized in sensitive_names or normalized.endswith(("_key", "_secret", "_token")):
+                raise ValueError(
+                    f"query_params cannot contain credential-like parameter {name!r}; "
+                    "use auth_strategy"
+                )
+        return value
 
     @field_validator("pagination", mode="before")
     @classmethod
@@ -96,14 +153,20 @@ class BackoffKind(StrEnum):
     EXPONENTIAL = "exponential"
 
 
+class IngestionEngine(StrEnum):
+    """Execution path used by one source configuration."""
+
+    DLT = "dlt"
+    WORKDAY_RAAS = "workday_raas"
+
+
 class RateLimitConfig(BaseModel):
     """Declarative per-source rate-limit / backoff policy.
 
     Satisfies the per-source throttling requirement in `steering/02-engineering.md` ("Rate-limit/
     backoff per source (Marketo & Salesforce throttle). Retries are bounded and logged.") by
-    giving that requirement a config home. This model is **declaration-only**: no throttling,
-    sleeping, or retrying is performed here — that is the ingestion runtime's responsibility (a
-    later ticket), which will read this policy off `SourceConfig.rate_limit`.
+    giving that requirement a config home. Both the dlt REST adapter and enterprise runtime apply
+    this policy; the dlt adapter uses token-bucket pacing and retries only safe read methods.
 
     Attributes:
         requests_per_second: Steady-state request rate allowed against the source. Must be
@@ -131,15 +194,89 @@ class SourceConfig(BaseModel):
 
     name: str
     base_url: str
+    engine: IngestionEngine = IngestionEngine.DLT
     auth_strategy: str = Field(description="Registered AuthStrategy key, e.g. 'api_key_basic'")
-    auth_ref: str = Field(
-        description="Secret reference the AuthStrategy resolves (never the value)"
+    auth_ref: str | None = Field(
+        default=None,
+        description="Single secret reference resolved by simple auth strategies (never the value)",
+    )
+    auth_refs: dict[str, str] = Field(
+        default_factory=dict,
+        description="Named secret references for multi-credential auth strategies",
+    )
+    auth_options: dict[str, str | int | bool] = Field(
+        default_factory=dict,
+        description="Non-secret authentication settings such as an OAuth token URL",
     )
     endpoints: list[Endpoint] = Field(default_factory=list)
     rate_limit: RateLimitConfig | None = Field(
         default=None,
         description="Optional per-source rate-limit/backoff policy; None means unconstrained.",
     )
+
+    @model_validator(mode="after")
+    def _validate_auth_configuration(self) -> SourceConfig:
+        """Require only the references needed by each built-in authentication strategy."""
+        if self.auth_strategy == "none":
+            if self.auth_ref is not None or self.auth_refs:
+                raise ValueError("Unauthenticated sources cannot declare secret references")
+        elif self.auth_strategy == "api_key_basic":
+            if not self.auth_ref:
+                raise ValueError("api_key_basic requires auth_ref")
+        elif self.auth_strategy in {"api_key_bearer", "api_key_basic"}:
+            if not self.auth_ref:
+                raise ValueError(f"{self.auth_strategy} requires auth_ref")
+            if self.auth_refs:
+                raise ValueError(f"{self.auth_strategy} cannot declare auth_refs")
+        elif self.auth_strategy == "oauth2_client_credentials":
+            missing = {"client_id", "client_secret"} - self.auth_refs.keys()
+            if missing:
+                raise ValueError(
+                    "oauth2_client_credentials requires auth_refs for " + ", ".join(sorted(missing))
+                )
+            token_url = self.auth_options.get("token_url")
+            if not isinstance(token_url, str) or not token_url.startswith("https://"):
+                raise ValueError(
+                    "oauth2_client_credentials requires an HTTPS auth_options.token_url"
+                )
+            credential_placement = self.auth_options.get("credential_placement", "basic")
+            if credential_placement not in {"basic", "body", "query"}:
+                raise ValueError(
+                    "oauth2_client_credentials auth_options.credential_placement "
+                    "must be basic, body, or query"
+                )
+        elif self.auth_strategy == "oauth2_jwt":
+            missing = {"issuer", "private_key"} - self.auth_refs.keys()
+            if missing:
+                raise ValueError("oauth2_jwt requires auth_refs for " + ", ".join(sorted(missing)))
+            token_url = self.auth_options.get("token_url")
+            scope = self.auth_options.get("scope")
+            if not isinstance(token_url, str) or not token_url.startswith("https://"):
+                raise ValueError("oauth2_jwt requires an HTTPS auth_options.token_url")
+            if scope is not None and (not isinstance(scope, str) or not scope.strip()):
+                raise ValueError("oauth2_jwt auth_options.scope must be non-empty when set")
+            default_expires_in = self.auth_options.get("default_expires_in", 300)
+            if (
+                isinstance(default_expires_in, bool)
+                or not isinstance(default_expires_in, int)
+                or not 60 <= default_expires_in <= 3600
+            ):
+                raise ValueError(
+                    "oauth2_jwt auth_options.default_expires_in must be an integer from 60 to 3600"
+                )
+        elif self.auth_strategy == "oauth1_tba":
+            missing = {
+                "consumer_key",
+                "consumer_secret",
+                "token_id",
+                "token_secret",
+            } - self.auth_refs.keys()
+            if missing:
+                raise ValueError("oauth1_tba requires auth_refs for " + ", ".join(sorted(missing)))
+            account_id = self.auth_options.get("account_id")
+            if not isinstance(account_id, str) or not account_id.strip():
+                raise ValueError("oauth1_tba requires a non-empty auth_options.account_id")
+        return self
 
 
 class Source(ABC):

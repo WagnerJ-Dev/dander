@@ -1,0 +1,19 @@
+# Temporary compatibility connector for Harvest v1 API keys.
+# Greenhouse has announced that v1/v2 become unavailable after 2026-08-31. Prefer `greenhouse`.
+name: greenhouse_harvest_v1_legacy
+base_url: https://harvest.greenhouse.io/v1
+auth_strategy: api_key_basic
+auth_ref: SECRET_GREENHOUSE_LEGACY
+
+endpoints:
+  - name: candidates
+    path: /candidates
+    pagination: link_header
+    incremental_cursor: updated_at
+    cursor_param: updated_after
+    primary_key: [id]
+
+  - name: jobs
+    path: /jobs
+    pagination: link_header
+    primary_key: [id]

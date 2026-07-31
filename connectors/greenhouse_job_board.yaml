@@ -1,0 +1,12 @@
+# Public Greenhouse Job Board API demo using Greenhouse's own published board.
+# Replace `greenhouse` in the endpoint path with another organization's public board token.
+name: greenhouse_job_board
+base_url: https://boards-api.greenhouse.io/v1/boards
+auth_strategy: none
+
+endpoints:
+  - name: jobs
+    path: /greenhouse/jobs
+    pagination: none
+    data_selector: jobs
+    primary_key: [id]

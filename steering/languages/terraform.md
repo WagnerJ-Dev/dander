@@ -6,12 +6,14 @@ For the bootstrap CLI's infrastructure. Read alongside `01-security.md` (state &
 
 - Pin Terraform and every provider version in `required_providers` / `required_version`.
 - Format with `terraform fmt`; validate with `terraform validate`; lint with `tflint`.
-- CI runs `fmt -check` → `validate` → `plan`. No manual `apply` outside the bootstrap flow.
+- CI runs `fmt -check` → `validate` → `plan`. Apply only an explicitly reviewed saved plan,
+  through the bootstrap CLI when supported or the documented operator path for optional modules.
 
 ## Structure
 
 - **Module per concern**, provider-agnostic call site where possible:
-  `modules/secret-manager`, `modules/iam`, `modules/compute-run`, `modules/bigquery`.
+  `modules/secret-manager`, `modules/iam`, `modules/compute-run`, `modules/bigquery`,
+  `modules/scheduled-job`.
 - GCP-first, but keep cloud-specific detail inside modules so an `aws/`/`azure/` sibling can be
   added later (mirrors the `SecretStoreProvider`/`ComputeProvider` abstraction in code).
 - Standard files per module: `main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`.

@@ -3,9 +3,10 @@
 `Node.config` (see `dander.pipeline.graph`) is validated against a config model chosen by the
 node's `type` rather than accepted as an opaque `dict`. This module owns that discriminated set of
 config models plus the pure routing function `Node` delegates to. `SourceNodeConfig` carries the
-request/payload spec (DANDER-11); `TargetNodeConfig` carries the target/writer config (write
-pattern, destination table, partitioning/clustering — DANDER-16). Pagination and incremental
-cursor on the source side remain unmodeled placeholders. Deliberately does not import `Node`
+request/payload spec (DANDER-11); `TransformNodeConfig` carries an optional executable join;
+`TargetNodeConfig` carries the target/writer config (write pattern, destination table,
+partitioning/clustering — DANDER-16). Pagination and incremental cursor on the source side remain
+unmodeled placeholders. Deliberately does not import `Node`
 (`graph.py` imports from here, not the reverse), so there is no import cycle.
 """
 
@@ -23,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # `PydanticUserError: '<Model>' is not fully defined` on import; verified with a minimal repro
 # before overriding the rule here.
 from dander.pipeline.request_spec import RequestSpec  # noqa: TC001
-from dander.writer.base import WriteMode  # noqa: TC001
+from dander.writer.base import SchemaEvolution, WriteMode, WriteTransport  # noqa: TC001
 
 
 class NodeType(StrEnum):
@@ -52,8 +53,7 @@ class NodeConfig(BaseModel):
     Carries no fields of its own — it exists so `Node.config` can be annotated on this
     abstraction (interface-first per `steering/02-engineering.md`) and so mismatch detection in
     `resolve_node_config` can test `isinstance(value, NodeConfig)`. `extra="allow"` so config
-    content that has no dedicated field yet on any subclass (e.g. `TransformNodeConfig`'s
-    still-unmodeled materialization/execution details) is preserved losslessly rather than
+    content that has no dedicated field yet on any subclass is preserved losslessly rather than
     rejected.
 
     A `NodeConfig` (and every subclass) must never hold a secret or credential value
@@ -84,13 +84,48 @@ class SourceNodeConfig(NodeConfig):
     request: RequestSpec | None = None
 
 
+class ExecutableJoinType(StrEnum):
+    """BigQuery join kinds supported by an executable transform node."""
+
+    INNER = "inner"
+    LEFT = "left"
+    RIGHT = "right"
+    FULL = "full"
+
+
+class ExecutableJoinKey(BaseModel):
+    """One equality key between the named left and right inputs."""
+
+    left: str = Field(min_length=1)
+    right: str = Field(min_length=1)
+
+
+class TransformJoinConfig(BaseModel):
+    """An executable two-input join whose output is the owning transform node."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    left_input: str = Field(min_length=1)
+    right_input: str = Field(min_length=1)
+    type: ExecutableJoinType
+    keys: list[ExecutableJoinKey] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check_distinct_inputs(self) -> TransformJoinConfig:
+        if self.left_input == self.right_input:
+            raise ValueError("TransformJoinConfig requires distinct left and right inputs")
+        return self
+
+
 class TransformNodeConfig(NodeConfig):
     """Typed config for a `transform`-type node.
 
-    An extensible placeholder: it declares no fields of its own yet (beyond the `extra="allow"`
-    inherited from `NodeConfig`). A future ticket extends this model with the transform's
-    materialization/execution details. Must never hold a secret value.
+    Attributes:
+        join: Optional executable two-input join. Unlike the legacy edge-level `JoinSpec`, this
+            names two predecessor nodes and makes the transform node the unambiguous output.
     """
+
+    join: TransformJoinConfig | None = None
 
 
 class PartitioningType(StrEnum):
@@ -118,11 +153,10 @@ class PartitioningType(StrEnum):
 class PartitioningSpec(BaseModel):
     """Declarative BigQuery time-unit/ingestion-time partitioning for a target write.
 
-    Inert: nothing here issues DDL or executes a write — it records intent only, for a future
-    write-execution layer (`src/dander/writer/base.py`) to apply, per
-    `steering/00-project-overview.md`. Scope is time-unit and ingestion-time partitioning (the
-    common case, and what the `WriteMode.SNAPSHOT` "partitioned, append-only" pattern needs);
-    integer-range partitioning is deferred as a future field.
+    Inert: nothing here issues DDL or executes a write. `prepare_target_writer` maps this intent
+    to the concrete writer contract in `src/dander/writer/base.py`. Scope is time-unit and
+    ingestion-time partitioning (the common case, and what the `WriteMode.SNAPSHOT`
+    "partitioned, append-only" pattern needs); integer-range partitioning is deferred.
 
     Attributes:
         field: The partition column name. `None` means ingestion-time partitioning (BigQuery's
@@ -143,14 +177,11 @@ class DestinationSpec(BaseModel):
     """Declarative BigQuery destination for a target write, mirroring `WriteTarget`.
 
     Structurally mirrors `dander.writer.base.WriteTarget` (`project`/`dataset`/`table`/
-    `business_key`) 1:1 so a future write-execution ticket can map this config to a `WriteTarget`
-    by field name alone. Unlike `WriteTarget` (a frozen dataclass — the internal runtime value
-    object), this is a Pydantic model, per `steering/languages/python.md`'s "Pydantic v2 for all
-    config objects; frozen dataclass for internal value objects" split; no `to_write_target()`
-    converter is provided here since `WriteTarget.project` is required while `project` here is
-    optional (resolved from deployment context later) — that mapping is a write-execution concern
-    outside this model's "no writes" scope. Dataset/table values here are ordinary identifiers,
-    never secrets (`steering/01-security.md`).
+    `business_key`) 1:1. `compile_target` and `prepare_target_writer` perform the runtime mapping
+    after resolving an optional project from deployment context. Unlike `WriteTarget` (a frozen
+    dataclass — the internal runtime value object), this is a Pydantic model, per
+    `steering/languages/python.md`'s config/runtime split. Dataset/table values here are ordinary
+    identifiers, never secrets (`steering/01-security.md`).
 
     Attributes:
         project: GCP project id hosting the destination dataset. `None` means "resolve from
@@ -193,6 +224,11 @@ class WriterConfig(BaseModel):
         partitioning: Optional partitioning spec. `None` means an unpartitioned destination.
         clustering: Ordered clustering column names. BigQuery caps clustering at 4 columns, so
             this is capped here too (`max_length=4`); duplicate column names are rejected.
+        max_batch_rows: Maximum rows sent in one BigQuery load-job request.
+        schema_evolution: `strict` by default; `additive` permits only declared scalar target
+            fields to be added as nullable columns, never changed or removed.
+        transport: `load_job` by default. `storage_write` uses an atomic pending stream and is
+            available for keyed SCD1/incremental workloads.
 
     `hide_input_in_errors=True` is set for the same reason `dander.pipeline.graph.Node` and
     `dander.pipeline.request_spec.RequestSpec` set it: without it, Pydantic's default
@@ -209,6 +245,9 @@ class WriterConfig(BaseModel):
     cursor_field: str | None = None
     partitioning: PartitioningSpec | None = None
     clustering: list[str] = Field(default_factory=list, max_length=4)
+    max_batch_rows: int = Field(default=10_000, gt=0, le=100_000)
+    schema_evolution: SchemaEvolution = SchemaEvolution.STRICT
+    transport: WriteTransport = WriteTransport.LOAD_JOB
 
     @model_validator(mode="after")
     def _check_mode_requirements(self) -> WriterConfig:
@@ -246,6 +285,13 @@ class WriterConfig(BaseModel):
             )
         if len(set(self.clustering)) != len(self.clustering):
             raise ValueError("WriterConfig.clustering must not contain duplicate column names.")
+        if self.transport is WriteTransport.STORAGE_WRITE and self.write_mode not in (
+            WriteMode.SCD1,
+            WriteMode.INCREMENTAL,
+        ):
+            raise ValueError(
+                "WriterConfig(transport=storage_write) supports only scd1 or incremental mode."
+            )
         return self
 
 

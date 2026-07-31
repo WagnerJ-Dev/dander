@@ -23,6 +23,29 @@ class WriteMode(StrEnum):
     SCD2 = "scd2"  # versioned rows (valid_from / valid_to / is_current)
     SNAPSHOT = "snapshot"  # partitioned, append-only
     INCREMENTAL = "incremental"  # watermark-bounded append/merge
+    REPLACE = "replace"  # full-table replacement through a load job
+
+
+class SchemaEvolution(StrEnum):
+    """How a writer handles declared columns absent from an existing target."""
+
+    STRICT = "strict"
+    ADDITIVE = "additive"
+
+
+class WriteTransport(StrEnum):
+    """Physical ingestion path used before a logical write pattern."""
+
+    LOAD_JOB = "load_job"
+    STORAGE_WRITE = "storage_write"
+
+
+@dataclass(frozen=True)
+class WriteField:
+    """One declared target column used for controlled schema evolution."""
+
+    name: str
+    data_type: str
 
 
 @dataclass(frozen=True)
@@ -33,6 +56,7 @@ class WriteTarget:
     dataset: str
     table: str
     business_key: tuple[str, ...] = field(default_factory=tuple)
+    schema: tuple[WriteField, ...] = field(default_factory=tuple)
 
 
 class WritePattern(ABC):
