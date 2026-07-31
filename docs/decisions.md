@@ -10,6 +10,15 @@
 - GitHub OIDC Workload Identity Federation must be reconfigured for the fork's exact repository
   and ref before any live proof is dispatched. No cloud mutation is implied by this decision.
 
+## 2026-07-31 — Stage-zero state retention
+
+- `infra/bootstrap-admin` keeps its bootstrap state local and operator-managed because it creates
+  the remote bucket used by the main platform root. Operators must keep encrypted, access-controlled
+  backups outside the repository.
+- The created platform-state bucket is versioned, non-public, uniformly access-controlled, and
+  non-destructive (`force_destroy = false`); prior object generations are retained for recovery and
+  are not removed by routine migrations.
+
 ## 2026-07-30 — Reproducible bootstrap verification
 
 - Terraform creates a distinct `dander-bootstrap` identity for approved infrastructure runs. Its

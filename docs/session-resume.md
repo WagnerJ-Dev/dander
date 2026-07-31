@@ -1,4 +1,4 @@
-# Session Resume — 2026-07-30
+# Session Resume — 2026-07-31
 
 Use this file to resume Dander work in a new Codex session without reconstructing the prior
 conversation. Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and
@@ -23,11 +23,12 @@ conversation. Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, 
 - Repository: `/Users/harrison/Documents/dander`
 - Branch: `codex/dander-v0`
 - `origin` is `WagnerJ-Dev/dander`; `fork` is `harrisonoconnorhover/dander`.
-- The fork is public, the branch is pushed at `8dfdd92`, and fork PR #1 is an open draft into the
-  fork's `main`. Upstream PR #1 remains the original contribution record. Confirm synchronization
-  with `git status -sb` and `git log --oneline fork/codex/dander-v0..HEAD`.
+- The fork is public, and fork PR #1 is an open draft from this branch into the fork's `main`.
+  Upstream PR #1 remains the original contribution record. Confirm the current PR head and branch
+  synchronization with `gh pr view 1 --repo harrisonoconnorhover/dander`,
+  `git status -sb`, and `git log --oneline fork/codex/dander-v0..HEAD`.
 - Last full code gate: Ruff and formatting passed, strict mypy passed across 92 source files,
-  439 tests passed, and Terraform formatting/validation passed.
+  463 tests passed, and Terraform formatting/validation passed.
 - A wheel installed into a clean virtual environment, and the local amd64 Docker image contained
   the CLI, connectors, and models.
 - The current/history secret-pattern scan found only the intentional detector fixture in
