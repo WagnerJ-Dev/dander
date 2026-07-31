@@ -60,9 +60,13 @@ jobs:
           terraform -chdir=bootstrap-admin init -backend=false -input=false
           terraform -chdir=bootstrap-admin validate
       - name: Static security analysis
-        uses: aquasecurity/tfsec-action@b466648d6e39e7c75324f25d83891162a721f2d6 # v1.0.3
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
-          working_directory: infra
+          scan-type: config
+          scan-ref: infra
+          format: table
+          exit-code: 1
+          severity: HIGH,CRITICAL
 
   container:
     name: Container build and scan
@@ -96,3 +100,5 @@ jobs:
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
