@@ -2,36 +2,44 @@
 
 from __future__ import annotations
 
+import stat
 import subprocess
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
 from dander.bootstrap import AdministrativeBootstrap, AdministrativeBootstrapError
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def test_admin_bootstrap_plans_and_applies_saved_plan(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    repository_dir = tmp_path / "checkout"
+    infra_dir = repository_dir / "infra" / "bootstrap-admin"
+    operator_dir = tmp_path / "operator-artifacts"
+    infra_dir.mkdir(parents=True)
     commands: list[tuple[str, ...]] = []
+    environments: list[dict[str, str]] = []
 
     def fake_run(
         args: tuple[str, ...],
         *,
         cwd: Path,
+        env: dict[str, str],
         check: bool,
     ) -> subprocess.CompletedProcess[str]:
-        assert cwd == tmp_path.resolve()
+        assert cwd == infra_dir.resolve()
         assert check
         commands.append(args)
+        environments.append(env)
+        for argument in args:
+            if argument.startswith("-out="):
+                Path(argument.removeprefix("-out=")).touch(mode=0o644)
         return subprocess.CompletedProcess(args, 0)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    plan = AdministrativeBootstrap(tmp_path).execute(
+    plan = AdministrativeBootstrap(infra_dir, operator_dir).execute(
         project="unit-project",
         state_bucket="unit-state-bucket",
         admin_member="user:operator@example.invalid",
@@ -39,7 +47,15 @@ def test_admin_bootstrap_plans_and_applies_saved_plan(
         billing_account_id="ABCDEF-123456-ABCDEF",
     )
 
-    assert plan == tmp_path.resolve() / "dander-admin-bootstrap.tfplan"
+    assert plan == operator_dir.resolve() / "dander-admin-bootstrap.tfplan"
+    assert not plan.is_relative_to(repository_dir.resolve())
+    tf_data_dir = Path(environments[0]["TF_DATA_DIR"])
+    assert not tf_data_dir.is_relative_to(repository_dir.resolve())
+    assert tf_data_dir == operator_dir / "terraform-data"
+    assert stat.S_IMODE(operator_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(tf_data_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(plan.stat().st_mode) == 0o600
+    assert all(environment["TF_DATA_DIR"] == str(tf_data_dir) for environment in environments)
     assert commands[0] == (
         "terraform",
         "init",
@@ -48,10 +64,26 @@ def test_admin_bootstrap_plans_and_applies_saved_plan(
         "-backend-config=bucket=unit-state-bucket",
         "-backend-config=prefix=dander/bootstrap-admin/state",
     )
-    assert not any("credentials" in argument for argument in commands[0])
+    assert not any("credentials" in argument for command in commands for argument in command)
+    assert not any("-backend=false" in argument for command in commands for argument in command)
+    assert not any("-lock=false" in argument for command in commands for argument in command)
+    assert not any("state_prefix" in argument for command in commands for argument in command)
     assert "-var=state_bucket=unit-state-bucket" in commands[1]
     assert "-var=admin_member=user:operator@example.invalid" in commands[1]
-    assert commands[2] == ("terraform", "apply", "dander-admin-bootstrap.tfplan")
+    assert f"-out={plan}" in commands[1]
+    assert commands[2] == ("terraform", "apply", str(plan))
+
+
+@pytest.mark.parametrize("operator_dir", [".", "artifacts"])
+def test_admin_bootstrap_rejects_operator_artifacts_inside_repository(
+    tmp_path: Path,
+    operator_dir: str,
+) -> None:
+    repository_dir = tmp_path / "checkout"
+    infra_dir = repository_dir / "infra" / "bootstrap-admin"
+
+    with pytest.raises(AdministrativeBootstrapError, match="outside the repository"):
+        AdministrativeBootstrap(infra_dir, repository_dir / operator_dir)
 
 
 @pytest.mark.parametrize(
@@ -76,4 +108,6 @@ def test_admin_bootstrap_rejects_unsafe_inputs(
     }
 
     with pytest.raises(AdministrativeBootstrapError, match=message):
-        AdministrativeBootstrap(tmp_path).execute(**arguments)  # type: ignore[arg-type]
+        AdministrativeBootstrap(
+            tmp_path / "checkout" / "infra" / "bootstrap-admin", tmp_path / "operator"
+        ).execute(**arguments)  # type: ignore[arg-type]

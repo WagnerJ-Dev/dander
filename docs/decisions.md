@@ -31,6 +31,15 @@
   locking must be verified before migration, and state, plans, backups, secrets, raw HubSpot
   responses, and `.terraform/` contents remain outside GitHub.
 
+## 2026-07-31 — Stage-zero operator artifact boundary
+
+- `AdministrativeBootstrap` requires an operator artifact directory that resolves outside the
+  repository checkout. It stores the saved plan there and places Terraform's `TF_DATA_DIR` in its
+  dedicated `terraform-data` child directory.
+- The operator artifact and Terraform data directories are mode `0700`; completed plans are mode
+  `0600`. Terraform continues to run from `infra/bootstrap-admin`, and apply accepts only the exact
+  absolute saved-plan path.
+
 ## 2026-07-30 — Reproducible bootstrap verification
 
 - Terraform creates a distinct `dander-bootstrap` identity for approved infrastructure runs. Its

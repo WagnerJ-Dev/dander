@@ -31,6 +31,13 @@ operator's authenticated Google application-default credential context at initia
 Do not disable GCS locking, and do not migrate state until Object Versioning is verified on the
 bucket. The backend design does not perform that migration automatically.
 
+The wrapper requires `--operator-artifact-dir`, which must resolve outside the repository checkout.
+It saves the plan as
+`<operator-artifact-dir>/dander-admin-bootstrap.tfplan` and sets Terraform's `TF_DATA_DIR` to the
+dedicated `<operator-artifact-dir>/terraform-data` subdirectory. Both operator directories are
+created with mode `0700`, and the completed plan is restricted to mode `0600`. Terraform still runs
+with `cwd=infra/bootstrap-admin`; an apply receives only the exact absolute path to that saved plan.
+
 ## Durable stage-zero state
 
 Any provisional local stage-zero state and review artifacts must live in the operator-managed

@@ -270,11 +270,13 @@ binding. Stage one always runs Terraform through that service account:
 uv run dander init-admin-plan \
   --project my-gcp-project \
   --state-bucket my-existing-tfstate-bucket \
-  --admin-member user:operator@example.invalid
+  --admin-member user:operator@example.invalid \
+  --operator-artifact-dir "$HOME/Library/Application Support/Dander/terraform/bootstrap-admin/my-gcp-project"
 uv run dander init-admin-apply \
   --project my-gcp-project \
   --state-bucket my-existing-tfstate-bucket \
-  --admin-member user:operator@example.invalid
+  --admin-member user:operator@example.invalid \
+  --operator-artifact-dir "$HOME/Library/Application Support/Dander/terraform/bootstrap-admin/my-gcp-project"
 uv run dander init-platform-plan \
   --project my-gcp-project \
   --state-bucket my-existing-tfstate-bucket \
