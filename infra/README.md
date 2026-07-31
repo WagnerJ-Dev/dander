@@ -8,13 +8,16 @@ call sites (mirrors the `SecretStoreProvider` / `ComputeProvider` abstractions i
 
 | Module | Provisions |
 |---|---|
+| `modules/bootstrap-identity` | Separate Terraform bootstrap service account and explicitly broader project provisioning roles. **Implemented.** |
 | `modules/bigquery` | `raw` / `staging` / `marts` datasets. **Implemented.** |
 | `modules/scheduled-job` | Artifact Registry, least-privilege identities, public-ingestion Cloud Run Job, and daily Scheduler job. **Implemented.** |
 | `modules/secret-manager` | Named secret containers and per-secret runtime access; never secret values. **Implemented.** |
 | `modules/github-wif` | Repository/ref-scoped GitHub OIDC and a keyless deployment identity. **Implemented.** |
 | `modules/cost-guard` | Project budget, Pub/Sub, and simulation-first Gen 2 billing kill switch. **Implemented.** |
 
-The root module always calls `modules/bigquery` and can opt into the remaining modules.
+The root module always calls `modules/bootstrap-identity` and `modules/bigquery`, and can opt into
+the remaining workload modules. The bootstrap identity is not attached to Cloud Run or Scheduler;
+use short-lived impersonation for Terraform and keep the runtime identity separate.
 `dander init` configures the required GCS backend, creates a saved plan, and applies that exact
 plan only after the caller supplies `--apply` and confirms interactively. The state bucket must
 already exist:
@@ -64,3 +67,23 @@ identity can invoke only the named Cloud Run Job.
 - Project id / region are always parameterized, never hard-coded.
 - Normal bootstrap applies run through the CLI. A reviewed, saved Terraform plan is also the
   operational path for the optional scheduled-job slice.
+
+## Deployment verification
+
+After `dander init --apply` and Terraform backend initialization, run the read-only verifier:
+
+```bash
+uv run dander verify deployment \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --state-prefix dander/state \
+  --runtime-job dander-greenhouse-public \
+  --scheduler-job dander-greenhouse-public-daily \
+  --secret-id hubspot-private-app-token \
+  --json evidence/bootstrap-summary.json
+```
+
+The command checks project state, BigQuery datasets, remote GCS state, optional Cloud Run and
+Scheduler resources, runtime IAM breadth, and named Secret Manager containers. A failed check is
+retained in the JSON summary and exits non-zero; the artifact contains only statuses, stable names,
+counts, and timestamps. The runtime image can be pinned with `--runtime-image`.

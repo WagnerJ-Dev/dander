@@ -11,7 +11,12 @@ from click import ClickException
 from rich.console import Console
 from rich.table import Table
 
-from dander.bootstrap import TerraformBootstrap, TerraformBootstrapError
+from dander.bootstrap import (
+    DeploymentVerifier,
+    TerraformBootstrap,
+    TerraformBootstrapError,
+    write_summary,
+)
 from dander.catalog import (
     CatalogPublishError,
     DataplexCatalogPublisher,
@@ -62,6 +67,8 @@ app = typer.Typer(
     help="Dander — GCP-native data platform (ingest + transform + catalog).",
     no_args_is_help=True,
 )
+verify_app = typer.Typer(help="Verify deployed resources with read-only checks.")
+app.add_typer(verify_app, name="verify")
 console = Console()
 _SOURCE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _DEFAULT_CONNECTORS_DIR = Path("connectors")
@@ -185,6 +192,99 @@ def init(
 
     action = "applied" if apply else "planned"
     console.print(f"[green]Bootstrap {action}.[/green] Saved plan: {plan_path}")
+
+
+@verify_app.command("deployment")
+def verify_deployment(
+    project: str = typer.Option(..., "--project", help="GCP project id to inspect."),
+    json_output: Path = typer.Option(  # noqa: B008
+        Path("evidence/bootstrap-summary.json"),
+        "--json",
+        help="Write the sanitized verification summary to this path.",
+    ),  # noqa: B008
+    state_bucket: str | None = typer.Option(
+        None,
+        "--state-bucket",
+        help=(
+            "Expected remote-state bucket; otherwise use the initialized "
+            "Terraform backend metadata."
+        ),
+    ),
+    state_prefix: str | None = typer.Option(
+        None,
+        "--state-prefix",
+        help="Expected remote-state prefix when checking the GCS backend.",
+    ),
+    dataset: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--dataset",
+        help="Dataset to verify; repeat for multiple datasets (defaults to raw, staging, marts).",
+    ),
+    runtime_job: str | None = typer.Option(
+        None,
+        "--runtime-job",
+        help="Cloud Run Job name to verify, for example dander-greenhouse-public.",
+    ),
+    scheduler_job: str | None = typer.Option(
+        None,
+        "--scheduler-job",
+        help="Cloud Scheduler job name to verify.",
+    ),
+    runtime_service_account: str | None = typer.Option(
+        None,
+        "--runtime-service-account",
+        help=(
+            "Expected runtime service account email; inferred from the Cloud Run Job when omitted."
+        ),
+    ),
+    runtime_image: str | None = typer.Option(
+        None,
+        "--runtime-image",
+        help="Expected immutable runtime image digest.",
+    ),
+    secret_id: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--secret-id",
+        help="Secret Manager container to verify; repeat for multiple secrets.",
+    ),
+    region: str = typer.Option("us-central1", "--region", help="Cloud Run/Scheduler region."),
+    expect_cost_guard: bool = typer.Option(
+        False,
+        "--expect-cost-guard",
+        help="Also verify that billing budget metadata is readable.",
+    ),
+    billing_account_id: str | None = typer.Option(
+        None,
+        "--billing-account",
+        help="Billing account id used by --expect-cost-guard.",
+    ),
+    infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
+) -> None:
+    """Verify the bootstrap's actual resources and save sanitized evidence."""
+    summary = DeploymentVerifier(project=project, infra_dir=infra_dir).verify(
+        datasets=tuple(dataset or ("raw", "staging", "marts")),
+        state_bucket=state_bucket,
+        state_prefix=state_prefix,
+        runtime_job=runtime_job,
+        scheduler_job=scheduler_job,
+        runtime_service_account=runtime_service_account,
+        runtime_image=runtime_image,
+        secret_ids=tuple(secret_id or ()),
+        region=region,
+        expect_cost_guard=expect_cost_guard,
+        billing_account_id=billing_account_id,
+    )
+    write_summary(summary, json_output)
+    table = Table(title=f"Dander deployment verification: {project}")
+    table.add_column("Check")
+    table.add_column("Result")
+    table.add_column("Detail")
+    for check in summary.checks:
+        table.add_row(check.name, "PASS" if check.ok else "FAIL", check.detail)
+    console.print(table)
+    console.print(f"Evidence: {json_output}")
+    if not summary.passed:
+        raise ClickException("Deployment verification failed; inspect the evidence summary.")
 
 
 @app.command()

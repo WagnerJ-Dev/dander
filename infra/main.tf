@@ -1,3 +1,10 @@
+module "bootstrap_identity" {
+  source = "./modules/bootstrap-identity"
+
+  project_id                   = var.project_id
+  bootstrap_billing_account_id = var.enable_cost_guard ? var.billing_account_id : ""
+}
+
 module "bigquery" {
   source = "./modules/bigquery"
 

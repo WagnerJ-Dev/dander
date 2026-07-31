@@ -81,6 +81,7 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
     )
 
     plan = commands[1]
+    assert "-var=bootstrap_billing_account_id=ABCDEF-123456-ABCDEF" in plan
     assert "-var=enable_scheduled_job=true" in plan
     assert "-var=scheduler_paused=false" in plan
     assert "-var=runtime_publish_dataplex=true" in plan

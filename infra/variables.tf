@@ -3,6 +3,17 @@ variable "project_id" {
   description = "GCP project id receiving the Dander datasets."
 }
 
+variable "bootstrap_billing_account_id" {
+  type        = string
+  description = "Billing account where the bootstrap identity may manage Terraform budget resources."
+  default     = ""
+
+  validation {
+    condition     = var.bootstrap_billing_account_id == "" || can(regex("^[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}$", var.bootstrap_billing_account_id))
+    error_message = "Bootstrap billing account must be empty or use XXXXXX-XXXXXX-XXXXXX format."
+  }
+}
+
 variable "region" {
   type        = string
   description = "Default GCP region for provider resources."

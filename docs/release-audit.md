@@ -21,7 +21,7 @@ are treated as hypothetical connector scope, not evidence of an existing-company
 | `ref()` DAG and topological transform execution | Implemented locally | restricted Jinja compilation, sqlglot validation, cycle/unknown-ref rejection, and ordered BigQuery builds |
 | Materializations and four generic test types | Implemented locally | view/table/incremental SQL; not-null, unique, accepted-values, and relationship assertions |
 | One model YAML feeds transform, catalog, and semantics | Implemented locally | typed sidecars compile executable tests, deterministic semantic JSON, and non-deleting Dataplex aspect requests |
-| Terraform bootstrap for datasets, secrets, IAM/WIF, and Cloud Run | Implemented locally | modular HCL and `dander init`; immutable images; repository/ref-scoped GitHub OIDC; secret values excluded from state |
+| Terraform bootstrap for datasets, secrets, IAM/WIF, and Cloud Run | Implemented locally | modular HCL and `dander init`; GCS remote state; separate bootstrap/runtime identities; immutable images; repository/ref-scoped GitHub OIDC; secret values excluded from state; read-only deployment verifier |
 | Scheduled execution and restart state | Implemented locally | paused-first Scheduler → Cloud Run job; guarded ingestion → selected transforms/tests → registry; BigQuery/SQLite cursors and run summaries |
 
 Transform materializations use the same idempotent BigQuery contracts as the record writers, but

@@ -1,3 +1,11 @@
+output "bootstrap_identity" {
+  description = "Separate Terraform bootstrap identity; never attached to workload execution."
+  value = {
+    service_account_email = module.bootstrap_identity.service_account_email
+    service_account_name  = module.bootstrap_identity.service_account_name
+  }
+}
+
 output "dataset_ids" {
   description = "BigQuery dataset ids created by the bootstrap."
   value       = module.bigquery.dataset_ids

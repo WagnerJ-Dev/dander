@@ -1,5 +1,16 @@
 # Engineering Decisions
 
+## 2026-07-30 — Reproducible bootstrap verification
+
+- Terraform creates a distinct `dander-bootstrap` identity for approved infrastructure runs. Its
+  broader provisioning roles are never attached to Cloud Run, Scheduler, or GitHub WIF; workloads
+  use the narrow runtime and scheduler identities instead.
+- Terraform state is always initialized through the GCS backend. `dander verify deployment` reads
+  the initialized backend metadata, pulls state read-only to prove reachability, and checks actual
+  Google Cloud resources rather than trusting Terraform output.
+- Verification writes a sanitized JSON artifact. Failed checks remain explicit and make the command
+  fail, so evidence cannot claim a successful deployment after a partial bootstrap.
+
 ## 2026-07-29 — Bootstrap credentials and deployment identity
 
 - Terraform creates Secret Manager containers and IAM bindings, but never secret versions or

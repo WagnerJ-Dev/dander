@@ -159,6 +159,7 @@ class TerraformBootstrap:
             "terraform",
             "plan",
             f"-var=project_id={project}",
+            f"-var=bootstrap_billing_account_id={billing_account_id}",
             f"-var=region={region}",
             f"-var=bigquery_location={bigquery_location}",
             f"-var=enable_scheduled_job={str(enable_runtime).lower()}",
