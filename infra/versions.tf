@@ -18,14 +18,23 @@ terraform {
 }
 
 provider "google" {
-  project = var.project_id
-  region  = var.region
+  project                     = var.project_id
+  region                      = var.region
+  impersonate_service_account = var.bootstrap_service_account
 }
 
 provider "google" {
-  alias                 = "billing"
-  project               = var.project_id
-  region                = var.region
-  billing_project       = var.project_id
-  user_project_override = true
+  alias                       = "billing"
+  project                     = var.project_id
+  region                      = var.region
+  billing_project             = var.project_id
+  user_project_override       = true
+  impersonate_service_account = var.bootstrap_service_account
+}
+
+check "bootstrap_impersonation_required" {
+  assert {
+    condition     = var.bootstrap_service_account != ""
+    error_message = "Platform Terraform must run by impersonating dander-bootstrap."
+  }
 }

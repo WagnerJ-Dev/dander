@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-quality:
+    name: Python quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install locked environment
+        run: uv sync --frozen --extra dev
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Strict typing
+        run: uv run mypy src tests
+      - name: Tests
+        run: uv run pytest
+      - name: Dependency audit
+        run: |
+          uv export --frozen --format requirements.txt --no-dev --no-emit-project \
+            --output-file /tmp/dander-requirements.txt
+          uv run --with pip-audit pip-audit --strict -r /tmp/dander-requirements.txt
+
+  terraform-quality:
+    name: Terraform quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - name: Format
+        run: terraform fmt -check -recursive
+      - name: Initialize without a backend
+        run: terraform init -backend=false -input=false
+      - name: Validate
+        run: terraform validate
+      - name: Validate stage-zero module
+        run: |
+          terraform -chdir=bootstrap-admin init -backend=false -input=false
+          terraform -chdir=bootstrap-admin validate
+      - name: Static security analysis
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: infra
+
+  container:
+    name: Container build and scan
+    runs-on: ubuntu-latest
+    needs: [python-quality, terraform-quality]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build immutable-check image
+        run: docker build --tag dander-ci:${{ github.sha }} .
+      - name: Verify CLI starts
+        run: docker run --rm dander-ci:${{ github.sha }} --help
+      - name: Scan image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: dander-ci:${{ github.sha }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2.3.9

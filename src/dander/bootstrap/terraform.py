@@ -22,6 +22,11 @@ _SECRET_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,254}$")
 _GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GITHUB_REF = re.compile(r"^refs/(?:heads|tags)/[A-Za-z0-9._/-]+$")
 _BUDGET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$")
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_BOOTSTRAP_SERVICE_ACCOUNT = re.compile(
+    r"^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$"
+)
 
 
 class TerraformBootstrapError(RuntimeError):
@@ -40,6 +45,7 @@ class TerraformBootstrap:
         project: str,
         state_bucket: str,
         state_prefix: str,
+        bootstrap_service_account: str,
         apply: bool,
         region: str = "us-central1",
         bigquery_location: str = "US",
@@ -48,6 +54,11 @@ class TerraformBootstrap:
         container_image: str = "",
         scheduler_paused: bool = True,
         runtime_publish_dataplex: bool = False,
+        runtime_source: str = "greenhouse_job_board",
+        runtime_model: str = "stg_greenhouse__jobs",
+        runtime_build_models: bool = True,
+        runtime_secret_id: str = "",
+        runtime_secret_env: str = "HUBSPOT_PRIVATE_APP_TOKEN",
         secret_ids: tuple[str, ...] = (),
         github_repository: str = "",
         github_ref: str = "refs/heads/main",
@@ -62,6 +73,7 @@ class TerraformBootstrap:
             project: GCP project id supplied to Terraform.
             state_bucket: Existing GCS bucket used for remote Terraform state.
             state_prefix: Object prefix for the Dander state.
+            bootstrap_service_account: Existing service account that Terraform must impersonate.
             apply: Whether to apply the saved plan after planning.
             region: GCP region for regional resources.
             bigquery_location: BigQuery dataset location.
@@ -70,6 +82,11 @@ class TerraformBootstrap:
             container_image: Immutable runtime image reference including a sha256 digest.
             scheduler_paused: Whether the scheduler remains paused after provisioning.
             runtime_publish_dataplex: Whether hosted runs publish potentially billable aspects.
+            runtime_source: Connector source name passed to the hosted job.
+            runtime_model: Transform model selected by the hosted job.
+            runtime_build_models: Whether hosted runs build transforms after ingestion.
+            runtime_secret_id: Optional Secret Manager container exposed to the connector.
+            runtime_secret_env: Environment variable carrying the Secret Manager reference.
             secret_ids: Secret Manager container ids to create without values.
             github_repository: Optional GitHub owner/repository allowed to deploy.
             github_ref: Exact Git branch or tag ref allowed to deploy.
@@ -94,6 +111,11 @@ class TerraformBootstrap:
         ):
             if not pattern.fullmatch(value):
                 raise TerraformBootstrapError(f"Invalid {label}: {value!r}")
+        if not _BOOTSTRAP_SERVICE_ACCOUNT.fullmatch(bootstrap_service_account):
+            raise TerraformBootstrapError(
+                "Platform bootstrap requires --bootstrap-service-account with a valid "
+                "service-account email"
+            )
 
         if enable_runtime:
             if not _BILLING_ACCOUNT.fullmatch(billing_account_id):
@@ -108,6 +130,12 @@ class TerraformBootstrap:
             raise TerraformBootstrapError("--container-image requires --enable-runtime")
         if runtime_publish_dataplex and not enable_runtime:
             raise TerraformBootstrapError("--runtime-publish-dataplex requires --enable-runtime")
+        if not _IDENTIFIER.fullmatch(runtime_source) or not _IDENTIFIER.fullmatch(runtime_model):
+            raise TerraformBootstrapError("Runtime source and model must be valid identifiers")
+        if runtime_secret_id and not _SECRET_ID.fullmatch(runtime_secret_id):
+            raise TerraformBootstrapError("Invalid runtime secret id")
+        if not _ENV_NAME.fullmatch(runtime_secret_env):
+            raise TerraformBootstrapError("Runtime secret environment name must be uppercase")
         if billing_account_id and not (enable_runtime or enable_cost_guard):
             raise TerraformBootstrapError(
                 "--billing-account requires --enable-runtime or --enable-cost-guard"
@@ -159,7 +187,7 @@ class TerraformBootstrap:
             "terraform",
             "plan",
             f"-var=project_id={project}",
-            f"-var=bootstrap_billing_account_id={billing_account_id}",
+            f"-var=bootstrap_service_account={bootstrap_service_account}",
             f"-var=region={region}",
             f"-var=bigquery_location={bigquery_location}",
             f"-var=enable_scheduled_job={str(enable_runtime).lower()}",
@@ -167,6 +195,11 @@ class TerraformBootstrap:
             f"-var=runtime_container_image={container_image}",
             f"-var=scheduler_paused={str(scheduler_paused).lower()}",
             f"-var=runtime_publish_dataplex={str(runtime_publish_dataplex).lower()}",
+            f"-var=runtime_source={runtime_source}",
+            f"-var=runtime_model={runtime_model}",
+            f"-var=runtime_build_models={str(runtime_build_models).lower()}",
+            f"-var=runtime_secret_id={runtime_secret_id}",
+            f"-var=runtime_secret_env={runtime_secret_env}",
             f"-var=secret_ids={dumps(sorted(set(secret_ids)), separators=(',', ':'))}",
             f"-var=github_repository={github_repository}",
             f"-var=github_ref={github_ref}",

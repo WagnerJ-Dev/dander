@@ -1,5 +1,6 @@
 """Security module: secret resolution and pluggable authentication strategies."""
 
+from dander.security.api_bearer import ApiKeyBearer
 from dander.security.api_key import ApiKeyBasic
 from dander.security.base import AuthStrategy
 from dander.security.no_auth import NoAuth
@@ -19,6 +20,7 @@ from dander.security.secret_manager import (
 
 __all__ = [
     "ApiKeyBasic",
+    "ApiKeyBearer",
     "AuthStrategy",
     "ClientCredentialPlacement",
     "DefaultSecretStore",

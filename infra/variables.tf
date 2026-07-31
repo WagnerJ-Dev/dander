@@ -3,14 +3,13 @@ variable "project_id" {
   description = "GCP project id receiving the Dander datasets."
 }
 
-variable "bootstrap_billing_account_id" {
+variable "bootstrap_service_account" {
   type        = string
-  description = "Billing account where the bootstrap identity may manage Terraform budget resources."
-  default     = ""
+  description = "Existing dander-bootstrap service account used for platform Terraform impersonation."
 
   validation {
-    condition     = var.bootstrap_billing_account_id == "" || can(regex("^[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}$", var.bootstrap_billing_account_id))
-    error_message = "Bootstrap billing account must be empty or use XXXXXX-XXXXXX-XXXXXX format."
+    condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$", var.bootstrap_service_account))
+    error_message = "bootstrap_service_account must be a valid service-account email."
   }
 }
 
@@ -60,6 +59,56 @@ variable "runtime_publish_dataplex" {
   type        = bool
   description = "Publish Dataplex aspects from the hosted job; stored metadata may be billable."
   default     = false
+}
+
+variable "runtime_source" {
+  type        = string
+  description = "Connector source name passed to the hosted Cloud Run Job."
+  default     = "greenhouse_job_board"
+
+  validation {
+    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", var.runtime_source))
+    error_message = "runtime_source must be a valid Dander connector name."
+  }
+}
+
+variable "runtime_model" {
+  type        = string
+  description = "Transform model selected by the hosted Cloud Run Job."
+  default     = "stg_greenhouse__jobs"
+
+  validation {
+    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", var.runtime_model))
+    error_message = "runtime_model must be a valid Dander model name."
+  }
+}
+
+variable "runtime_build_models" {
+  type        = bool
+  description = "Run hosted transform builds/tests after ingestion."
+  default     = true
+}
+
+variable "runtime_secret_id" {
+  type        = string
+  description = "Optional Secret Manager container exposed to the runtime connector."
+  default     = ""
+
+  validation {
+    condition     = var.runtime_secret_id == "" || can(regex("^[A-Za-z][A-Za-z0-9_-]{0,254}$", var.runtime_secret_id))
+    error_message = "runtime_secret_id must be empty or a valid Secret Manager id."
+  }
+}
+
+variable "runtime_secret_env" {
+  type        = string
+  description = "Environment variable containing the runtime Secret Manager reference."
+  default     = "HUBSPOT_PRIVATE_APP_TOKEN"
+
+  validation {
+    condition     = can(regex("^[A-Z][A-Z0-9_]*$", var.runtime_secret_env))
+    error_message = "runtime_secret_env must be an uppercase environment variable name."
+  }
 }
 
 variable "secret_ids" {

@@ -28,10 +28,15 @@ _MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
 class _FakeCatalogClient:
     def __init__(self) -> None:
         self.requests: list[dataplex_v1.ModifyEntryRequest] = []
+        self.entries: dict[str, dataplex_v1.Entry] = {}
 
     def modify_entry(self, request: dataplex_v1.ModifyEntryRequest) -> object:
         self.requests.append(request)
+        self.entries[request.entry.name] = request.entry
         return object()
+
+    def get_entry(self, request: dataplex_v1.GetEntryRequest) -> dataplex_v1.Entry:
+        return self.entries[request.name]
 
 
 def _asset() -> CatalogAsset:
@@ -117,6 +122,26 @@ def test_publisher_targets_bigquery_system_entry_and_only_generated_aspects() ->
     generic = request.entry.aspects["dataplex-types.global.generic"].data
     assert generic["type"] == "dander-view"
     assert generic["system"] == "greenhouse_job_board"
+
+
+def test_publisher_reads_back_normalized_aspects() -> None:
+    client = _FakeCatalogClient()
+    publisher = DataplexCatalogPublisher(
+        project="valid-project-123",
+        location="us",
+        client=client,
+    )
+    asset = _asset()
+    publisher.publish(asset)
+
+    normalized = publisher.normalized_aspects(asset)
+
+    assert set(normalized) == {
+        "dataplex-types.global.contacts",
+        "dataplex-types.global.generic",
+        "dataplex-types.global.overview",
+        "dataplex-types.global.schema",
+    }
 
 
 def test_request_rejects_asset_from_different_project() -> None:

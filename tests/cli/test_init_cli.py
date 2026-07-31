@@ -55,6 +55,7 @@ def test_init_passes_optional_runtime_inputs(
     assert captured["enable_runtime"] is True
     assert captured["scheduler_paused"] is False
     assert captured["runtime_publish_dataplex"] is True
+    assert captured["runtime_build_models"] is True
     assert captured["secret_ids"] == ("api-token",)
     assert captured["github_repository"] == "WagnerJ-Dev/dander"
     assert captured["enable_cost_guard"] is True

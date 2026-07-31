@@ -1,11 +1,3 @@
-output "bootstrap_identity" {
-  description = "Separate Terraform bootstrap identity; never attached to workload execution."
-  value = {
-    service_account_email = module.bootstrap_identity.service_account_email
-    service_account_name  = module.bootstrap_identity.service_account_name
-  }
-}
-
 output "dataset_ids" {
   description = "BigQuery dataset ids created by the bootstrap."
   value       = module.bigquery.dataset_ids
@@ -22,7 +14,10 @@ output "scheduled_job" {
 
 output "secret_resources" {
   description = "Secret Manager resource names created by the bootstrap."
-  value       = length(var.secret_ids) > 0 ? module.secret_manager[0].secret_resources : null
+  value = length(setunion(
+    var.secret_ids,
+    var.runtime_secret_id == "" ? toset([]) : toset([var.runtime_secret_id]),
+  )) > 0 ? module.secret_manager[0].secret_resources : null
 }
 
 output "github_workload_identity" {

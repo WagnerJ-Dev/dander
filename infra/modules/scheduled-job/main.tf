@@ -16,37 +16,11 @@ resource "google_project_service" "required" {
   disable_on_destroy = false
 }
 
-resource "google_artifact_registry_repository" "images" {
+data "google_artifact_registry_repository" "images" {
   project       = var.project_id
   location      = var.region
   repository_id = "dander"
-  description   = "Dander runtime container images"
-  format        = "DOCKER"
-  labels = {
-    module = "scheduled-job"
-    owner  = "dander"
-  }
-
-  cleanup_policy_dry_run = false
-
-  cleanup_policies {
-    id     = "delete-untagged"
-    action = "DELETE"
-    condition {
-      tag_state  = "UNTAGGED"
-      older_than = "86400s"
-    }
-  }
-
-  cleanup_policies {
-    id     = "keep-recent"
-    action = "KEEP"
-    most_recent_versions {
-      keep_count = 3
-    }
-  }
-
-  depends_on = [google_project_service.required]
+  depends_on    = [google_project_service.required]
 }
 
 resource "google_service_account" "runtime" {
@@ -125,18 +99,16 @@ resource "google_cloud_run_v2_job" "ingestion" {
       containers {
         image = var.container_image
         args = concat(
-          [
-            "run",
-            "greenhouse_job_board",
-            "--guarded-free-tier",
+          ["run", var.runtime_source, "--guarded-free-tier"],
+          var.runtime_build_models ? [
             "--build-models",
             "--models-dir",
             "/app/models",
             "--select-model",
-            "stg_greenhouse__jobs",
+            var.runtime_model,
             "--catalog-output",
             "/tmp/dander-catalog.json",
-          ],
+          ] : [],
           var.publish_dataplex ? ["--publish-dataplex"] : [],
         )
 
@@ -159,12 +131,19 @@ resource "google_cloud_run_v2_job" "ingestion" {
           name  = "DANDER_PRINCIPAL"
           value = google_service_account.runtime.email
         }
+        dynamic "env" {
+          for_each = var.runtime_secret_id == "" ? [] : [var.runtime_secret_id]
+          content {
+            name  = var.runtime_secret_env
+            value = "projects/${var.project_id}/secrets/${env.value}/versions/latest"
+          }
+        }
       }
     }
   }
 
   depends_on = [
-    google_artifact_registry_repository.images,
+    data.google_artifact_registry_repository.images,
     google_bigquery_dataset_iam_member.runtime_writer,
     google_bigquery_dataset_iam_member.runtime_transform_writer,
     google_billing_account_iam_member.runtime_budget_viewer,

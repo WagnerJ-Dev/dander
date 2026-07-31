@@ -8,23 +8,46 @@ call sites (mirrors the `SecretStoreProvider` / `ComputeProvider` abstractions i
 
 | Module | Provisions |
 |---|---|
-| `modules/bootstrap-identity` | Separate Terraform bootstrap service account and explicitly broader project provisioning roles. **Implemented.** |
 | `modules/bigquery` | `raw` / `staging` / `marts` datasets. **Implemented.** |
-| `modules/scheduled-job` | Artifact Registry, least-privilege identities, public-ingestion Cloud Run Job, and daily Scheduler job. **Implemented.** |
+| `modules/scheduled-job` | Existing stage-zero Artifact Registry repository, least-privilege identities, public-ingestion Cloud Run Job, and daily Scheduler job. **Implemented.** |
 | `modules/secret-manager` | Named secret containers and per-secret runtime access; never secret values. **Implemented.** |
 | `modules/github-wif` | Repository/ref-scoped GitHub OIDC and a keyless deployment identity. **Implemented.** |
 | `modules/cost-guard` | Project budget, Pub/Sub, and simulation-first Gen 2 billing kill switch. **Implemented.** |
 
-The root module always calls `modules/bootstrap-identity` and `modules/bigquery`, and can opt into
-the remaining workload modules. The bootstrap identity is not attached to Cloud Run or Scheduler;
-use short-lived impersonation for Terraform and keep the runtime identity separate.
-`dander init` configures the required GCS backend, creates a saved plan, and applies that exact
-plan only after the caller supplies `--apply` and confirms interactively. The state bucket must
-already exist:
+The main root always calls `modules/bigquery` and can opt into the remaining workload modules. The
+one-time `infra/bootstrap-admin` root creates the remote-state bucket, the Artifact Registry
+repository, the separate `dander-bootstrap` service account, its provisioning roles, and the
+approved caller's impersonation binding. The main root never creates those preconditions and
+requires an impersonated service account.
+
+Run stage zero first:
 
 ```bash
-uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket
+uv run dander init-admin-plan \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --admin-member user:operator@example.invalid
+uv run dander init-admin-apply \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --admin-member user:operator@example.invalid
 ```
+
+Then plan the platform only through the emitted bootstrap identity:
+
+```bash
+uv run dander init-platform-plan \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com
+uv run dander init-platform-apply \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com
+```
+
+The legacy `dander init` command remains available for the full option set, but it also requires
+`--bootstrap-service-account` and uses the same GCS backend and impersonation boundary.
 
 To plan the complete hosted runtime, first push an image and resolve its immutable digest:
 
@@ -32,6 +55,7 @@ To plan the complete hosted runtime, first push an image and resolve its immutab
 uv run dander init \
   --project my-gcp-project \
   --state-bucket my-existing-tfstate-bucket \
+  --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com \
   --enable-runtime \
   --billing-account ABCDEF-123456-ABCDEF \
   --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DIGEST \
@@ -65,8 +89,8 @@ identity can invoke only the named Cloud Run Job.
 - **Remote GCS backend** for state — never local state committed to the repo.
 - **No secret values** in `.tf`/`.tfvars`; reference Secret Manager. Commit only `*.tfvars.example`.
 - Project id / region are always parameterized, never hard-coded.
-- Normal bootstrap applies run through the CLI. A reviewed, saved Terraform plan is also the
-  operational path for the optional scheduled-job slice.
+- Stage-zero applies run through the CLI using the approved administrator. Platform applies use
+  the exact saved plan while impersonating only `dander-bootstrap`.
 
 ## Deployment verification
 

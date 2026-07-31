@@ -29,6 +29,9 @@ class _CatalogClient(Protocol):
     def modify_entry(self, request: dataplex_v1.ModifyEntryRequest) -> object:
         """Modify a first-party catalog entry through source-system permissions."""
 
+    def get_entry(self, request: dataplex_v1.GetEntryRequest) -> dataplex_v1.Entry:
+        """Read one first-party catalog entry."""
+
 
 @dataclass(frozen=True)
 class GeneratedAspect:
@@ -138,6 +141,25 @@ class DataplexCatalogPublisher:
             raise CatalogPublishError(f"Cannot publish catalog asset: {asset.name}") from error
         return request.entry.name
 
+    def read(self, asset: CatalogAsset) -> dataplex_v1.Entry:
+        """Read back one entry without modifying unrelated aspects."""
+        request = dataplex_v1.GetEntryRequest(
+            name=_bigquery_entry_name(asset, location=self._location)
+        )
+        try:
+            return self._client.get_entry(request=request)
+        except GoogleAPICallError as error:
+            raise CatalogPublishError(f"Cannot read catalog asset: {asset.name}") from error
+
+    def normalized_aspects(self, asset: CatalogAsset) -> dict[str, object]:
+        """Return a stable, JSON-compatible view of the generated aspects read from Dataplex."""
+        entry = self.read(asset)
+        return {
+            key: _normalize_value(aspect.data)
+            for key, aspect in sorted(entry.aspects.items())
+            if key in {generated.key for generated in self._generator.generate(asset)}
+        }
+
 
 def _bigquery_entry_name(asset: CatalogAsset, *, location: str) -> str:
     entry_id = (
@@ -145,6 +167,17 @@ def _bigquery_entry_name(asset: CatalogAsset, *, location: str) -> str:
         f"/datasets/{asset.dataset}/tables/{asset.name}"
     )
     return f"projects/{asset.project}/locations/{location}/entryGroups/@bigquery/entries/{entry_id}"
+
+
+def _normalize_value(value: object) -> object:
+    """Normalize protobuf Struct-like values without retaining provider payload wrappers."""
+    if isinstance(value, dict):
+        return {str(key): _normalize_value(item) for key, item in sorted(value.items())}
+    if isinstance(value, list):
+        return [_normalize_value(item) for item in value]
+    if hasattr(value, "items"):
+        return {str(key): _normalize_value(item) for key, item in sorted(value.items())}
+    return value
 
 
 def _metadata_type(data_type: str) -> str:

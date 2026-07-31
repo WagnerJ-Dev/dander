@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -12,6 +13,9 @@ from rich.console import Console
 from rich.table import Table
 
 from dander.bootstrap import (
+    AdministrativeBootstrap,
+    AdministrativeBootstrapError,
+    DeploymentSummary,
     DeploymentVerifier,
     TerraformBootstrap,
     TerraformBootstrapError,
@@ -25,6 +29,7 @@ from dander.catalog import (
     SemanticRegistryPublisher,
 )
 from dander.core.config import Settings
+from dander.evidence import EvidenceBundle, EvidenceManifest, ProofEvidence, ProofStatus
 from dander.ingestion import (
     DltRestSource,
     Endpoint,
@@ -37,6 +42,7 @@ from dander.runtime import PipelineRunner
 from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafetyError
 from dander.security import (
     ApiKeyBasic,
+    ApiKeyBearer,
     AuthStrategy,
     ClientCredentialPlacement,
     DefaultSecretStore,
@@ -75,6 +81,7 @@ _DEFAULT_CONNECTORS_DIR = Path("connectors")
 _DEFAULT_INFRA_DIR = Path("infra")
 _DEFAULT_MODELS_DIR = Path("models")
 _DEFAULT_CATALOG_PATH = Path(".dander/catalog.json")
+_DEFAULT_BOOTSTRAP_ADMIN_DIR = Path("infra/bootstrap-admin")
 
 
 @app.command()
@@ -85,6 +92,11 @@ def init(
     ),
     state_prefix: str = typer.Option(
         "dander/state", "--state-prefix", help="Object prefix for Terraform state."
+    ),
+    bootstrap_service_account: str = typer.Option(
+        "",
+        "--bootstrap-service-account",
+        help="Existing dander-bootstrap service account used for platform impersonation.",
     ),
     region: str = typer.Option("us-central1", "--region", help="GCP region."),
     bigquery_location: str = typer.Option(
@@ -114,6 +126,31 @@ def init(
         False,
         "--runtime-publish-dataplex",
         help="Publish catalog aspects from hosted runs; stored metadata may be billable.",
+    ),
+    runtime_source: str = typer.Option(
+        "greenhouse_job_board",
+        "--runtime-source",
+        help="Connector source name passed to the hosted Cloud Run Job.",
+    ),
+    runtime_model: str = typer.Option(
+        "stg_greenhouse__jobs",
+        "--runtime-model",
+        help="Transform model selected by the hosted Cloud Run Job.",
+    ),
+    runtime_build_models: bool = typer.Option(
+        True,
+        "--runtime-build-models/--runtime-no-build-models",
+        help="Run hosted transform builds/tests after ingestion.",
+    ),
+    runtime_secret_id: str = typer.Option(
+        "",
+        "--runtime-secret-id",
+        help="Secret Manager container exposed to the hosted connector.",
+    ),
+    runtime_secret_env: str = typer.Option(
+        "HUBSPOT_PRIVATE_APP_TOKEN",
+        "--runtime-secret-env",
+        help="Environment variable carrying the hosted Secret Manager reference.",
     ),
     secret_ids: list[str] | None = typer.Option(  # noqa: B008
         None,
@@ -166,11 +203,72 @@ def init(
         default=False,
     ):
         raise typer.Abort()
+    plan_path = _execute_platform_bootstrap(
+        project=project,
+        state_bucket=state_bucket,
+        state_prefix=state_prefix,
+        bootstrap_service_account=bootstrap_service_account,
+        apply=apply,
+        region=region,
+        bigquery_location=bigquery_location,
+        enable_runtime=enable_runtime,
+        billing_account_id=billing_account_id,
+        container_image=container_image,
+        scheduler_paused=scheduler_paused,
+        runtime_publish_dataplex=runtime_publish_dataplex,
+        runtime_source=runtime_source,
+        runtime_model=runtime_model,
+        runtime_build_models=runtime_build_models,
+        runtime_secret_id=runtime_secret_id,
+        runtime_secret_env=runtime_secret_env,
+        secret_ids=tuple(secret_ids or ()),
+        github_repository=github_repository,
+        github_ref=github_ref,
+        enable_cost_guard=enable_cost_guard,
+        cost_guard_budget_name=cost_guard_budget_name,
+        cost_guard_budget_amount=cost_guard_budget_amount,
+        live_cost_guard=live_cost_guard,
+        infra_dir=infra_dir,
+    )
+
+    action = "applied" if apply else "planned"
+    console.print(f"[green]Bootstrap {action}.[/green] Saved plan: {plan_path}")
+
+
+def _execute_platform_bootstrap(
+    *,
+    project: str,
+    state_bucket: str,
+    state_prefix: str,
+    bootstrap_service_account: str,
+    apply: bool,
+    region: str,
+    bigquery_location: str,
+    enable_runtime: bool,
+    billing_account_id: str,
+    container_image: str,
+    scheduler_paused: bool,
+    runtime_publish_dataplex: bool,
+    runtime_source: str,
+    runtime_model: str,
+    runtime_build_models: bool,
+    runtime_secret_id: str,
+    runtime_secret_env: str,
+    secret_ids: tuple[str, ...],
+    github_repository: str,
+    github_ref: str,
+    enable_cost_guard: bool,
+    cost_guard_budget_name: str,
+    cost_guard_budget_amount: str,
+    live_cost_guard: bool,
+    infra_dir: Path,
+) -> Path:
     try:
-        plan_path = TerraformBootstrap(infra_dir).execute(
+        return TerraformBootstrap(infra_dir).execute(
             project=project,
             state_bucket=state_bucket,
             state_prefix=state_prefix,
+            bootstrap_service_account=bootstrap_service_account,
             apply=apply,
             region=region,
             bigquery_location=bigquery_location,
@@ -179,6 +277,11 @@ def init(
             container_image=container_image,
             scheduler_paused=scheduler_paused,
             runtime_publish_dataplex=runtime_publish_dataplex,
+            runtime_source=runtime_source,
+            runtime_model=runtime_model,
+            runtime_build_models=runtime_build_models,
+            runtime_secret_id=runtime_secret_id,
+            runtime_secret_env=runtime_secret_env,
             secret_ids=tuple(secret_ids or ()),
             github_repository=github_repository,
             github_ref=github_ref,
@@ -190,8 +293,165 @@ def init(
     except TerraformBootstrapError as error:
         raise ClickException(str(error)) from error
 
-    action = "applied" if apply else "planned"
-    console.print(f"[green]Bootstrap {action}.[/green] Saved plan: {plan_path}")
+
+@app.command("init-admin-plan")
+def init_admin_plan(
+    project: str = typer.Option(..., "--project", help="GCP project id."),
+    state_bucket: str = typer.Option(..., "--state-bucket", help="New remote-state bucket name."),
+    admin_member: str = typer.Option(
+        ..., "--admin-member", help="Approved user:, serviceAccount:, or group: principal."
+    ),
+    region: str = typer.Option("us-central1", "--region"),
+    state_location: str = typer.Option("US", "--state-location"),
+    bootstrap_service_account_id: str = typer.Option(
+        "dander-bootstrap", "--bootstrap-service-account-id"
+    ),
+    billing_account_id: str = typer.Option("", "--billing-account"),
+    github_repository: str = typer.Option("", "--github-repository"),
+    github_ref: str = typer.Option("refs/heads/main", "--github-ref"),
+    infra_dir: Path = typer.Option(_DEFAULT_BOOTSTRAP_ADMIN_DIR, hidden=True),  # noqa: B008
+) -> None:
+    """Plan stage-zero state bucket and bootstrap identity resources."""
+    try:
+        plan_path = AdministrativeBootstrap(infra_dir).execute(
+            project=project,
+            state_bucket=state_bucket,
+            admin_member=admin_member,
+            apply=False,
+            region=region,
+            state_location=state_location,
+            bootstrap_service_account_id=bootstrap_service_account_id,
+            billing_account_id=billing_account_id,
+            github_repository=github_repository,
+            github_ref=github_ref,
+        )
+    except AdministrativeBootstrapError as error:
+        raise ClickException(str(error)) from error
+    console.print(f"[green]Administrative bootstrap planned.[/green] Saved plan: {plan_path}")
+
+
+@app.command("init-admin-apply")
+def init_admin_apply(
+    project: str = typer.Option(..., "--project", help="GCP project id."),
+    state_bucket: str = typer.Option(..., "--state-bucket", help="New remote-state bucket name."),
+    admin_member: str = typer.Option(
+        ..., "--admin-member", help="Approved user:, serviceAccount:, or group: principal."
+    ),
+    region: str = typer.Option("us-central1", "--region"),
+    state_location: str = typer.Option("US", "--state-location"),
+    bootstrap_service_account_id: str = typer.Option(
+        "dander-bootstrap", "--bootstrap-service-account-id"
+    ),
+    billing_account_id: str = typer.Option("", "--billing-account"),
+    github_repository: str = typer.Option("", "--github-repository"),
+    github_ref: str = typer.Option("refs/heads/main", "--github-ref"),
+    infra_dir: Path = typer.Option(_DEFAULT_BOOTSTRAP_ADMIN_DIR, hidden=True),  # noqa: B008
+) -> None:
+    """Apply the reviewed stage-zero plan after explicit confirmation."""
+    if not typer.confirm(
+        f"Apply administrative bootstrap to GCP project {project!r}?", default=False
+    ):
+        raise typer.Abort()
+    try:
+        plan_path = AdministrativeBootstrap(infra_dir).execute(
+            project=project,
+            state_bucket=state_bucket,
+            admin_member=admin_member,
+            apply=True,
+            region=region,
+            state_location=state_location,
+            bootstrap_service_account_id=bootstrap_service_account_id,
+            billing_account_id=billing_account_id,
+            github_repository=github_repository,
+            github_ref=github_ref,
+        )
+    except AdministrativeBootstrapError as error:
+        raise ClickException(str(error)) from error
+    console.print(f"[green]Administrative bootstrap applied.[/green] Saved plan: {plan_path}")
+
+
+@app.command("init-platform-plan")
+def init_platform_plan(
+    project: str = typer.Option(..., "--project", help="GCP project id."),
+    state_bucket: str = typer.Option(..., "--state-bucket", help="Existing remote-state bucket."),
+    bootstrap_service_account: str = typer.Option(..., "--bootstrap-service-account"),
+    state_prefix: str = typer.Option("dander/state", "--state-prefix"),
+    region: str = typer.Option("us-central1", "--region"),
+    bigquery_location: str = typer.Option("US", "--bigquery-location"),
+    infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
+) -> None:
+    """Plan platform Terraform while impersonating the stage-zero identity."""
+    plan_path = _execute_platform_bootstrap(
+        project=project,
+        state_bucket=state_bucket,
+        state_prefix=state_prefix,
+        bootstrap_service_account=bootstrap_service_account,
+        apply=False,
+        region=region,
+        bigquery_location=bigquery_location,
+        enable_runtime=False,
+        billing_account_id="",
+        container_image="",
+        scheduler_paused=True,
+        runtime_publish_dataplex=False,
+        runtime_source="greenhouse_job_board",
+        runtime_model="stg_greenhouse__jobs",
+        runtime_build_models=True,
+        runtime_secret_id="",
+        runtime_secret_env="HUBSPOT_PRIVATE_APP_TOKEN",
+        secret_ids=(),
+        github_repository="",
+        github_ref="refs/heads/main",
+        enable_cost_guard=False,
+        cost_guard_budget_name="dander-sbx-cap",
+        cost_guard_budget_amount="5.00",
+        live_cost_guard=False,
+        infra_dir=infra_dir,
+    )
+    console.print(f"[green]Platform bootstrap planned.[/green] Saved plan: {plan_path}")
+
+
+@app.command("init-platform-apply")
+def init_platform_apply(
+    project: str = typer.Option(..., "--project", help="GCP project id."),
+    state_bucket: str = typer.Option(..., "--state-bucket", help="Existing remote-state bucket."),
+    bootstrap_service_account: str = typer.Option(..., "--bootstrap-service-account"),
+    state_prefix: str = typer.Option("dander/state", "--state-prefix"),
+    region: str = typer.Option("us-central1", "--region"),
+    bigquery_location: str = typer.Option("US", "--bigquery-location"),
+    infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
+) -> None:
+    """Apply the reviewed platform plan through the bootstrap identity."""
+    if not typer.confirm(f"Apply platform bootstrap to GCP project {project!r}?", default=False):
+        raise typer.Abort()
+    plan_path = _execute_platform_bootstrap(
+        project=project,
+        state_bucket=state_bucket,
+        state_prefix=state_prefix,
+        bootstrap_service_account=bootstrap_service_account,
+        apply=True,
+        region=region,
+        bigquery_location=bigquery_location,
+        enable_runtime=False,
+        billing_account_id="",
+        container_image="",
+        scheduler_paused=True,
+        runtime_publish_dataplex=False,
+        runtime_source="greenhouse_job_board",
+        runtime_model="stg_greenhouse__jobs",
+        runtime_build_models=True,
+        runtime_secret_id="",
+        runtime_secret_env="HUBSPOT_PRIVATE_APP_TOKEN",
+        secret_ids=(),
+        github_repository="",
+        github_ref="refs/heads/main",
+        enable_cost_guard=False,
+        cost_guard_budget_name="dander-sbx-cap",
+        cost_guard_budget_amount="5.00",
+        live_cost_guard=False,
+        infra_dir=infra_dir,
+    )
+    console.print(f"[green]Platform bootstrap applied.[/green] Saved plan: {plan_path}")
 
 
 @verify_app.command("deployment")
@@ -202,18 +462,20 @@ def verify_deployment(
         "--json",
         help="Write the sanitized verification summary to this path.",
     ),  # noqa: B008
-    state_bucket: str | None = typer.Option(
+    evidence_dir: Path | None = typer.Option(  # noqa: B008
         None,
-        "--state-bucket",
-        help=(
-            "Expected remote-state bucket; otherwise use the initialized "
-            "Terraform backend metadata."
-        ),
+        "--evidence-dir",
+        help="Also write the complete sanitized evidence bundle to this directory.",
     ),
-    state_prefix: str | None = typer.Option(
-        None,
+    state_bucket: str = typer.Option(
+        ...,
+        "--state-bucket",
+        help="Expected remote-state bucket initialized by stage zero.",
+    ),
+    state_prefix: str = typer.Option(
+        ...,
         "--state-prefix",
-        help="Expected remote-state prefix when checking the GCS backend.",
+        help="Expected remote-state prefix initialized by stage zero.",
     ),
     dataset: list[str] | None = typer.Option(  # noqa: B008
         None,
@@ -258,6 +520,20 @@ def verify_deployment(
         "--billing-account",
         help="Billing account id used by --expect-cost-guard.",
     ),
+    cost_guard_budget_name: str = typer.Option("dander-sbx-cap", "--cost-guard-budget-name"),
+    cost_guard_amount: float = typer.Option(5.0, "--cost-guard-amount"),
+    cost_guard_topic: str = typer.Option("dander-stop-billing", "--cost-guard-topic"),
+    cost_guard_function: str = typer.Option("dander-stop-billing", "--cost-guard-function"),
+    cost_guard_simulate: bool = typer.Option(
+        True,
+        "--cost-guard-simulate/--cost-guard-live",
+        help="Expect simulation mode for the cost guard (the safe default).",
+    ),
+    publish_dataplex: bool = typer.Option(
+        False,
+        "--publish-dataplex",
+        help="Expect the runtime to have the narrow Dataplex catalog role.",
+    ),
     infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
 ) -> None:
     """Verify the bootstrap's actual resources and save sanitized evidence."""
@@ -273,8 +549,16 @@ def verify_deployment(
         region=region,
         expect_cost_guard=expect_cost_guard,
         billing_account_id=billing_account_id,
+        cost_guard_budget_name=cost_guard_budget_name,
+        cost_guard_amount=cost_guard_amount,
+        cost_guard_topic=cost_guard_topic,
+        cost_guard_function=cost_guard_function,
+        cost_guard_simulate=cost_guard_simulate,
+        publish_dataplex=publish_dataplex,
     )
     write_summary(summary, json_output)
+    if evidence_dir is not None:
+        _write_bootstrap_evidence(summary, evidence_dir)
     table = Table(title=f"Dander deployment verification: {project}")
     table.add_column("Check")
     table.add_column("Result")
@@ -285,6 +569,31 @@ def verify_deployment(
     console.print(f"Evidence: {json_output}")
     if not summary.passed:
         raise ClickException("Deployment verification failed; inspect the evidence summary.")
+
+
+def _write_bootstrap_evidence(summary: DeploymentSummary, evidence_dir: Path) -> None:
+    """Adapt deployment checks into the standard evidence bundle without copying payloads."""
+    checks = summary.checks
+    passed = summary.passed
+    proof = ProofEvidence(
+        status=ProofStatus.PASSED if passed else ProofStatus.FAILED,
+        started_at_utc=os.environ.get("DANDER_PROOF_STARTED_AT_UTC", summary.checked_at_utc),
+        ended_at_utc=summary.checked_at_utc,
+        operation="deployment verification",
+        resource_ids=tuple(check.name for check in checks),
+        row_counts={"checks": len(checks)},
+        failure_reason=None if passed else "one or more deployment checks failed",
+    )
+    manifest = EvidenceManifest(
+        commit_sha=os.environ.get("GITHUB_SHA", "local"),
+        workflow_run_id=os.environ.get("GITHUB_RUN_ID", "local"),
+        checked_at_utc=summary.checked_at_utc,
+        gcp_project_alias=os.environ.get("DANDER_GCP_PROJECT_ALIAS", summary.project_id),
+        container_digest=os.environ.get("DANDER_CONTAINER_DIGEST", "unknown"),
+        terraform_plan_sha256=os.environ.get("DANDER_TERRAFORM_PLAN_SHA256", "unknown"),
+        proofs={"bootstrap": proof},
+    )
+    EvidenceBundle(evidence_dir).write(manifest)
 
 
 @app.command()
@@ -643,6 +952,10 @@ def _build_auth(
         if config.auth_ref is None:
             raise ClickException("api_key_basic connector is missing auth_ref")
         return ApiKeyBasic(secrets, config.auth_ref)
+    if config.auth_strategy == "api_key_bearer":
+        if config.auth_ref is None:
+            raise ClickException("api_key_bearer connector is missing auth_ref")
+        return ApiKeyBearer(secrets, config.auth_ref)
     if config.auth_strategy == "oauth2_client_credentials":
         token_url = config.auth_options["token_url"]
         subject = config.auth_options.get("subject")

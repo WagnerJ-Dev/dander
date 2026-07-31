@@ -223,6 +223,11 @@ class SourceConfig(BaseModel):
         elif self.auth_strategy == "api_key_basic":
             if not self.auth_ref:
                 raise ValueError("api_key_basic requires auth_ref")
+        elif self.auth_strategy in {"api_key_bearer", "api_key_basic"}:
+            if not self.auth_ref:
+                raise ValueError(f"{self.auth_strategy} requires auth_ref")
+            if self.auth_refs:
+                raise ValueError(f"{self.auth_strategy} cannot declare auth_refs")
         elif self.auth_strategy == "oauth2_client_credentials":
             missing = {"client_id", "client_secret"} - self.auth_refs.keys()
             if missing:

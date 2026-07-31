@@ -1,11 +1,11 @@
 output "artifact_repository" {
   description = "Artifact Registry repository resource name."
-  value       = google_artifact_registry_repository.images.name
+  value       = data.google_artifact_registry_repository.images.name
 }
 
 output "artifact_repository_id" {
   description = "Artifact Registry repository id."
-  value       = google_artifact_registry_repository.images.repository_id
+  value       = data.google_artifact_registry_repository.images.repository_id
 }
 
 output "job_name" {

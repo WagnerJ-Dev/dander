@@ -1,5 +1,7 @@
 # Dander
 
+[![CI](https://github.com/WagnerJ-Dev/dander/actions/workflows/ci.yml/badge.svg)](https://github.com/WagnerJ-Dev/dander/actions/workflows/ci.yml)
+
 **An opinionated, self-hosted, GCP-native data platform you own** — ingest + transform + catalog
 behind one CLI. A focused replacement for Informatica and a customizable stand-in for dbt.
 
@@ -30,6 +32,8 @@ Hybrid ingestion (dlt for standard REST APIs, hand-rolled extractors for gnarly 
 both behind one `Source` interface) → explicit, idempotent BigQuery **write patterns** → our own
 **transform engine** (`ref()` DAG → topological execution + tests) → **catalog** publication.
 See `steering/00-project-overview.md` for the full module map and decision log.
+
+Repository checks and branch-protection guidance live in [`docs/ci.md`](docs/ci.md).
 
 ## Stack
 
@@ -255,12 +259,27 @@ New users may instead use the [$300/90-day Free Trial](https://docs.cloud.google
 While the account remains a Free Trial account, Google says usage is not charged to the payment
 method; manually upgrading makes overages beyond remaining credit and free allowances billable.
 
-The bootstrap command uses remote GCS Terraform state and plans by default. Applying requires both
-the `--apply` flag and an interactive confirmation:
+The bootstrap uses a two-stage identity boundary. Stage zero creates the remote GCS state bucket,
+the `dander-bootstrap` service account, provisioning roles, and the approved caller's impersonation
+binding. Stage one always runs Terraform through that service account:
 
 ```bash
-uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket
-uv run dander init --project my-gcp-project --state-bucket my-existing-tfstate-bucket --apply
+uv run dander init-admin-plan \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --admin-member user:operator@example.invalid
+uv run dander init-admin-apply \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --admin-member user:operator@example.invalid
+uv run dander init-platform-plan \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com
+uv run dander init-platform-apply \
+  --project my-gcp-project \
+  --state-bucket my-existing-tfstate-bucket \
+  --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com
 ```
 
 Optional flags can include the complete hosted slice in the same reviewed plan:
@@ -269,6 +288,7 @@ Optional flags can include the complete hosted slice in the same reviewed plan:
 uv run dander init \
   --project my-gcp-project \
   --state-bucket my-existing-tfstate-bucket \
+  --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com \
   --enable-runtime \
   --billing-account ABCDEF-123456-ABCDEF \
   --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DIGEST \

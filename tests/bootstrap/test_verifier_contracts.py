@@ -1,0 +1,153 @@
+"""Contract tests for resource-scoped IAM and cost-guard verification."""
+
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING
+
+from dander.bootstrap import DeploymentVerifier, VerificationStatus
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+def _verifier(tmp_path: Path, payloads: dict[tuple[str, ...], object]) -> DeploymentVerifier:
+    def run(args: tuple[str, ...], cwd: Path) -> str:
+        assert cwd == tmp_path.resolve()
+        return json.dumps(payloads.get(args, {}))
+
+    return DeploymentVerifier(project="proof-project", infra_dir=tmp_path, command_runner=run)
+
+
+def test_runtime_project_iam_distinguishes_missing_and_broad_roles(tmp_path: Path) -> None:
+    missing = _verifier(tmp_path, {})._check_runtime_iam(
+        "dander-runtime@proof-project.iam.gserviceaccount.com", publish_dataplex=False
+    )
+    assert not missing.ok
+    assert missing.status is VerificationStatus.MISSING_REQUIRED_BINDING
+
+    payload: dict[tuple[str, ...], object] = {
+        (
+            "gcloud",
+            "projects",
+            "get-iam-policy",
+            "proof-project",
+            "--format=json",
+        ): {
+            "bindings": [
+                {
+                    "role": "roles/bigquery.jobUser",
+                    "members": [
+                        "serviceAccount:dander-runtime@proof-project.iam.gserviceaccount.com"
+                    ],
+                },
+                {
+                    "role": "roles/pubsub.viewer",
+                    "members": [
+                        "serviceAccount:dander-runtime@proof-project.iam.gserviceaccount.com"
+                    ],
+                },
+                {
+                    "role": "roles/billing.viewer",
+                    "members": [
+                        "serviceAccount:dander-runtime@proof-project.iam.gserviceaccount.com"
+                    ],
+                },
+                {
+                    "role": "roles/storage.admin",
+                    "members": [
+                        "serviceAccount:dander-runtime@proof-project.iam.gserviceaccount.com"
+                    ],
+                },
+            ]
+        }
+    }
+    broad = _verifier(tmp_path, payload)._check_runtime_iam(
+        "dander-runtime@proof-project.iam.gserviceaccount.com", publish_dataplex=False
+    )
+    assert not broad.ok
+    assert broad.status is VerificationStatus.BROAD_BINDING_DETECTED
+
+
+def test_cost_guard_requires_exact_resources(tmp_path: Path) -> None:
+    payloads: dict[tuple[str, ...], object] = {
+        (
+            "gcloud",
+            "billing",
+            "budgets",
+            "list",
+            "--billing-account",
+            "ABCDEF-123456-ABCDEF",
+            "--format=json",
+        ): [
+            {
+                "displayName": "dander-sbx-cap",
+                "amount": {"specifiedAmount": {"units": "5", "nanos": 0}},
+                "budgetFilter": {"projects": ["projects/123"]},
+                "thresholdRules": [
+                    {"thresholdPercent": 0.8},
+                    {"thresholdPercent": 1.0},
+                ],
+                "allUpdatesRule": {
+                    "pubsubTopic": "projects/proof-project/topics/dander-stop-billing"
+                },
+            }
+        ],
+        ("gcloud", "projects", "describe", "proof-project", "--format=json"): {
+            "projectNumber": "123"
+        },
+        (
+            "gcloud",
+            "pubsub",
+            "topics",
+            "describe",
+            "dander-stop-billing",
+            "--project",
+            "proof-project",
+            "--format=json",
+        ): {"name": "projects/proof-project/topics/dander-stop-billing"},
+        (
+            "gcloud",
+            "functions",
+            "describe",
+            "dander-stop-billing",
+            "--gen2",
+            "--region",
+            "us-central1",
+            "--project",
+            "proof-project",
+            "--format=json",
+        ): {
+            "serviceConfig": {
+                "serviceAccountEmail": "dander-cost-guard@proof-project.iam.gserviceaccount.com",
+                "environmentVariables": {"SIMULATE_DEACTIVATION": "true"},
+            },
+            "eventTrigger": {"pubsubTopic": "projects/proof-project/topics/dander-stop-billing"},
+        },
+        (
+            "gcloud",
+            "billing",
+            "projects",
+            "describe",
+            "proof-project",
+            "--format=json",
+        ): {"billingAccountName": "billingAccounts/ABCDEF-123456-ABCDEF"},
+    }
+
+    checks = _verifier(tmp_path, payloads)._check_cost_guard(
+        "ABCDEF-123456-ABCDEF",
+        budget_name="dander-sbx-cap",
+        amount=5.0,
+        topic="dander-stop-billing",
+        function_name="dander-stop-billing",
+        simulate=True,
+        region="us-central1",
+    )
+
+    assert all(check.ok for check in checks)
+    assert {check.name for check in checks} == {
+        "cost_guard:budget",
+        "cost_guard:topic",
+        "cost_guard:function",
+        "cost_guard:billing_link",
+    }

@@ -35,13 +35,29 @@ def test_verify_deployment_writes_summary_and_returns_success(
 
     monkeypatch.setattr("dander.cli.main.DeploymentVerifier", FakeVerifier)
     output = tmp_path / "evidence.json"
+    evidence_dir = tmp_path / "bundle"
     result = CliRunner().invoke(
         app,
-        ["verify", "deployment", "--project", "proof-project", "--json", str(output)],
+        [
+            "verify",
+            "deployment",
+            "--project",
+            "proof-project",
+            "--state-bucket",
+            "proof-state",
+            "--state-prefix",
+            "dander/state",
+            "--json",
+            str(output),
+            "--evidence-dir",
+            str(evidence_dir),
+        ],
     )
 
     assert result.exit_code == 0, result.output
     assert json.loads(output.read_text(encoding="utf-8"))["passed"] is True
+    assert (evidence_dir / "manifest.json").exists()
+    assert (evidence_dir / "bootstrap.json").exists()
 
 
 def test_verify_deployment_fails_when_a_check_fails(
@@ -69,6 +85,10 @@ def test_verify_deployment_fails_when_a_check_fails(
             "deployment",
             "--project",
             "proof-project",
+            "--state-bucket",
+            "proof-state",
+            "--state-prefix",
+            "dander/state",
             "--json",
             str(tmp_path / "evidence.json"),
         ],

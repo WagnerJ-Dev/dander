@@ -72,9 +72,29 @@ def test_verifier_checks_actual_resources_and_writes_sanitized_summary(tmp_path:
                     "members": [
                         "serviceAccount:dander-runtime@proof-project.iam.gserviceaccount.com"
                     ],
-                }
+                },
+                {
+                    "role": "roles/pubsub.viewer",
+                    "members": [
+                        "serviceAccount:dander-runtime@proof-project.iam.gserviceaccount.com"
+                    ],
+                },
+                {
+                    "role": "roles/billing.viewer",
+                    "members": [
+                        "serviceAccount:dander-runtime@proof-project.iam.gserviceaccount.com"
+                    ],
+                },
             ]
         },
+        (
+            "gcloud",
+            "iam",
+            "service-accounts",
+            "get-iam-policy",
+            "dander-runtime@proof-project.iam.gserviceaccount.com",
+            "--format=json",
+        ): {"bindings": []},
         (
             "gcloud",
             "scheduler",
@@ -95,6 +115,32 @@ def test_verifier_checks_actual_resources_and_writes_sanitized_summary(tmp_path:
         (
             "gcloud",
             "secrets",
+            "list",
+            "--project",
+            "proof-project",
+            "--format=json(name)",
+        ): [{"name": "projects/proof-project/secrets/hubspot-private-app-token"}],
+        (
+            "gcloud",
+            "secrets",
+            "get-iam-policy",
+            "hubspot-private-app-token",
+            "--project",
+            "proof-project",
+            "--format=json",
+        ): {
+            "bindings": [
+                {
+                    "role": "roles/secretmanager.secretAccessor",
+                    "members": [
+                        "serviceAccount:dander-runtime@proof-project.iam.gserviceaccount.com"
+                    ],
+                }
+            ]
+        },
+        (
+            "gcloud",
+            "secrets",
             "describe",
             "hubspot-private-app-token",
             "--project",
@@ -102,6 +148,16 @@ def test_verifier_checks_actual_resources_and_writes_sanitized_summary(tmp_path:
             "--format=json(name)",
         ): {"name": "projects/proof-project/secrets/hubspot-private-app-token"},
     }
+
+    for dataset in ("raw", "staging", "marts"):
+        command_payloads[("bq", "show", "--format=json", f"proof-project:{dataset}")] = {
+            "access": [
+                {
+                    "role": "WRITER",
+                    "userByEmail": "dander-runtime@proof-project.iam.gserviceaccount.com",
+                }
+            ]
+        }
 
     def run(args: tuple[str, ...], cwd: Path) -> str:
         assert cwd == tmp_path.resolve()

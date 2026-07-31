@@ -1,10 +1,3 @@
-module "bootstrap_identity" {
-  source = "./modules/bootstrap-identity"
-
-  project_id                   = var.project_id
-  bootstrap_billing_account_id = var.enable_cost_guard ? var.billing_account_id : ""
-}
-
 module "bigquery" {
   source = "./modules/bigquery"
 
@@ -17,12 +10,17 @@ module "scheduled_job" {
   count  = var.enable_scheduled_job ? 1 : 0
   source = "./modules/scheduled-job"
 
-  project_id         = var.project_id
-  region             = var.region
-  billing_account_id = var.billing_account_id
-  container_image    = var.runtime_container_image
-  scheduler_paused   = var.scheduler_paused
-  publish_dataplex   = var.runtime_publish_dataplex
+  project_id           = var.project_id
+  region               = var.region
+  billing_account_id   = var.billing_account_id
+  container_image      = var.runtime_container_image
+  scheduler_paused     = var.scheduler_paused
+  publish_dataplex     = var.runtime_publish_dataplex
+  runtime_source       = var.runtime_source
+  runtime_model        = var.runtime_model
+  runtime_build_models = var.runtime_build_models
+  runtime_secret_id    = var.runtime_secret_id
+  runtime_secret_env   = var.runtime_secret_env
   transform_dataset_ids = setsubtract(
     toset(var.datasets),
     toset(["raw"]),
@@ -34,7 +32,10 @@ module "secret_manager" {
   source = "./modules/secret-manager"
 
   project_id = var.project_id
-  secret_ids = var.secret_ids
+  secret_ids = setunion(
+    var.secret_ids,
+    var.runtime_secret_id == "" ? toset([]) : toset([var.runtime_secret_id]),
+  )
   accessor_members = var.enable_scheduled_job ? [
     "serviceAccount:${module.scheduled_job[0].runtime_service_account}",
   ] : []

@@ -1,0 +1,235 @@
+name: Live proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: Billing-linked proof project id
+        required: true
+        type: string
+      state_bucket:
+        description: Existing remote Terraform state bucket
+        required: true
+        type: string
+      bootstrap_service_account:
+        description: dander-bootstrap service-account email
+        required: true
+        type: string
+      billing_account_id:
+        description: Billing account used by the simulation-first guard
+        required: true
+        type: string
+      run_authenticated_connector:
+        description: Run the owned HubSpot companies proof
+        required: true
+        default: false
+        type: boolean
+      run_storage_write:
+        description: Run the dedicated Storage Write proof
+        required: true
+        default: false
+        type: boolean
+      run_transforms:
+        description: Run hosted transforms and generic tests
+        required: true
+        default: true
+        type: boolean
+      publish_dataplex:
+        description: Publish and verify one Dataplex aspect
+        required: true
+        default: false
+        type: boolean
+      verify_cost_guard:
+        description: Verify the simulation-first cost guard resources
+        required: true
+        default: true
+        type: boolean
+      teardown_after:
+        description: Run the approved teardown script after proofs
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: live-proof-${{ inputs.project_id }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Confirm CI quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Locked Python checks
+        run: |
+          uv sync --frozen --extra dev
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy src tests
+          uv run pytest
+      - name: Terraform checks
+        run: |
+          terraform fmt -check -recursive infra
+          terraform -chdir=infra init -backend=false -input=false
+          terraform -chdir=infra validate
+          terraform -chdir=infra/bootstrap-admin init -backend=false -input=false
+          terraform -chdir=infra/bootstrap-admin validate
+
+  proof:
+    name: Approved live proof
+    needs: quality
+    runs-on: ubuntu-latest
+    environment: live-proof
+    env:
+      PROJECT_ID: ${{ inputs.project_id }}
+      STATE_BUCKET: ${{ inputs.state_bucket }}
+      BOOTSTRAP_SERVICE_ACCOUNT: ${{ inputs.bootstrap_service_account }}
+      BILLING_ACCOUNT_ID: ${{ inputs.billing_account_id }}
+      REGION: us-central1
+      EVIDENCE_DIR: evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.DANDER_WIF_PROVIDER }}
+          service_account: ${{ vars.DANDER_WIF_SERVICE_ACCOUNT }}
+      - name: Configure approved bootstrap impersonation
+        run: |
+          gcloud config set project "$PROJECT_ID"
+          gcloud config set auth/impersonate_service_account "$BOOTSTRAP_SERVICE_ACCOUNT"
+          gcloud auth application-default login \
+            --impersonate-service-account="$BOOTSTRAP_SERVICE_ACCOUNT" \
+            --quiet
+      - name: Build and push immutable proof image
+        id: image
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/dander/dander:${GITHUB_SHA}"
+          docker build --tag "$IMAGE" .
+          docker push "$IMAGE"
+          DIGEST="$(gcloud artifacts docker images describe "$IMAGE" --format='value(image_summary.digest)')"
+          test -n "$DIGEST"
+          echo "container_digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "DANDER_CONTAINER_DIGEST=$DIGEST" >> "$GITHUB_ENV"
+          echo "CONTAINER_IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/dander/dander@${DIGEST}" >> "$GITHUB_ENV"
+      - name: Add HubSpot secret version without printing its value
+        if: ${{ inputs.run_authenticated_connector }}
+        env:
+          HUBSPOT_PRIVATE_APP_TOKEN: ${{ secrets.HUBSPOT_PRIVATE_APP_TOKEN }}
+        run: |
+          test -n "$HUBSPOT_PRIVATE_APP_TOKEN"
+          printf '%s' "$HUBSPOT_PRIVATE_APP_TOKEN" | gcloud secrets versions add \
+            hubspot-private-app-token --data-file=- --quiet
+      - name: Plan platform bootstrap through dander-bootstrap
+        run: |
+          uv run dander init \
+            --project "$PROJECT_ID" \
+            --state-bucket "$STATE_BUCKET" \
+            --state-prefix dander/state \
+            --bootstrap-service-account "$BOOTSTRAP_SERVICE_ACCOUNT" \
+            --enable-runtime \
+            --billing-account "$BILLING_ACCOUNT_ID" \
+            --container-image "$CONTAINER_IMAGE" \
+            --scheduler-paused \
+            --runtime-source "${{ inputs.run_authenticated_connector && 'hubspot_test' || 'greenhouse_job_board' }}" \
+            --runtime-model "${{ inputs.run_authenticated_connector && 'stg_hubspot__companies' || 'stg_greenhouse__jobs' }}" \
+            ${{ inputs.run_transforms && '--runtime-build-models' || '--runtime-no-build-models' }} \
+            ${{ inputs.run_authenticated_connector && '--runtime-secret-id hubspot-private-app-token' || '' }} \
+            ${{ inputs.publish_dataplex && '--runtime-publish-dataplex' || '' }} \
+            --github-repository "${GITHUB_REPOSITORY}" \
+            --github-ref "refs/heads/${GITHUB_REF_NAME}" \
+            --enable-cost-guard \
+            --cost-guard-budget-amount 5.00
+          sha256sum infra/dander-bootstrap.tfplan | cut -d ' ' -f1 > /tmp/dander-plan.sha256
+          echo "DANDER_TERRAFORM_PLAN_SHA256=$(cat /tmp/dander-plan.sha256)" >> "$GITHUB_ENV"
+      - name: Apply reviewed platform plan
+        run: |
+          printf 'y\n' | uv run dander init \
+            --project "$PROJECT_ID" \
+            --state-bucket "$STATE_BUCKET" \
+            --state-prefix dander/state \
+            --bootstrap-service-account "$BOOTSTRAP_SERVICE_ACCOUNT" \
+            --enable-runtime \
+            --billing-account "$BILLING_ACCOUNT_ID" \
+            --container-image "$CONTAINER_IMAGE" \
+            --scheduler-paused \
+            --runtime-source "${{ inputs.run_authenticated_connector && 'hubspot_test' || 'greenhouse_job_board' }}" \
+            --runtime-model "${{ inputs.run_authenticated_connector && 'stg_hubspot__companies' || 'stg_greenhouse__jobs' }}" \
+            ${{ inputs.run_transforms && '--runtime-build-models' || '--runtime-no-build-models' }} \
+            ${{ inputs.run_authenticated_connector && '--runtime-secret-id hubspot-private-app-token' || '' }} \
+            ${{ inputs.publish_dataplex && '--runtime-publish-dataplex' || '' }} \
+            --github-repository "${GITHUB_REPOSITORY}" \
+            --github-ref "refs/heads/${GITHUB_REF_NAME}" \
+            --enable-cost-guard \
+            --cost-guard-budget-amount 5.00 \
+            --apply
+      - name: Verify deployment and create sanitized evidence
+        run: |
+          uv run dander verify deployment \
+            --project "$PROJECT_ID" \
+            --state-bucket "$STATE_BUCKET" \
+            --state-prefix dander/state \
+            --runtime-job dander-greenhouse-public \
+            --scheduler-job dander-greenhouse-public-daily \
+            --dataset raw --dataset staging --dataset marts \
+            ${{ inputs.run_authenticated_connector && '--secret-id hubspot-private-app-token' || '' }} \
+            --runtime-image "$CONTAINER_IMAGE" \
+            --expect-cost-guard \
+            --billing-account "$BILLING_ACCOUNT_ID" \
+            --evidence-dir "$EVIDENCE_DIR" \
+            --json "$EVIDENCE_DIR/bootstrap-summary.json"
+      - name: Execute paused Cloud Run job
+        run: gcloud run jobs execute dander-greenhouse-public --region "$REGION" --wait
+      - name: Run hosted transform proof
+        if: ${{ inputs.run_transforms }}
+        run: |
+          uv run python scripts/live_proof/transforms.py \
+            --project "$PROJECT_ID" \
+            --table "${{ inputs.run_authenticated_connector && 'stg_hubspot__companies' || 'stg_greenhouse__jobs' }}" \
+            --evidence-dir "$EVIDENCE_DIR"
+      - name: Run HubSpot authenticated proof
+        if: ${{ inputs.run_authenticated_connector }}
+        env:
+          HUBSPOT_PRIVATE_APP_TOKEN: ${{ secrets.HUBSPOT_PRIVATE_APP_TOKEN }}
+        run: |
+          uv run python scripts/live_proof/hubspot.py \
+            --project "$PROJECT_ID" \
+            --proof-run-id "${GITHUB_RUN_ID}" \
+            --evidence-dir "$EVIDENCE_DIR"
+      - name: Run Storage Write proof
+        if: ${{ inputs.run_storage_write }}
+        run: |
+          uv run python scripts/live_proof/storage_write.py \
+            --project "$PROJECT_ID" \
+            --evidence-dir "$EVIDENCE_DIR"
+      - name: Publish and read back Dataplex metadata
+        if: ${{ inputs.publish_dataplex }}
+        run: |
+          uv run python scripts/live_proof/dataplex.py \
+            --project "$PROJECT_ID" \
+            --evidence-dir "$EVIDENCE_DIR"
+      - name: Record approved teardown inventory
+        if: ${{ inputs.teardown_after }}
+        run: |
+          uv run python scripts/live_proof/teardown.py \
+            --project "$PROJECT_ID" \
+            --evidence-dir "$EVIDENCE_DIR"
+      - name: Finalize sanitized evidence manifest
+        if: always()
+        run: uv run python scripts/live_proof/finalize_evidence.py --evidence-dir "$EVIDENCE_DIR"
+      - name: Upload sanitized evidence (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dander-live-proof-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: warn

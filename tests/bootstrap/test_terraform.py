@@ -36,6 +36,7 @@ def test_bootstrap_plans_without_applying(
         project="unit-project",
         state_bucket="unit-state",
         state_prefix="dander/state",
+        bootstrap_service_account="dander-bootstrap@unit-project.iam.gserviceaccount.com",
         apply=False,
     )
 
@@ -67,6 +68,7 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         project="unit-project",
         state_bucket="unit-state",
         state_prefix="dander/state",
+        bootstrap_service_account="dander-bootstrap@unit-project.iam.gserviceaccount.com",
         apply=True,
         region="us-east1",
         bigquery_location="US",
@@ -81,10 +83,14 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
     )
 
     plan = commands[1]
-    assert "-var=bootstrap_billing_account_id=ABCDEF-123456-ABCDEF" in plan
+    assert (
+        "-var=bootstrap_service_account=dander-bootstrap@unit-project.iam.gserviceaccount.com"
+        in plan
+    )
     assert "-var=enable_scheduled_job=true" in plan
     assert "-var=scheduler_paused=false" in plan
     assert "-var=runtime_publish_dataplex=true" in plan
+    assert "-var=runtime_build_models=true" in plan
     assert '-var=secret_ids=["greenhouse-client-id","greenhouse-client-secret"]' in plan
     assert "-var=github_repository=WagnerJ-Dev/dander" in plan
     assert "-var=enable_cost_guard=false" in plan
@@ -112,6 +118,7 @@ def test_bootstrap_passes_simulation_first_cost_guard(
         project="unit-project",
         state_bucket="unit-state",
         state_prefix="dander/state",
+        bootstrap_service_account="dander-bootstrap@unit-project.iam.gserviceaccount.com",
         apply=False,
         billing_account_id="ABCDEF-123456-ABCDEF",
         enable_cost_guard=True,
@@ -128,6 +135,7 @@ def test_bootstrap_passes_simulation_first_cost_guard(
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
+        ({"bootstrap_service_account": ""}, "bootstrap-service-account"),
         ({"enable_runtime": True}, "billing-account"),
         (
             {
@@ -159,6 +167,7 @@ def test_bootstrap_rejects_unsafe_optional_inputs(
         "project": "unit-project",
         "state_bucket": "unit-state",
         "state_prefix": "dander/state",
+        "bootstrap_service_account": "dander-bootstrap@unit-project.iam.gserviceaccount.com",
         "apply": False,
         **overrides,
     }

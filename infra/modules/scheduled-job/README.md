@@ -2,9 +2,9 @@
 
 Packages the credential-free Greenhouse Job Board path as a daily Cloud Run Job. Each run ingests
 public jobs, builds and tests only `stg_greenhouse__jobs`, then compiles a local semantic registry.
-The module creates an Artifact Registry repository with bounded retention, distinct runtime and
-scheduler service accounts, least-privilege IAM, the job, and an OAuth-authenticated Cloud
-Scheduler trigger.
+Stage zero creates the shared Artifact Registry repository before this module is applied. The
+module then uses that repository, plus distinct runtime and scheduler service accounts,
+least-privilege IAM, the job, and an OAuth-authenticated Cloud Scheduler trigger.
 
 The schedule is paused by default. Apply it in that state, execute the Cloud Run Job manually, and
 enable the schedule only after the guarded BigQuery write succeeds. `container_image` must use an
@@ -20,6 +20,7 @@ module "scheduled_job" {
   container_image    = "us-central1-docker.pkg.dev/my-project/dander/dander@sha256:..."
   scheduler_paused   = true
   publish_dataplex   = false
+  runtime_build_models = true
 }
 ```
 

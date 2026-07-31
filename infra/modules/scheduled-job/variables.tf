@@ -58,3 +58,48 @@ variable "scheduler_paused" {
   description = "Keep the schedule paused until a manual execution has succeeded."
   default     = true
 }
+
+variable "runtime_source" {
+  type        = string
+  description = "Connector source name passed to the hosted Dander job."
+  default     = "greenhouse_job_board"
+
+  validation {
+    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", var.runtime_source))
+    error_message = "runtime_source must be a valid Dander connector name."
+  }
+}
+
+variable "runtime_model" {
+  type        = string
+  description = "Transform model selected by the hosted Dander job."
+  default     = "stg_greenhouse__jobs"
+
+  validation {
+    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", var.runtime_model))
+    error_message = "runtime_model must be a valid Dander model name."
+  }
+}
+
+variable "runtime_build_models" {
+  type        = bool
+  description = "Run hosted transform builds/tests after ingestion."
+  default     = true
+}
+
+variable "runtime_secret_id" {
+  type        = string
+  description = "Optional Secret Manager container exposed to the connector."
+  default     = ""
+}
+
+variable "runtime_secret_env" {
+  type        = string
+  description = "Environment variable containing the Secret Manager resource reference."
+  default     = "HUBSPOT_PRIVATE_APP_TOKEN"
+
+  validation {
+    condition     = can(regex("^[A-Z][A-Z0-9_]*$", var.runtime_secret_env))
+    error_message = "runtime_secret_env must be an uppercase environment variable name."
+  }
+}

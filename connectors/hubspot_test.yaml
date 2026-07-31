@@ -1,0 +1,25 @@
+# Owned HubSpot developer-test-account proof connector. The token is resolved from Secret Manager.
+name: hubspot_test
+base_url: https://api.hubapi.com
+auth_strategy: api_key_bearer
+auth_ref: HUBSPOT_PRIVATE_APP_TOKEN
+rate_limit:
+  requests_per_second: 4
+  burst: 2
+  backoff: exponential
+  max_retries: 4
+
+endpoints:
+  - name: companies
+    path: /crm/v3/objects/companies
+    pagination:
+      kind: cursor
+      next_cursor_path: paging.next.after
+      cursor_param: after
+      size_param: limit
+      page_size: 100
+    query_params:
+      archived: false
+      properties: name,domain,createdate,lastmodifieddate
+    data_selector: results
+    primary_key: [id]
