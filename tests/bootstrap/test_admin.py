@@ -21,18 +21,21 @@ def test_admin_bootstrap_plans_and_applies_saved_plan(
     infra_dir.mkdir(parents=True)
     commands: list[tuple[str, ...]] = []
     environments: list[dict[str, str]] = []
+    umasks: list[int] = []
 
     def fake_run(
         args: tuple[str, ...],
         *,
         cwd: Path,
         env: dict[str, str],
+        umask: int,
         check: bool,
     ) -> subprocess.CompletedProcess[str]:
         assert cwd == infra_dir.resolve()
         assert check
         commands.append(args)
         environments.append(env)
+        umasks.append(umask)
         for argument in args:
             if argument.startswith("-out="):
                 Path(argument.removeprefix("-out=")).touch(mode=0o644)
@@ -56,6 +59,7 @@ def test_admin_bootstrap_plans_and_applies_saved_plan(
     assert stat.S_IMODE(tf_data_dir.stat().st_mode) == 0o700
     assert stat.S_IMODE(plan.stat().st_mode) == 0o600
     assert all(environment["TF_DATA_DIR"] == str(tf_data_dir) for environment in environments)
+    assert umasks == [0o077, 0o077, 0o077]
     assert commands[0] == (
         "terraform",
         "init",
@@ -72,6 +76,37 @@ def test_admin_bootstrap_plans_and_applies_saved_plan(
     assert "-var=admin_member=user:operator@example.invalid" in commands[1]
     assert f"-out={plan}" in commands[1]
     assert commands[2] == ("terraform", "apply", str(plan))
+
+
+@pytest.mark.parametrize("artifact_name", ["terraform-data", "dander-admin-bootstrap.tfplan"])
+def test_admin_bootstrap_rejects_preexisting_operator_symlinks_before_terraform(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    artifact_name: str,
+) -> None:
+    repository_dir = tmp_path / "checkout"
+    infra_dir = repository_dir / "infra" / "bootstrap-admin"
+    operator_dir = tmp_path / "operator-artifacts"
+    infra_dir.mkdir(parents=True)
+    operator_dir.mkdir()
+    (operator_dir / artifact_name).symlink_to(tmp_path / f"target-{artifact_name}")
+    calls: list[tuple[str, ...]] = []
+
+    def fail_if_run(args: tuple[str, ...], **kwargs: object) -> None:
+        calls.append(args)
+        raise AssertionError("Terraform must not run for a pre-existing symlink")
+
+    monkeypatch.setattr(subprocess, "run", fail_if_run)
+
+    with pytest.raises(AdministrativeBootstrapError, match="symlink"):
+        AdministrativeBootstrap(infra_dir, operator_dir).execute(
+            project="unit-project",
+            state_bucket="unit-state-bucket",
+            admin_member="user:operator@example.invalid",
+            apply=False,
+        )
+
+    assert calls == []
 
 
 @pytest.mark.parametrize("operator_dir", [".", "artifacts"])

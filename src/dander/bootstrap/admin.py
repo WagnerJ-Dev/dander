@@ -126,10 +126,30 @@ class AdministrativeBootstrap:
 
     def _prepare_operator_directories(self) -> None:
         try:
+            if self._tf_data_dir.is_symlink():
+                raise AdministrativeBootstrapError("terraform-data must not be a symlink")
+            if self._tf_data_dir.exists() and not self._tf_data_dir.is_dir():
+                raise AdministrativeBootstrapError("terraform-data must be a directory")
+            resolved_tf_data_dir = self._tf_data_dir.resolve()
+            if not self._is_within(resolved_tf_data_dir, self._operator_artifact_dir):
+                raise AdministrativeBootstrapError(
+                    "Resolved terraform-data must remain inside the operator artifact directory"
+                )
+            if self._is_within(resolved_tf_data_dir, self._repository_dir):
+                raise AdministrativeBootstrapError(
+                    "Resolved terraform-data must remain outside the repository checkout"
+                )
+            if self._plan_path.is_symlink():
+                raise AdministrativeBootstrapError("Saved Terraform plan must not be a symlink")
+            if self._plan_path.exists() and not self._plan_path.is_file():
+                raise AdministrativeBootstrapError("Saved Terraform plan must be a regular file")
             self._operator_artifact_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             self._operator_artifact_dir.chmod(0o700)
             self._tf_data_dir.mkdir(mode=0o700, exist_ok=True)
             self._tf_data_dir.chmod(0o700)
+            if self._plan_path.exists():
+                self._plan_path.chmod(0o600)
+                self._plan_path.unlink()
         except OSError as error:
             raise AdministrativeBootstrapError(
                 "Could not create or secure the operator artifact directory"
@@ -171,7 +191,13 @@ class AdministrativeBootstrap:
         environment = os.environ.copy()
         environment["TF_DATA_DIR"] = str(self._tf_data_dir)
         try:
-            subprocess.run(args, cwd=self._infra_dir, env=environment, check=True)
+            subprocess.run(
+                args,
+                cwd=self._infra_dir,
+                env=environment,
+                umask=0o077,
+                check=True,
+            )
         except FileNotFoundError as error:
             raise AdministrativeBootstrapError(
                 "Terraform is not installed or is not available on PATH"

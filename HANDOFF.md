@@ -4,6 +4,7 @@
 
 - Required an external operator artifact directory and added repository-boundary validation.
 - Moved the saved plan and Terraform `TF_DATA_DIR` outside the checkout with `0700` directories and a `0600` completed plan; apply uses the exact absolute plan path.
+- Added preflight rejection for unsafe `terraform-data`/plan paths and enforced subprocess `umask 077`.
 - Added focused security-boundary tests, CLI/docs guidance, and a durable decision record while preserving the fixed GCS backend prefix and credential-free initialization.
 
 ## Try It
@@ -14,11 +15,12 @@
 
 ## Checks
 
-- `uv run pytest`: 465 passed; Ruff check/format and mypy passed.
+- `uv run pytest`: 467 passed; Ruff check/format and mypy passed.
 - Dependency audit: passed with no known vulnerabilities.
 - Terraform format, backend-disabled init, and validation for both roots: passed.
-- Focused tests prove external plan/`TF_DATA_DIR` paths, `0700`/`0600` modes, exact bucket/prefix, and forbidden flags/credentials/configurable prefix are absent.
-- Docker validation was attempted but the local Docker daemon was unavailable; no Terraform plan/apply or cloud mutation was run.
+- Focused tests prove external plan/`TF_DATA_DIR` paths, `0700`/`0600` modes, `umask 077`, exact bucket/prefix, and forbidden flags/credentials/configurable prefix are absent; pre-existing symlinks are rejected before Terraform.
+- GitHub CI run `30654909405`: all four required jobs passed, including container build and scan.
+- Local Docker validation was attempted but the Docker daemon was unavailable; no Terraform plan/apply or cloud mutation was run.
 
 ## Decisions
 

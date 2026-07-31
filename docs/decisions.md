@@ -38,7 +38,8 @@
   dedicated `terraform-data` child directory.
 - The operator artifact and Terraform data directories are mode `0700`; completed plans are mode
   `0600`. Terraform continues to run from `infra/bootstrap-admin`, and apply accepts only the exact
-  absolute saved-plan path.
+  absolute saved-plan path. Every Terraform subprocess uses `umask 077`, and pre-existing
+  `terraform-data` or plan symlinks are rejected before Terraform starts.
 
 ## 2026-07-30 — Reproducible bootstrap verification
 

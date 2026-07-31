@@ -35,8 +35,10 @@ The wrapper requires `--operator-artifact-dir`, which must resolve outside the r
 It saves the plan as
 `<operator-artifact-dir>/dander-admin-bootstrap.tfplan` and sets Terraform's `TF_DATA_DIR` to the
 dedicated `<operator-artifact-dir>/terraform-data` subdirectory. Both operator directories are
-created with mode `0700`, and the completed plan is restricted to mode `0600`. Terraform still runs
-with `cwd=infra/bootstrap-admin`; an apply receives only the exact absolute path to that saved plan.
+created with mode `0700`, and the completed plan is restricted to mode `0600`. Every Terraform
+subprocess uses process `umask 077`, and pre-existing `terraform-data` or plan symlinks are rejected.
+Terraform still runs with `cwd=infra/bootstrap-admin`; an apply receives only the exact absolute
+path to that saved plan. A prior regular plan is securely removed before a fresh plan is generated.
 
 ## Durable stage-zero state
 
