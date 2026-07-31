@@ -2,40 +2,37 @@
 
 ## Finished
 
-- Required an external operator artifact directory and added repository-boundary validation.
-- Moved the saved plan and Terraform `TF_DATA_DIR` outside the checkout with `0700` directories and a `0600` completed plan; apply uses the exact absolute plan path.
-- Added preflight rejection for unsafe `terraform-data`/plan paths and enforced subprocess `umask 077`.
-- Added focused security-boundary tests, CLI/docs guidance, and a durable decision record while preserving the fixed GCS backend prefix and credential-free initialization.
+- Prepared one `removed` block for the stale platform Artifact Registry binding with `destroy = false`.
+- Documented the corrected discovery: the platform state has no bucket binding; stage-zero exclusively manages the bucket.
+- Added focused static tests proving the exact address, stage-zero identity match, preservation, and exclusion of bucket, broad-module, unrelated, and cost-guard resources.
+- Used Terraform's valid counted-module `removed.from` form without `[0]`; the sole scheduled-job instance and exact live state address are documented and tested.
 
 ## Try It
 
-- Use `--operator-artifact-dir "$HOME/Library/Application Support/Dander/terraform/bootstrap-admin/<project>"` for an approved operator-run plan.
-- Review `src/dander/bootstrap/admin.py` and `tests/bootstrap/test_admin.py`.
-- Do not migrate state, apply Terraform, or mutate cloud/platform state in this review.
+- Review `infra/ownership-cutover.tf` and `docs/phase3b-ownership.md`.
+- Run the focused test with `uv run pytest tests/infra/test_phase3b_ownership.py`.
+- Do not run a platform plan, apply, or ownership cutover.
 
 ## Checks
 
-- `uv run pytest`: 467 passed; Ruff check/format and mypy passed.
-- Dependency audit: passed with no known vulnerabilities.
-- Terraform format, backend-disabled init, and validation for both roots: passed.
-- Focused tests prove external plan/`TF_DATA_DIR` paths, `0700`/`0600` modes, `umask 077`, exact bucket/prefix, and forbidden flags/credentials/configurable prefix are absent; pre-existing symlinks are rejected before Terraform.
-- GitHub CI run `30654909405`: all four required jobs passed, including container build and scan.
-- Local Docker validation was attempted but the Docker daemon was unavailable; no Terraform plan/apply or cloud mutation was run.
+- Pre-edit safety checks passed: approved `main` commit, clean worktree, no Terraform operation, and unchanged platform/stage-zero generations.
+- Focused proof: 4 passed; full pytest: 471 passed; Ruff, formatting, mypy, dependency audit, Terraform format, and backend-disabled validation for both roots passed.
+- Docker build/run was attempted but the local Docker daemon was unavailable; GitHub CI remains authoritative for the container check.
 
 ## Decisions
 
-- Keep stage-zero state, evidence, backup, plan artifacts, and Terraform metadata at the secured operator path outside the repository.
-- Keep the existing GCS backend and fixed `dander/bootstrap-admin/state` prefix; credentials remain supplied only by the operator's authentication context.
-- Treat all migration, apply, workflow, GitHub-settings, and cloud actions as separately approved work.
+- Select only `module.scheduled_job[0].google_artifact_registry_repository.images`.
+- Do not add a bucket `removed` block because no platform-state bucket binding exists.
+- Keep the Terraform-valid configuration form `module.scheduled_job.google_artifact_registry_repository.images` while the module has exactly one instance.
 
 ## Remaining
 
-- Re-run the Docker build/run checks when a local Docker daemon is available.
-- Review the external artifact boundary and exact Terraform command assertions before approval.
-- Perform any state migration or Terraform apply only in a separately approved phase.
+- Commit, push, and open the draft PR.
+- Inspect required GitHub CI checks.
+- Stop at the Phase 3B evidence gate; do not merge or cut over ownership.
 
 ## Review First
 
-- `src/dander/bootstrap/admin.py`: path validation, permissions, `TF_DATA_DIR`, and absolute plan apply.
-- `tests/bootstrap/test_admin.py`: boundary, mode, backend, and forbidden-argument assertions.
-- `infra/bootstrap-admin/README.md` and `docs/decisions.md`: operator artifact contract.
+- `infra/ownership-cutover.tf`: exact preserved binding.
+- `tests/infra/test_phase3b_ownership.py`: scope and identity assertions.
+- `docs/phase3b-ownership.md`: sanitized live-state discrepancy evidence.
