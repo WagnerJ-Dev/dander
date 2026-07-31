@@ -2,10 +2,11 @@
 
 Audited against the live `WagnerJ-Dev/dander` north star on 2026-07-29 and operationally refreshed
 on 2026-07-30. As of 2026-07-31, the admin-owned `harrisonoconnorhover/dander` fork is the CI and
-evidence execution surface; upstream PR #1 remains the contribution record. “Implemented locally”
-means code, offline tests, and static infrastructure validation exist. It does not imply that
-provider credentials or every billable cloud mutation have been validated. Sensitive-system names
-are treated as hypothetical connector scope, not evidence of an existing-company relationship.
+evidence execution surface; fork PR #1 is merged into protected `main`, while upstream PR #1 remains
+the contribution record. “Implemented locally” means code, offline tests, and static infrastructure
+validation exist. It does not imply that provider credentials or every billable cloud mutation have
+been validated. Sensitive-system names are treated as hypothetical connector scope, not evidence of
+an existing-company relationship.
 
 ## Requirement evidence
 
@@ -24,7 +25,7 @@ are treated as hypothetical connector scope, not evidence of an existing-company
 | One model YAML feeds transform, catalog, and semantics | Implemented locally | typed sidecars compile executable tests, deterministic semantic JSON, and non-deleting Dataplex aspect requests |
 | Terraform bootstrap for datasets, secrets, IAM/WIF, and Cloud Run | Implemented locally | stage-zero HCL creates GCS state and Artifact Registry preconditions; main HCL requires bootstrap impersonation; immutable images; repository/ref-scoped GitHub OIDC; secret values excluded from state; read-only deployment verifier |
 | Scheduled execution and restart state | Implemented locally | paused-first Scheduler → Cloud Run job; guarded ingestion → selected transforms/tests → registry; BigQuery/SQLite cursors and run summaries. A clean-project hosted run is not retained in this branch |
-| CI enforcement and release gating | Implemented locally | pinned-action CI workflow, local gate documentation, protected manual proof workflow, and sanitized evidence finalizer; fork PR #1 has green Python, Terraform, secret, and container checks; branch protection is not currently configured on the fork |
+| CI enforcement and release gating | Enforced on protected main | Active ruleset `Protect main` ID `20133128` requires pull requests, resolved conversations, strict/up-to-date checks, and Python quality, Terraform quality, Secret scan, and Container build and scan from GitHub Actions app ID `15368`; merge commits only; force pushes and deletion blocked; approved administrator always-bypass retained for emergency recovery |
 | Live deployment verification | Partially live-proven | read-only audit reached the billing-linked sandbox and verified project, datasets, remote state, immutable job image, scheduler, project/billing-account runtime IAM, raw dataset binding, budget, topic, and billing linkage; staging/marts bindings fail, the cost-guard function is `SIMULATE_DEACTIVATION=false`, and no proof job was executed |
 | Authenticated SaaS, Storage Write, and Dataplex proofs | Implemented locally | controlled scripts and model/connector implementations exist with offline tests; no HubSpot token, live Storage Write commit, or Dataplex mutation/read-back artifact has been retained |
 
@@ -47,12 +48,14 @@ Python `WritePattern` interface. This avoids pulling transform data out of BigQu
 - The architecture's HR/customer system names are product examples only. Normal provenance,
   licensing, and privacy review becomes a release gate only if employer-owned material,
   credentials, or non-public records are introduced.
+- The repository administrator can bypass the ruleset, including direct updates, force pushes, and
+  deletion. That path is an intentional recovery control, not a routine release mechanism.
 
 ## Verdict
 
-This branch is a reasonable, runnable v0 of the stated architecture with local implementation
-evidence and a partial live infrastructure audit. It is not yet a production-certified release or
-the completed evidence-focused round.
+Protected-branch CI enforcement is now complete. The repository is a reasonable, runnable v0 of the
+stated architecture with local implementation evidence and a partial live infrastructure audit. It
+is not yet a production-certified release or the completed evidence-focused round.
 The remaining production proofs need vendor credentials or deliberately scoped cloud execution;
 they are not gaps that should be papered over with mocks.
 
