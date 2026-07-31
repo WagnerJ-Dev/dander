@@ -13,7 +13,7 @@
 - Run `uv sync --frozen --extra dev` and the commands in `docs/ci.md`.
 - Configure the `live-proof` GitHub environment, WIF variables, and HubSpot private-app secret before dispatching `.github/workflows/live-proof.yml`.
 - Review the fork PR checks at https://github.com/harrisonoconnorhover/dander/pull/1; upstream PR #1 remains the contribution record.
-- Follow [docs/live-proof.md](/Users/harrison/Documents/dander/docs/live-proof.md) for the protected environment and clean-project run.
+- Follow [docs/live-proof.md](docs/live-proof.md) for the protected environment and clean-project run.
 
 ## Checks
 
