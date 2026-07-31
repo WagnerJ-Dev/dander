@@ -59,6 +59,26 @@ resource "google_artifact_registry_repository" "images" {
   repository_id = "dander"
   description   = "Dander runtime container images"
   format        = "DOCKER"
+
+  cleanup_policies {
+    id     = "delete-untagged"
+    action = "DELETE"
+
+    condition {
+      older_than = "86400s"
+      tag_state  = "UNTAGGED"
+    }
+  }
+
+  cleanup_policies {
+    id     = "keep-recent"
+    action = "KEEP"
+
+    most_recent_versions {
+      keep_count = 3
+    }
+  }
+
   labels = {
     managed-by = "dander"
     purpose    = "runtime-images"
@@ -134,12 +154,12 @@ resource "google_service_account" "github" {
   display_name = "Dander proof GitHub administrator"
 }
 
-resource "google_service_account_iam_member" "github_impersonates_bootstrap" {
+resource "google_service_account_iam_member" "proof_impersonates_bootstrap" {
   count = var.github_repository == "" ? 0 : 1
 
   service_account_id = google_service_account.bootstrap.name
   role               = "roles/iam.serviceAccountTokenCreator"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github[0].name}/attribute.repository/${var.github_repository}"
+  member             = "serviceAccount:${google_service_account.github[0].email}"
 }
 
 resource "google_service_account_iam_member" "github_wif_user" {

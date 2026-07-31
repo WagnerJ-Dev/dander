@@ -2,48 +2,39 @@
 
 ## Finished
 
-- Added enforced credential-free CI for Python, Terraform, container, and secret checks.
-- Split Terraform into stage-zero administration and impersonated platform bootstrap; stage zero owns state and Artifact Registry prerequisites.
-- Added sanitized evidence schemas, resource-scoped IAM/cost verification, HubSpot connector/proof, Storage Write/transform/Dataplex proof scripts, and a protected manual workflow.
-- Hardened the HubSpot watermark/evidence path, ensured runtime-only secrets create their Secret Manager container, and retained cost-guard evidence separately from bootstrap checks.
-- Established `harrisonoconnorhover/dander` as the admin-owned CI/evidence surface and merged fork PR #1 into `main` at `6eda307b69d8eac8d731eea89fa993a5096e0a9d`.
-- Activated ruleset `Protect main` (ID `20133128`) on the default branch. It requires the Python quality, Terraform quality, Secret scan, and Container build and scan checks from GitHub Actions app ID `15368`, requires resolved conversations and an up-to-date branch, allows merge commits only, and blocks force pushes and deletion. The repository administrator retains the approved always-bypass recovery path.
+- Repointed local remote names without changing either URL: `origin` is the admin-owned fork and `upstream` is WagnerJ-Dev; `origin/main` and the fresh branch start at `39428552124a2d74ffe65b8208957ee12c226b14`.
+- Added the exact live Artifact Registry cleanup policies and corrected the WIF two-hop chain: GitHub principal → `dander-proof-github` → `dander-bootstrap`.
+- Updated stage-zero documentation for durable operator state, main-state backup, clean imports, and separately approved ownership cutover.
+- Recreated the seven requested imports and generated a durable saved plan and text rendering outside the repository.
 
 ## Try It
 
-- Run `uv sync --frozen --extra dev` and the commands in `docs/ci.md`.
-- Configure the `live-proof` GitHub environment, WIF variables, and HubSpot private-app secret before dispatching `.github/workflows/live-proof.yml`.
-- Follow [docs/live-proof.md](docs/live-proof.md) for the protected environment and clean-project run.
+- Review the plan with `terraform show -no-color` using the saved plan in the secured operator directory.
+- Review `infra/bootstrap-admin/main.tf` and `infra/bootstrap-admin/README.md`.
+- Do not apply this plan until the acceptance gates and backup condition are reviewed.
 
 ## Checks
 
-- `uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy src tests`: passed.
-- `uv run pytest`: 463 passed.
-- `pip-audit` on the exported frozen requirements: no known vulnerabilities.
-- Terraform format/validate passed for `infra` and `infra/bootstrap-admin`.
-- Docker build was attempted but the base-image pull stalled locally.
+- `terraform fmt -check -diff infra/bootstrap-admin`: passed.
+- Terraform `init -backend=false` and `validate` with Google provider `6.50.0`: passed.
+- Seven requested imports: passed; no apply, destroy, state removal, or remote state write was run.
+- Saved plan: `23 to add, 2 to change, 0 to destroy`; no replacements.
+- Artifact Registry cleanup policies: before/after plan structures match exactly.
 - `git diff --check`: passed.
-- Fork PR CI passed Python, Terraform, secret, and container checks before merge.
-- Ruleset read-back assertions passed without discrepancy; `main` remained at `6eda307b69d8eac8d731eea89fa993a5096e0a9d` during the settings-only change.
 
 ## Decisions
 
-- Keep live proofs simulation-first and retain only hashes, counts, identifiers, and statuses.
-- Keep the HubSpot proof limited to synthetic companies; do not seek candidate/contact data.
-- Keep the fork as the execution surface while preserving upstream PR #1 for review continuity; commit SHAs remain unchanged.
-- Treat the administrator always-bypass as emergency recovery only. Routine changes must flow through pull requests and all required checks.
+- Keep stage-zero state, evidence, backup, and plan artifacts at the secured operator path outside the repository; do not reuse `/tmp` artifacts.
+- Treat the copied main-state snapshot as not independently backed up: FileVault is off, no Time Machine destination is configured, and directory backup coverage is unverified.
 
 ## Remaining
 
-- Do not run the deployed proof job until the cost-guard function is restored to simulation mode; the read-only audit found `SIMULATE_DEACTIVATION=false`.
-- Reconcile the existing sandbox with the stronger verifier (staging/marts dataset bindings are missing; the cost-guard function is currently live mode; no secret is requested by the current proof).
-- Configure the GitHub environment/WIF and run the approved live proof on a clean billing-linked project. A fresh stage-zero plan for `my-project-1708716454186` is ready in `/tmp` (30 adds, 0 changes, 0 destroys; SHA-256 `3c87fac2477e5dd23b26bf0a5f79decbd9f76e5adc0e813b439e7120e03c442e`); it has not been applied.
-- Re-anchor the GCP WIF repository condition and protected environment variables to `harrisonoconnorhover/dander` before dispatching the live-proof workflow.
-- Create the HubSpot private app/token and store it only as the environment secret.
-- Review the resulting evidence artifact and update release status from retained evidence.
+- Obtain and verify an encrypted, functioning backup destination before describing the main-state snapshot or stage-zero state as backed up.
+- Review the `23` planned creates, especially the expected `sts.googleapis.com` enablement and IAM grants, before any separately approved apply.
+- Do not perform the later main-state ownership cutover without explicit approval, a verified backup, and reviewed platform/stage-zero plans.
 
 ## Review First
 
-- `.github/workflows/live-proof.yml` ordering and protected-environment configuration.
-- `infra/bootstrap-admin` and the data-source handoff for the Artifact Registry repository.
-- `src/dander/bootstrap/verify.py` resource-scoped IAM and cost-guard checks, including actual gcloud output shapes.
+- `infra/bootstrap-admin/main.tf`: cleanup policies and WIF member/resource addresses.
+- `infra/bootstrap-admin/README.md`: plan-only boundary and future state-ownership cutover.
+- The private operator plan rendering and policy evidence, including the zero-destroy/zero-replacement gate.
