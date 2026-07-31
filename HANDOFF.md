@@ -28,7 +28,7 @@
 ## Remaining
 
 - Do not run the deployed proof job until the cost-guard function is restored to simulation mode; the read-only audit found `SIMULATE_DEACTIVATION=false`.
-- Reconcile the existing sandbox with the stronger verifier (runtime billing viewer and staging/marts dataset bindings are missing; no secret is requested by the current proof).
+- Reconcile the existing sandbox with the stronger verifier (staging/marts dataset bindings are missing; the cost-guard function is currently live mode; no secret is requested by the current proof).
 - Configure the GitHub environment/WIF and run the approved live proof on a clean billing-linked project.
 - Create the HubSpot private app/token and store it only as the environment secret.
 - Review the resulting evidence artifact and update release status from retained evidence.
