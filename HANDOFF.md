@@ -27,7 +27,9 @@
 
 ## Remaining
 
-- Configure the GitHub environment/WIF and run the approved live proof.
+- Do not run the deployed proof job until the cost-guard function is restored to simulation mode; the read-only audit found `SIMULATE_DEACTIVATION=false`.
+- Reconcile the existing sandbox with the stronger verifier (Secret Manager API/secret, runtime billing viewer, and staging/marts dataset bindings are missing).
+- Configure the GitHub environment/WIF and run the approved live proof on a clean billing-linked project.
 - Create the HubSpot private app/token and store it only as the environment secret.
 - Review the resulting evidence artifact and update release status from retained evidence.
 
@@ -35,4 +37,4 @@
 
 - `.github/workflows/live-proof.yml` ordering and protected-environment configuration.
 - `infra/bootstrap-admin` and the data-source handoff for the Artifact Registry repository.
-- `src/dander/bootstrap/verify.py` resource-scoped IAM and cost-guard checks.
+- `src/dander/bootstrap/verify.py` resource-scoped IAM and cost-guard checks, including actual gcloud output shapes.

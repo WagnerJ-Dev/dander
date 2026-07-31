@@ -25,7 +25,8 @@ Update release docs only from retained sanitized evidence, never from intent or 
 ## Implementation Notes
 
 Updated `docs/spec-alignment.md` and `docs/release-audit.md` to separate local implementation from
-live evidence. No live claim is recorded until a retained workflow artifact supplies its run id,
+live evidence. The current sandbox audit is explicitly partial and records the simulation-mode
+safety failure; no proof claim is recorded until a retained workflow artifact supplies its run id,
 commit, image digest, and proof date.
 
 ## Review Log

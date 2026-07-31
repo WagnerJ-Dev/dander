@@ -274,10 +274,18 @@ class DeploymentVerifier:
                     self.infra_dir,
                 )
             )
-            template = payload.get("template", {}).get("template", {})
+            v2_template = payload.get("template", {}).get("template", {})
+            v1_template = (
+                payload.get("spec", {})
+                .get("template", {})
+                .get("spec", {})
+                .get("template", {})
+                .get("spec", {})
+            )
+            template = v2_template if isinstance(v2_template, dict) and v2_template else v1_template
             containers = template.get("containers", [])
             image = containers[0].get("image") if containers else None
-            service_account = template.get("serviceAccount")
+            service_account = template.get("serviceAccount") or template.get("serviceAccountName")
             ok = bool(
                 image
                 and _IMMUTABLE_IMAGE.fullmatch(str(image))
@@ -770,7 +778,9 @@ class DeploymentVerifier:
                     for rule in budget.get("thresholdRules", [])
                     if isinstance(rule, dict) and rule.get("thresholdPercent") is not None
                 }
-                updates_topic = budget.get("allUpdatesRule", {}).get("pubsubTopic", "")
+                updates_topic = budget.get("notificationsRule", {}).get("pubsubTopic", "")
+                if not updates_topic:
+                    updates_topic = budget.get("allUpdatesRule", {}).get("pubsubTopic", "")
                 valid = (
                     abs(observed_amount - amount) < 0.000001
                     and f"projects/{project_number}" in projects

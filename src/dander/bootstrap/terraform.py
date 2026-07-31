@@ -214,6 +214,40 @@ class TerraformBootstrap:
             self._run("terraform", "apply", plan_path.name)
         return plan_path
 
+    def apply_saved_plan(
+        self,
+        *,
+        project: str,
+        state_bucket: str,
+        state_prefix: str,
+        bootstrap_service_account: str,
+    ) -> Path:
+        """Apply the exact plan emitted by a prior plan-only command."""
+        for label, value, pattern in (
+            ("project", project, _PROJECT_ID),
+            ("state bucket", state_bucket, _BUCKET_NAME),
+            ("state prefix", state_prefix, _STATE_PREFIX),
+        ):
+            if not pattern.fullmatch(value):
+                raise TerraformBootstrapError(f"Invalid {label}: {value!r}")
+        if not _BOOTSTRAP_SERVICE_ACCOUNT.fullmatch(bootstrap_service_account):
+            raise TerraformBootstrapError(
+                "Platform bootstrap requires --bootstrap-service-account with a valid "
+                "service-account email"
+            )
+        plan_path = self._infra_dir / "dander-bootstrap.tfplan"
+        if not plan_path.is_file():
+            raise TerraformBootstrapError(f"Saved Terraform plan is missing: {plan_path}")
+        self._run(
+            "terraform",
+            "init",
+            "-reconfigure",
+            f"-backend-config=bucket={state_bucket}",
+            f"-backend-config=prefix={state_prefix}",
+        )
+        self._run("terraform", "apply", "-input=false", plan_path.name)
+        return plan_path
+
     def _run(self, *args: str) -> None:
         try:
             subprocess.run(args, cwd=self._infra_dir, check=True)

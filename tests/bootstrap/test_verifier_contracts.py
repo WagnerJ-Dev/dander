@@ -69,6 +69,45 @@ def test_runtime_project_iam_distinguishes_missing_and_broad_roles(tmp_path: Pat
     assert broad.status is VerificationStatus.BROAD_BINDING_DETECTED
 
 
+def test_runtime_job_accepts_gcloud_v1_shape(tmp_path: Path) -> None:
+    image = "us-central1-docker.pkg.dev/proof-project/dander/dander@sha256:" + "a" * 64
+    payloads: dict[tuple[str, ...], object] = {
+        (
+            "gcloud",
+            "run",
+            "jobs",
+            "describe",
+            "dander-greenhouse-public",
+            "--project",
+            "proof-project",
+            "--region",
+            "us-central1",
+            "--format=json",
+        ): {
+            "spec": {
+                "template": {
+                    "spec": {
+                        "template": {
+                            "spec": {
+                                "serviceAccountName": (
+                                    "dander-runtime@proof-project.iam.gserviceaccount.com"
+                                ),
+                                "containers": [{"image": image}],
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    check, service_account, observed_image = _verifier(tmp_path, payloads)._check_runtime_job(
+        "dander-greenhouse-public", "us-central1", image
+    )
+    assert check.ok
+    assert service_account == "dander-runtime@proof-project.iam.gserviceaccount.com"
+    assert observed_image == image
+
+
 def test_cost_guard_requires_exact_resources(tmp_path: Path) -> None:
     payloads: dict[tuple[str, ...], object] = {
         (
@@ -88,7 +127,7 @@ def test_cost_guard_requires_exact_resources(tmp_path: Path) -> None:
                     {"thresholdPercent": 0.8},
                     {"thresholdPercent": 1.0},
                 ],
-                "allUpdatesRule": {
+                "notificationsRule": {
                     "pubsubTopic": "projects/proof-project/topics/dander-stop-billing"
                 },
             }

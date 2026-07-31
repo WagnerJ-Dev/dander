@@ -22,7 +22,10 @@ are treated as hypothetical connector scope, not evidence of an existing-company
 | Materializations and four generic test types | Implemented locally | view/table/incremental SQL; not-null, unique, accepted-values, and relationship assertions |
 | One model YAML feeds transform, catalog, and semantics | Implemented locally | typed sidecars compile executable tests, deterministic semantic JSON, and non-deleting Dataplex aspect requests |
 | Terraform bootstrap for datasets, secrets, IAM/WIF, and Cloud Run | Implemented locally | stage-zero HCL creates GCS state and Artifact Registry preconditions; main HCL requires bootstrap impersonation; immutable images; repository/ref-scoped GitHub OIDC; secret values excluded from state; read-only deployment verifier |
-| Scheduled execution and restart state | Implemented locally | paused-first Scheduler → Cloud Run job; guarded ingestion → selected transforms/tests → registry; BigQuery/SQLite cursors and run summaries |
+| Scheduled execution and restart state | Implemented locally | paused-first Scheduler → Cloud Run job; guarded ingestion → selected transforms/tests → registry; BigQuery/SQLite cursors and run summaries | Clean-project hosted run is not retained in this branch |
+| CI enforcement and release gating | Implemented locally | pinned-action CI workflow, local gate documentation, protected manual proof workflow, and sanitized evidence finalizer; no GitHub check run or branch-protection configuration is currently present on the draft PR |
+| Live deployment verification | Partially live-proven | read-only audit reached the billing-linked sandbox and verified project, datasets, remote state, job image, scheduler, budget, topic, and billing linkage; stronger IAM/secret checks fail, `SIMULATE_DEACTIVATION=false`, and no proof job was executed |
+| Authenticated SaaS, Storage Write, and Dataplex proofs | Implemented locally | controlled scripts and model/connector implementations exist with offline tests; no HubSpot token, live Storage Write commit, or Dataplex mutation/read-back artifact has been retained |
 
 Transform materializations use the same idempotent BigQuery contracts as the record writers, but
 query-based transforms compile SQL directly instead of passing materialized rows through the
@@ -33,9 +36,9 @@ Python `WritePattern` interface. This avoids pulling transform data out of BigQu
 - Credential-free Greenhouse, Lever, and Ashby paths prove live public source shapes without a
   customer account. Marketo and enterprise provider exchanges are tested offline and require
   tenant access.
-- The sandbox project currently has billing enabled, a USD 5 monthly budget, Pub/Sub notifications,
-  and a live billing-detachment service. Budgets and automated actions still have reporting delay,
-  so each additional billable test requires deliberate scope.
+- The sandbox project has billing enabled, a USD 5 monthly budget, Pub/Sub notifications, and a
+  billing-detachment function currently configured with `SIMULATE_DEACTIVATION=false`. No proof
+  execution should proceed until that safety setting is restored and independently verified.
 - Endpoint extraction is still accumulated in memory before a logical write. Bounded writer
   requests protect BigQuery payload size, not total-process memory for very large sources.
 - Nested/repeated automatic schema evolution is intentionally unsupported; only declared nullable
@@ -46,8 +49,9 @@ Python `WritePattern` interface. This avoids pulling transform data out of BigQu
 
 ## Verdict
 
-This branch is a reasonable, runnable v0 of the stated architecture and has local implementation
-evidence for every named module. It is not yet a production-certified release.
+This branch is a reasonable, runnable v0 of the stated architecture with local implementation
+evidence and a partial live infrastructure audit. It is not yet a production-certified release or
+the completed evidence-focused round.
 The remaining production proofs need vendor credentials or deliberately scoped cloud execution;
 they are not gaps that should be papered over with mocks.
 

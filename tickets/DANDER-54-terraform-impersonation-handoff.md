@@ -25,6 +25,7 @@ boundary for every platform command.
 
 ## Implementation Notes
 
-Implemented in `infra/versions.tf`, `TerraformBootstrap`, and the explicit platform CLI commands.
+Implemented in `infra/versions.tf`, `TerraformBootstrap`, the explicit platform CLI commands, and
+the workflow identity proof at `scripts/live_proof/identity.py`.
 
 ## Review Log

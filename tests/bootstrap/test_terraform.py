@@ -132,6 +132,39 @@ def test_bootstrap_passes_simulation_first_cost_guard(
     assert "-var=cost_guard_source_bucket=unit-state" in plan
 
 
+def test_apply_saved_plan_does_not_replan(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    plan_path = tmp_path / "dander-bootstrap.tfplan"
+    plan_path.write_bytes(b"saved-plan")
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(
+        args: tuple[str, ...],
+        *,
+        cwd: Path,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        assert cwd == tmp_path.resolve()
+        assert check
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = TerraformBootstrap(tmp_path).apply_saved_plan(
+        project="unit-project",
+        state_bucket="unit-state",
+        state_prefix="dander/state",
+        bootstrap_service_account="dander-bootstrap@unit-project.iam.gserviceaccount.com",
+    )
+
+    assert result == plan_path
+    assert commands[0][:2] == ("terraform", "init")
+    assert commands[1] == ("terraform", "apply", "-input=false", "dander-bootstrap.tfplan")
+    assert all(command[:2] != ("terraform", "plan") for command in commands)
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [

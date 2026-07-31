@@ -424,33 +424,15 @@ def init_platform_apply(
     """Apply the reviewed platform plan through the bootstrap identity."""
     if not typer.confirm(f"Apply platform bootstrap to GCP project {project!r}?", default=False):
         raise typer.Abort()
-    plan_path = _execute_platform_bootstrap(
-        project=project,
-        state_bucket=state_bucket,
-        state_prefix=state_prefix,
-        bootstrap_service_account=bootstrap_service_account,
-        apply=True,
-        region=region,
-        bigquery_location=bigquery_location,
-        enable_runtime=False,
-        billing_account_id="",
-        container_image="",
-        scheduler_paused=True,
-        runtime_publish_dataplex=False,
-        runtime_source="greenhouse_job_board",
-        runtime_model="stg_greenhouse__jobs",
-        runtime_build_models=True,
-        runtime_secret_id="",
-        runtime_secret_env="HUBSPOT_PRIVATE_APP_TOKEN",
-        secret_ids=(),
-        github_repository="",
-        github_ref="refs/heads/main",
-        enable_cost_guard=False,
-        cost_guard_budget_name="dander-sbx-cap",
-        cost_guard_budget_amount="5.00",
-        live_cost_guard=False,
-        infra_dir=infra_dir,
-    )
+    try:
+        plan_path = TerraformBootstrap(infra_dir).apply_saved_plan(
+            project=project,
+            state_bucket=state_bucket,
+            state_prefix=state_prefix,
+            bootstrap_service_account=bootstrap_service_account,
+        )
+    except TerraformBootstrapError as error:
+        raise ClickException(str(error)) from error
     console.print(f"[green]Platform bootstrap applied.[/green] Saved plan: {plan_path}")
 
 
