@@ -14,17 +14,18 @@ conversation. Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, 
   files.
 - The user accepts a USD 5 monthly GCP budget, but every new billable test still requires explicit
   scope. Budget reporting and billing detachment are delayed and are not a mathematical hard cap.
-- Do not push, open a PR, apply Terraform, deploy an image, publish Dataplex metadata, or change
-  billing/scheduling without explicit authorization.
+- Do not apply Terraform, deploy an image, publish Dataplex metadata, or change billing/scheduling
+  without explicit authorization. The fork migration PR is already authorized and open; future
+  pushes or repository-admin changes still require explicit scope.
 
 ## Git and validation state
 
 - Repository: `/Users/harrison/Documents/dander`
 - Branch: `codex/dander-v0`
-- `origin` is `WagnerJ-Dev/dander`; `fork` is the user's GitHub fork.
-- The fork is public and the branch has an open draft PR into upstream `main`. Confirm
-  synchronization with `git status -sb` and
-  `git log --oneline fork/codex/dander-v0..HEAD`.
+- `origin` is `WagnerJ-Dev/dander`; `fork` is `harrisonoconnorhover/dander`.
+- The fork is public, the branch is pushed at `8dfdd92`, and fork PR #1 is an open draft into the
+  fork's `main`. Upstream PR #1 remains the original contribution record. Confirm synchronization
+  with `git status -sb` and `git log --oneline fork/codex/dander-v0..HEAD`.
 - Last full code gate: Ruff and formatting passed, strict mypy passed across 92 source files,
   439 tests passed, and Terraform formatting/validation passed.
 - A wheel installed into a clean virtual environment, and the local amd64 Docker image contained

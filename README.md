@@ -1,6 +1,6 @@
 # Dander
 
-[![CI](https://github.com/WagnerJ-Dev/dander/actions/workflows/ci.yml/badge.svg)](https://github.com/WagnerJ-Dev/dander/actions/workflows/ci.yml)
+[![CI](https://github.com/harrisonoconnorhover/dander/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/dander/actions/workflows/ci.yml)
 
 **An opinionated, self-hosted, GCP-native data platform you own** — ingest + transform + catalog
 behind one CLI. A focused replacement for Informatica and a customizable stand-in for dbt.

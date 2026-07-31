@@ -1,5 +1,15 @@
 # Engineering Decisions
 
+## 2026-07-31 — Fork-owned CI and evidence surface
+
+- The admin-owned `harrisonoconnorhover/dander` fork is the execution surface for CI, protected
+  environments, and retained workflow evidence; upstream `WagnerJ-Dev/dander` remains the
+  contribution and review record through PR #1.
+- Moving the branch preserves commit identities, including `8dfdd92`. Only repository-scoped
+  objects—pull requests, check runs, environments, secrets, and workflow URLs—are re-anchored.
+- GitHub OIDC Workload Identity Federation must be reconfigured for the fork's exact repository
+  and ref before any live proof is dispatched. No cloud mutation is implied by this decision.
+
 ## 2026-07-30 — Reproducible bootstrap verification
 
 - Terraform creates a distinct `dander-bootstrap` identity for approved infrastructure runs. Its

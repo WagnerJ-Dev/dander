@@ -1,7 +1,8 @@
 # Dander v0 Release Audit
 
 Audited against the live `WagnerJ-Dev/dander` north star on 2026-07-29 and operationally refreshed
-on 2026-07-30. “Implemented locally”
+on 2026-07-30. As of 2026-07-31, the admin-owned `harrisonoconnorhover/dander` fork is the CI and
+evidence execution surface; upstream PR #1 remains the contribution record. “Implemented locally”
 means code, offline tests, and static infrastructure validation exist. It does not imply that
 provider credentials or every billable cloud mutation have been validated. Sensitive-system names
 are treated as hypothetical connector scope, not evidence of an existing-company relationship.
