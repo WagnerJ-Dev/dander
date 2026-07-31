@@ -566,6 +566,19 @@ def _write_bootstrap_evidence(summary: DeploymentSummary, evidence_dir: Path) ->
         row_counts={"checks": len(checks)},
         failure_reason=None if passed else "one or more deployment checks failed",
     )
+    cost_checks = tuple(check for check in checks if check.name.startswith("cost_guard"))
+    proofs: dict[str, ProofEvidence] = {"bootstrap": proof}
+    if cost_checks:
+        cost_passed = all(check.ok for check in cost_checks)
+        proofs["cost-guard"] = ProofEvidence(
+            status=ProofStatus.PASSED if cost_passed else ProofStatus.FAILED,
+            started_at_utc=proof.started_at_utc,
+            ended_at_utc=proof.ended_at_utc,
+            operation="cost-guard resource verification",
+            resource_ids=tuple(check.name for check in cost_checks),
+            row_counts={"checks": len(cost_checks)},
+            failure_reason=None if cost_passed else "one or more cost-guard checks failed",
+        )
     manifest = EvidenceManifest(
         commit_sha=os.environ.get("GITHUB_SHA", "local"),
         workflow_run_id=os.environ.get("GITHUB_RUN_ID", "local"),
@@ -573,7 +586,7 @@ def _write_bootstrap_evidence(summary: DeploymentSummary, evidence_dir: Path) ->
         gcp_project_alias=os.environ.get("DANDER_GCP_PROJECT_ALIAS", summary.project_id),
         container_digest=os.environ.get("DANDER_CONTAINER_DIGEST", "unknown"),
         terraform_plan_sha256=os.environ.get("DANDER_TERRAFORM_PLAN_SHA256", "unknown"),
-        proofs={"bootstrap": proof},
+        proofs=proofs,
     )
     EvidenceBundle(evidence_dir).write(manifest)
 

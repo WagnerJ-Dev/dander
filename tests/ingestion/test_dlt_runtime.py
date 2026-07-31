@@ -108,6 +108,33 @@ def test_build_config_supports_public_enveloped_response() -> None:
     assert "Authorization" not in adapter(prepared).headers
 
 
+def test_empty_cursor_param_records_watermark_without_sending_filter() -> None:
+    config = SourceConfig(
+        name="hubspot_test",
+        base_url="https://api.hubapi.com",
+        auth_strategy="api_key_bearer",
+        auth_ref="HUBSPOT_PRIVATE_APP_TOKEN",
+        endpoints=[
+            Endpoint(
+                name="companies",
+                path="/crm/v3/objects/companies",
+                incremental_cursor="updatedAt",
+                cursor_param="",
+                primary_key=["id"],
+            )
+        ],
+    )
+
+    rest_config = DltRestSource(config, NoAuth()).build_rest_config(
+        "companies", since="2026-01-01T00:00:00Z"
+    )
+    resource = rest_config["resources"][0]
+    assert isinstance(resource, dict)
+    endpoint = resource["endpoint"]
+    assert isinstance(endpoint, dict)
+    assert "params" not in endpoint
+
+
 def test_marketo_template_maps_provider_auth_pagination_and_rate_limit() -> None:
     connector_path = Path(__file__).parents[2] / "connectors" / "marketo.example.yaml"
     config = load_source_config(connector_path)

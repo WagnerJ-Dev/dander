@@ -5,16 +5,18 @@
 - Added enforced credential-free CI for Python, Terraform, container, and secret checks.
 - Split Terraform into stage-zero administration and impersonated platform bootstrap; stage zero owns state and Artifact Registry prerequisites.
 - Added sanitized evidence schemas, resource-scoped IAM/cost verification, HubSpot connector/proof, Storage Write/transform/Dataplex proof scripts, and a protected manual workflow.
+- Hardened the HubSpot watermark/evidence path, ensured runtime-only secrets create their Secret Manager container, and retained cost-guard evidence separately from bootstrap checks.
 
 ## Try It
 
 - Run `uv sync --frozen --extra dev` and the commands in `docs/ci.md`.
 - Configure the `live-proof` GitHub environment, WIF variables, and HubSpot private-app secret before dispatching `.github/workflows/live-proof.yml`.
+- Follow [docs/live-proof.md](/Users/harrison/Documents/dander/docs/live-proof.md) for the protected environment and clean-project run.
 
 ## Checks
 
 - `uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy src tests`: passed.
-- `uv run pytest`: 461 passed.
+- `uv run pytest`: 463 passed.
 - `pip-audit` on the exported frozen requirements: no known vulnerabilities.
 - Terraform format/validate passed for `infra` and `infra/bootstrap-admin`.
 - Docker build was attempted but the base-image pull stalled locally.

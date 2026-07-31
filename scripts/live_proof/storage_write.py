@@ -19,6 +19,14 @@ from dander.writer import (
 )
 
 
+class _InterruptedBackend:
+    """Inject a failure before the pending stream can commit, for rollback evidence."""
+
+    def append(self, rows: object, target: WriteTarget, *, max_batch_rows: int) -> None:
+        del rows, target, max_batch_rows
+        raise RuntimeError("simulated interruption before pending-stream commit")
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -69,6 +77,17 @@ def run(args: argparse.Namespace) -> None:
         target = _target(args.project, table)
         writer.write(initial, target)
         initial_rows, initial_hash = _query_hash(args.project, table)
+        interrupted_writer = BigQueryStorageScd1Writer(
+            project=args.project,
+            schema_evolution=SchemaEvolution.ADDITIVE,
+            backend=_InterruptedBackend(),
+        )
+        interruption_preserved = 0
+        try:
+            interrupted_writer.write(updated, target)
+        except RuntimeError:
+            _, after_interruption_hash = _query_hash(args.project, table)
+            interruption_preserved = int(after_interruption_hash == initial_hash)
         writer.write(initial, target)
         retry_rows, retry_hash = _query_hash(args.project, table)
         writer.write(updated, target)
@@ -111,7 +130,9 @@ def run(args: argparse.Namespace) -> None:
         except Exception:  # noqa: BLE001 - only the sanitized outcome is retained
             invalid_schema_rejected = 1
         proof = ProofEvidence(
-            status=ProofStatus.PASSED if invalid_schema_rejected else ProofStatus.FAILED,
+            status=ProofStatus.PASSED
+            if invalid_schema_rejected and interruption_preserved
+            else ProofStatus.FAILED,
             started_at_utc=started,
             ended_at_utc=_now(),
             operation="BigQuery Storage Write pending-stream conformance",
@@ -122,6 +143,7 @@ def run(args: argparse.Namespace) -> None:
                 "after_update": updated_rows,
                 "after_schema_addition": evolved_rows,
                 "invalid_schema_rejected": invalid_schema_rejected,
+                "interruption_preserved": interruption_preserved,
             },
             hashes={
                 "initial": initial_hash,
@@ -129,7 +151,21 @@ def run(args: argparse.Namespace) -> None:
                 "after_update": updated_hash,
                 "after_schema_addition": evolved_hash,
             },
-            failure_reason=None if invalid_schema_rejected else "invalid schema was accepted",
+            transport="storage_write",
+            stream_type="PENDING",
+            offset_strategy=(
+                "zero-based offsets per pending stream; keyed MERGE for retry idempotence"
+            ),
+            commit_status=(
+                "committed" if invalid_schema_rejected and interruption_preserved else "failed"
+            ),
+            watermark_committed=None,
+            table=f"{args.project}.raw.{table}",
+            failure_reason=(
+                None
+                if invalid_schema_rejected and interruption_preserved
+                else "Storage Write failure contract was not observed"
+            ),
         )
     except Exception:  # noqa: BLE001 - never persist provider payloads
         proof = ProofEvidence(
@@ -138,6 +174,14 @@ def run(args: argparse.Namespace) -> None:
             ended_at_utc=_now(),
             operation="BigQuery Storage Write pending-stream conformance",
             resource_ids=(f"{args.project}.raw.{table}",),
+            transport="storage_write",
+            stream_type="PENDING",
+            offset_strategy=(
+                "zero-based offsets per pending stream; keyed MERGE for retry idempotence"
+            ),
+            commit_status="failed",
+            watermark_committed=False,
+            table=f"{args.project}.raw.{table}",
             failure_reason="Storage Write proof failed",
         )
     output = Path(args.evidence_dir)

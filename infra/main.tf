@@ -28,7 +28,7 @@ module "scheduled_job" {
 }
 
 module "secret_manager" {
-  count  = length(var.secret_ids) > 0 ? 1 : 0
+  count  = length(var.secret_ids) > 0 || var.runtime_secret_id != "" ? 1 : 0
   source = "./modules/secret-manager"
 
   project_id = var.project_id

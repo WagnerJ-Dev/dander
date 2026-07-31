@@ -18,6 +18,11 @@ endpoints:
       cursor_param: after
       size_param: limit
       page_size: 100
+    incremental_cursor: updatedAt
+    # The basic objects endpoint exposes updatedAt but has no server-side filter. An empty
+    # cursor_param records the committed watermark without sending it as an unsupported query
+    # parameter; the SCD1 merge remains idempotent across full reads.
+    cursor_param: ""
     query_params:
       archived: false
       properties: name,domain,createdate,lastmodifieddate

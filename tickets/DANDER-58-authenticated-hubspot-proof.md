@@ -27,6 +27,8 @@ first proof.
 ## Implementation Notes
 
 Implemented in `connectors/hubspot_test.yaml`, `ApiKeyBearer`, the staging model, and
-`scripts/live_proof/hubspot.py`; live execution still requires the sandbox private-app token.
+`scripts/live_proof/hubspot.py`. The proof now records hashed before/after watermarks and checks
+update visibility plus replay idempotence; live execution still requires the sandbox private-app
+token.
 
 ## Review Log

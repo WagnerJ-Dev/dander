@@ -94,6 +94,10 @@ identity can invoke only the named Cloud Run Job.
 
 ## Deployment verification
 
+The protected, manual end-to-end workflow and its required WIF environment variables are documented
+in [`docs/live-proof.md`](../docs/live-proof.md). It is the only supported path for the owned
+HubSpot proof and live Storage Write/Dataplex mutations.
+
 After `dander init --apply` and Terraform backend initialization, run the read-only verifier:
 
 ```bash

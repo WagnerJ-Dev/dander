@@ -28,6 +28,7 @@ upload.
 
 Implemented `.github/workflows/live-proof.yml` with protected-environment WIF authentication,
 manual proof inputs, fail-closed ordered steps, and always-uploaded finalized evidence. It still
-requires repository environment configuration and an approved live run.
+requires repository environment configuration and an approved live run. The workflow installs its
+locked runtime and Terraform explicitly, and exports the project alias into the evidence manifest.
 
 ## Review Log

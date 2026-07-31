@@ -27,5 +27,8 @@ identifiers supplied at the workflow boundary.
 
 Implemented in `src/dander/evidence`; `.github/workflows/live-proof.yml` and
 `scripts/live_proof/finalize_evidence.py` complete the bundle after optional proof steps.
+Deployment verification now emits a separate `cost-guard.json` proof when cost-guard checks are
+requested, and Storage Write/HubSpot proofs retain transport, commit, table, and hashed watermark
+metadata without source values.
 
 ## Review Log

@@ -46,6 +46,14 @@ class ProofEvidence(BaseModel):
     resource_ids: tuple[str, ...] = ()
     row_counts: dict[str, int] = Field(default_factory=dict)
     hashes: dict[str, str] = Field(default_factory=dict)
+    transport: str | None = None
+    stream_type: str | None = None
+    offset_strategy: str | None = None
+    commit_status: str | None = None
+    watermark_before_hash: str | None = None
+    watermark_after_hash: str | None = None
+    watermark_committed: bool | None = None
+    table: str | None = None
     failure_reason: str | None = None
 
     @field_validator("row_counts")
@@ -63,6 +71,14 @@ class ProofEvidence(BaseModel):
         for digest in value.values():
             if not digest or any(character not in _HEX for character in digest):
                 raise ValueError("hashes values must be lowercase hexadecimal digests")
+        return value
+
+    @field_validator("watermark_before_hash", "watermark_after_hash")
+    @classmethod
+    def _validate_optional_hashes(cls, value: str | None) -> str | None:
+        """Apply the same redaction-safe digest contract to watermark evidence."""
+        if value is not None and (not value or any(character not in _HEX for character in value)):
+            raise ValueError("watermark hashes must be lowercase hexadecimal digests")
         return value
 
 

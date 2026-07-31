@@ -25,6 +25,8 @@ Use a dedicated proof table and deterministic batches through the existing pendi
 
 ## Implementation Notes
 
-Pending implementation.
+The live proof script exercises initial, exact-retry, update, nullable additive schema, invalid
+schema, and simulated pre-commit interruption paths through the pending-stream writer. A real
+Storage Write service run remains required for the acceptance criteria.
 
 ## Review Log

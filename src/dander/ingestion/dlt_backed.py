@@ -224,8 +224,13 @@ class DltRestSource(Source):
         endpoint = self._get_endpoint(endpoint_name)
         params: dict[str, Any] = dict(endpoint.query_params)
         paginator = self._build_paginator(endpoint, params)
-        cursor_param = endpoint.cursor_param or endpoint.incremental_cursor
-        if since is not None and cursor_param is not None:
+        # An explicit empty cursor_param is a deliberate read-only watermark: retain the
+        # committed cursor for restart evidence, but do not send it to an endpoint that cannot
+        # filter by modification time. None preserves the legacy fallback to the cursor field.
+        cursor_param = (
+            endpoint.incremental_cursor if endpoint.cursor_param is None else endpoint.cursor_param
+        )
+        if since is not None and cursor_param:
             params[cursor_param] = since
 
         dlt_endpoint: DltEndpoint = {

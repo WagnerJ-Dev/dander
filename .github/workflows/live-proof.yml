@@ -65,6 +65,9 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: 1.9.8
       - name: Locked Python checks
         run: |
           uv sync --frozen --extra dev
@@ -98,6 +101,8 @@ jobs:
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: 1.9.8
+      - name: Install locked runtime
+        run: uv sync --frozen --extra dev
       - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.DANDER_WIF_PROVIDER }}
@@ -126,6 +131,7 @@ jobs:
           test -n "$DIGEST"
           echo "container_digest=$DIGEST" >> "$GITHUB_OUTPUT"
           echo "DANDER_CONTAINER_DIGEST=$DIGEST" >> "$GITHUB_ENV"
+          echo "DANDER_GCP_PROJECT_ALIAS=$PROJECT_ID" >> "$GITHUB_ENV"
           echo "CONTAINER_IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/dander/dander@${DIGEST}" >> "$GITHUB_ENV"
       - name: Add HubSpot secret version without printing its value
         if: ${{ inputs.run_authenticated_connector }}

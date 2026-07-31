@@ -16,6 +16,7 @@ import httpx
 from google.cloud import bigquery
 
 from dander.evidence import ProofEvidence, ProofStatus
+from dander.state import BigQueryWatermarkStore
 
 _ID = re.compile(r"^[a-zA-Z0-9_-]+$")
 _COMPANY_ID = re.compile(r"^[0-9]+$")
@@ -65,6 +66,20 @@ def _snapshot(project: str, table: str, company_ids: tuple[str, ...]) -> tuple[i
     return len(rows), hashlib.sha256(normalized.encode()).hexdigest()
 
 
+def _watermark(project: str) -> str | None:
+    """Read the committed endpoint cursor without retaining its value in evidence."""
+    try:
+        return BigQueryWatermarkStore(project=project, dataset="raw").get(
+            "hubspot_test", "companies"
+        )
+    except Exception as error:  # noqa: BLE001 - provider details must stay out of evidence
+        raise RuntimeError("HubSpot proof watermark query failed") from error
+
+
+def _hash_cursor(cursor: str | None) -> str:
+    return hashlib.sha256((cursor or "").encode()).hexdigest()
+
+
 def run(args: argparse.Namespace) -> None:
     started = _now()
     token = os.environ.get(args.token_env)
@@ -81,6 +96,7 @@ def run(args: argparse.Namespace) -> None:
         timeout=30.0,
     )
     try:
+        watermark_before = _watermark(args.project)
         for suffix in ("alpha", "beta"):
             created = _request(
                 client,
@@ -100,6 +116,7 @@ def run(args: argparse.Namespace) -> None:
             ids.append(company_id)
         _run_job(args.job, args.region)
         initial_rows, initial_hash = _snapshot(args.project, args.table, tuple(ids))
+        watermark_after_initial = _watermark(args.project)
 
         _request(
             client,
@@ -111,10 +128,19 @@ def run(args: argparse.Namespace) -> None:
         )
         _run_job(args.job, args.region)
         updated_rows, updated_hash = _snapshot(args.project, args.table, tuple(ids))
+        watermark_after_update = _watermark(args.project)
         _run_job(args.job, args.region)
         replay_rows, replay_hash = _snapshot(args.project, args.table, tuple(ids))
+        watermark_after_replay = _watermark(args.project)
+        update_observed = initial_hash != updated_hash
+        replay_is_idempotent = (
+            updated_hash == replay_hash and watermark_after_update == watermark_after_replay
+        )
+        watermark_committed = watermark_after_initial is not None and replay_is_idempotent
         proof = ProofEvidence(
-            status=ProofStatus.PASSED,
+            status=ProofStatus.PASSED
+            if update_observed and replay_is_idempotent and watermark_committed
+            else ProofStatus.FAILED,
             started_at_utc=started,
             ended_at_utc=_now(),
             operation="HubSpot companies initial/update/idempotence proof",
@@ -124,12 +150,27 @@ def run(args: argparse.Namespace) -> None:
                 "after_update": updated_rows,
                 "after_replay": replay_rows,
                 "unique_logical_ids": len(set(ids)),
+                "update_observed": int(update_observed),
+                "watermark_replay_stable": int(watermark_after_update == watermark_after_replay),
             },
             hashes={
                 "initial": initial_hash,
                 "after_update": updated_hash,
                 "after_replay": replay_hash,
+                "watermark_before": _hash_cursor(watermark_before),
+                "watermark_after_initial": _hash_cursor(watermark_after_initial),
+                "watermark_after_update": _hash_cursor(watermark_after_update),
+                "watermark_after_replay": _hash_cursor(watermark_after_replay),
             },
+            transport="rest",
+            commit_status="committed" if watermark_committed else "failed",
+            watermark_before_hash=_hash_cursor(watermark_before),
+            watermark_after_hash=_hash_cursor(watermark_after_replay),
+            watermark_committed=watermark_committed,
+            table=f"{args.project}.{args.table}",
+            failure_reason=None
+            if update_observed and replay_is_idempotent and watermark_committed
+            else "HubSpot update, idempotence, or watermark contract failed",
         )
     except Exception as error:  # noqa: BLE001 - evidence must retain failure without payloads
         proof = ProofEvidence(
@@ -138,6 +179,10 @@ def run(args: argparse.Namespace) -> None:
             ended_at_utc=_now(),
             operation="HubSpot companies initial/update/idempotence proof",
             resource_ids=tuple(ids),
+            transport="rest",
+            commit_status="failed",
+            watermark_committed=False,
+            table=f"{args.project}.{args.table}",
             failure_reason=str(error),
         )
         _write(args.evidence_dir, proof)
