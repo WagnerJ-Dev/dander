@@ -18,6 +18,7 @@
 - Pre-edit safety checks passed: approved `main` commit, clean worktree, no Terraform operation, and unchanged platform/stage-zero generations.
 - Focused proof: 4 passed; full pytest: 471 passed; Ruff, formatting, mypy, dependency audit, Terraform format, and backend-disabled validation for both roots passed.
 - Docker build/run was attempted but the local Docker daemon was unavailable; GitHub CI remains authoritative for the container check.
+- GitHub CI run `30666542567`: all four required jobs passed, including Container build and scan.
 
 ## Decisions
 
