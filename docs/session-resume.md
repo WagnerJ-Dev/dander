@@ -15,18 +15,22 @@ conversation. Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, 
 - The user accepts a USD 5 monthly GCP budget, but every new billable test still requires explicit
   scope. Budget reporting and billing detachment are delayed and are not a mathematical hard cap.
 - Do not apply Terraform, deploy an image, publish Dataplex metadata, or change billing/scheduling
-  without explicit authorization. The fork migration PR is already authorized and open; future
-  pushes or repository-admin changes still require explicit scope.
+  without explicit authorization. Repository documentation may be updated through the protected
+  pull-request path; repository-admin and cloud changes still require explicit scope.
 
 ## Git and validation state
 
 - Repository: `/Users/harrison/Documents/dander`
-- Branch: `codex/dander-v0`
-- `origin` is `WagnerJ-Dev/dander`; `fork` is `harrisonoconnorhover/dander`.
-- The fork is public, and fork PR #1 is an open draft from this branch into the fork's `main`.
-  Upstream PR #1 remains the original contribution record. Confirm the current PR head and branch
-  synchronization with `gh pr view 1 --repo harrisonoconnorhover/dander`,
-  `git status -sb`, and `git log --oneline fork/codex/dander-v0..HEAD`.
+- Admin-owned GitHub repository: `harrisonoconnorhover/dander`; upstream contribution record:
+  `WagnerJ-Dev/dander` PR #1.
+- Fork PR #1 was merged into `main` at
+  `6eda307b69d8eac8d731eea89fa993a5096e0a9d` on 2026-07-31.
+- Active ruleset `Protect main` (ID `20133128`) targets `~DEFAULT_BRANCH`. It requires pull requests,
+  resolved conversations, strict/up-to-date status checks, and these checks from GitHub Actions app
+  ID `15368`: Python quality, Terraform quality, Secret scan, and Container build and scan. It permits
+  merge commits only and blocks force pushes and deletion.
+- The repository administrator has the intentionally approved always-bypass path for emergency
+  recovery. Routine work must not use it.
 - Last full code gate: Ruff and formatting passed, strict mypy passed across 92 source files,
   463 tests passed, and Terraform formatting/validation passed.
 - A wheel installed into a clean virtual environment, and the local amd64 Docker image contained
@@ -74,12 +78,14 @@ gcloud run jobs executions list --job=dander-greenhouse-public --region=us-centr
 
 ## Recommended next vertical slice
 
-1. Decide whether to pause the enabled daily scheduler before changing the runtime image.
-2. If candidate/contact integration is next, have the user create and authorize a free HubSpot
-   developer test account; use invented or provider-supplied sample records only.
-3. With explicit approval, build/push an immutable image, review a saved Terraform plan, keep the
+1. Restore the billing-detachment function to simulation mode and independently verify the setting.
+2. Decide whether to pause the enabled daily scheduler before changing the runtime image.
+3. Re-anchor the GCP WIF repository condition and protected `live-proof` environment variables to
+   `harrisonoconnorhover/dander`.
+4. With explicit approval, build/push an immutable image, review a saved Terraform plan, keep the
    scheduler paused, and run the full ingestion → transform/test → registry path once manually.
-4. Treat live Storage Write and Dataplex publication as separate, deliberately authorized tests.
+5. Treat HubSpot, live Storage Write, and Dataplex publication as separate deliberately authorized
+   proofs. Use only synthetic HubSpot company records.
 
 Synthetic data can validate the complete Dander-controlled pipeline. A real vendor sandbox is
 needed only to prove the vendor's actual authentication, undocumented response behavior, scopes,
