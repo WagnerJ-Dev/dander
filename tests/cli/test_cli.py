@@ -49,6 +49,26 @@ def test_public_job_board_dry_run_needs_no_credentials() -> None:
     assert "greenhouse_job_board_jobs" in result.output
 
 
+def test_dry_run_reports_configured_writer_batch_rows() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "greenhouse_job_board",
+            "--dry-run",
+            "--project",
+            "unit-project",
+            "--batch-rows",
+            "2048",
+            "--connectors-dir",
+            str(_REPO_ROOT / "connectors"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Writer batch rows: 2048" in result.output
+
+
 def test_harvest_v3_dry_run_validates_without_credentials() -> None:
     result = CliRunner().invoke(
         app,

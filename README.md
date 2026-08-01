@@ -269,6 +269,26 @@ adopts it into Terraform, creates the administrative identity and Artifact Regis
 pushes the current runtime, then applies datasets, per-pipeline IAM/jobs/schedules/secrets, and the
 simulation-first budget guard from `dander.yaml`:
 
+```yaml
+platform:
+  region: us-central1
+  bigquery_location: US
+  runtime:
+    cpu: 1
+    memory: 512Mi
+    timeout_seconds: 300
+    max_retries: 1
+    batch_rows: 10000
+  safety:
+    require_guarded_free_tier: true
+```
+
+These repository-owned values configure every hosted job. `batch_rows` bounds each BigQuery writer
+request; extraction still materializes one endpoint batch in memory. When guarded free tier is
+required, initialization rejects a disabled cost guard and hosted jobs receive
+`--guarded-free-tier`. The `--region`, `--bigquery-location`, `--runtime-*`, and guarded-free-tier
+override flags take precedence only when explicitly supplied.
+
 ```bash
 uv run dander init \
   --project my-gcp-project \

@@ -26,6 +26,7 @@ _BUDGET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_RUNTIME_MEMORY = re.compile(r"^[1-9][0-9]*(?:Mi|Gi)$")
 _BOOTSTRAP_SERVICE_ACCOUNT = re.compile(
     r"^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$"
 )
@@ -51,6 +52,12 @@ class TerraformBootstrap:
         apply: bool,
         region: str = "us-central1",
         bigquery_location: str = "US",
+        runtime_cpu: int = 1,
+        runtime_memory: str = "512Mi",
+        runtime_timeout_seconds: int = 300,
+        runtime_max_retries: int = 1,
+        runtime_batch_rows: int = 10_000,
+        require_guarded_free_tier: bool = True,
         enable_runtime: bool = False,
         billing_account_id: str = "",
         container_image: str = "",
@@ -74,6 +81,12 @@ class TerraformBootstrap:
             apply: Whether to apply the saved plan after planning.
             region: GCP region for regional resources.
             bigquery_location: BigQuery dataset location.
+            runtime_cpu: Cloud Run CPU count shared by hosted jobs.
+            runtime_memory: Cloud Run memory limit shared by hosted jobs.
+            runtime_timeout_seconds: Per-task Cloud Run timeout in seconds.
+            runtime_max_retries: Cloud Run task retries after the initial attempt.
+            runtime_batch_rows: Maximum rows sent in one BigQuery writer request.
+            require_guarded_free_tier: Whether hosted jobs must run the cost-guard preflight.
             enable_runtime: Whether to provision the scheduled Cloud Run slice.
             billing_account_id: Billing account used by the runtime safety check.
             container_image: Immutable runtime image reference including a sha256 digest.
@@ -108,6 +121,14 @@ class TerraformBootstrap:
                 "Platform bootstrap requires --bootstrap-service-account with a valid "
                 "service-account email"
             )
+        _validate_runtime(
+            cpu=runtime_cpu,
+            memory=runtime_memory,
+            timeout_seconds=runtime_timeout_seconds,
+            max_retries=runtime_max_retries,
+            batch_rows=runtime_batch_rows,
+            require_guarded_free_tier=require_guarded_free_tier,
+        )
 
         expanded_pipelines = dict(pipelines or {})
         if enable_runtime:
@@ -172,6 +193,10 @@ class TerraformBootstrap:
             )
         if live_cost_guard and not enable_cost_guard:
             raise TerraformBootstrapError("--live-cost-guard requires --enable-cost-guard")
+        if enable_runtime and require_guarded_free_tier and not enable_cost_guard:
+            raise TerraformBootstrapError(
+                "require_guarded_free_tier=true requires --enable-cost-guard for hosted jobs"
+            )
 
         plan_path = self._infra_dir / "dander-bootstrap.tfplan"
         self._run(
@@ -188,6 +213,12 @@ class TerraformBootstrap:
             f"-var=bootstrap_service_account={bootstrap_service_account}",
             f"-var=region={region}",
             f"-var=bigquery_location={bigquery_location}",
+            f"-var=runtime_cpu={runtime_cpu}",
+            f"-var=runtime_memory={runtime_memory}",
+            f"-var=runtime_timeout_seconds={runtime_timeout_seconds}",
+            f"-var=runtime_max_retries={runtime_max_retries}",
+            f"-var=runtime_batch_rows={runtime_batch_rows}",
+            f"-var=require_guarded_free_tier={str(require_guarded_free_tier).lower()}",
             f"-var=enable_scheduled_job={str(enable_runtime).lower()}",
             f"-var=billing_account_id={billing_account_id}",
             f"-var=runtime_container_image={container_image}",
@@ -296,3 +327,30 @@ def _validate_pipelines(pipelines: Mapping[str, Mapping[str, object]]) -> None:
             for env_name, secret_id in secret_env.items()
         ):
             raise TerraformBootstrapError(f"Pipeline {pipeline_id!r} has invalid secret bindings")
+
+
+def _validate_runtime(
+    *,
+    cpu: int,
+    memory: str,
+    timeout_seconds: int,
+    max_retries: int,
+    batch_rows: int,
+    require_guarded_free_tier: bool,
+) -> None:
+    """Reject runtime values before Terraform or any hosted workload sees them."""
+    if isinstance(cpu, bool) or cpu not in {1, 2, 4, 6, 8}:
+        raise TerraformBootstrapError("runtime_cpu must be one of 1, 2, 4, 6, or 8")
+    if not isinstance(memory, str) or not _RUNTIME_MEMORY.fullmatch(memory):
+        raise TerraformBootstrapError("runtime_memory must be a positive Mi or Gi quantity")
+    for name, value, minimum, maximum in (
+        ("runtime_timeout_seconds", timeout_seconds, 1, 86_400),
+        ("runtime_max_retries", max_retries, 0, 10),
+        ("runtime_batch_rows", batch_rows, 1, 100_000),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+            raise TerraformBootstrapError(
+                f"{name} must be an integer from {minimum} through {maximum}"
+            )
+    if not isinstance(require_guarded_free_tier, bool):
+        raise TerraformBootstrapError("require_guarded_free_tier must be a boolean")

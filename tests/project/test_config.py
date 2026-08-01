@@ -13,6 +13,16 @@ def test_repository_manifest_defines_additive_greenhouse_and_hubspot() -> None:
     project = load_project_config(Path("dander.yaml"))
     project.validate_references(Path.cwd())
 
+    assert project.platform.region == "us-central1"
+    assert project.platform.bigquery_location == "US"
+    assert project.platform.runtime.model_dump() == {
+        "cpu": 1,
+        "memory": "512Mi",
+        "timeout_seconds": 300,
+        "max_retries": 1,
+        "batch_rows": 10_000,
+    }
+    assert project.platform.safety.require_guarded_free_tier is True
     expanded = project.terraform_pipelines()
     assert set(expanded) == {"greenhouse_jobs", "hubspot_companies"}
     assert expanded["greenhouse_jobs"]["job_name"] == "dander-greenhouse-public"
@@ -81,4 +91,38 @@ pipelines:
     )
 
     with pytest.raises(ProjectConfigError, match="pipelines.example.secrets"):
+        load_project_config(config)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("cpu", 3),
+        ("memory", "512MB"),
+        ("timeout_seconds", 0),
+        ("max_retries", 11),
+        ("batch_rows", 100_001),
+    ],
+)
+def test_project_config_rejects_invalid_runtime_values(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    config = tmp_path / "dander.yaml"
+    config.write_text(
+        f"""
+version: 1
+platform:
+  runtime:
+    {field}: {value}
+pipelines:
+  example:
+    source: source
+    models: [model]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectConfigError, match=rf"platform.runtime.{field}"):
         load_project_config(config)

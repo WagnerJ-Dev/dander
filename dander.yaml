@@ -3,6 +3,14 @@ version: 1
 platform:
   region: us-central1
   bigquery_location: US
+  runtime:
+    cpu: 1
+    memory: 512Mi
+    timeout_seconds: 300
+    max_retries: 1
+    batch_rows: 10000
+  safety:
+    require_guarded_free_tier: true
 
 pipelines:
   greenhouse_jobs:

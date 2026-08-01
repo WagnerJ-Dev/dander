@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import typer
 from click import ClickException
+from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
@@ -47,7 +48,13 @@ from dander.ingestion import (
     WorkdayRaasSource,
     load_source_config,
 )
-from dander.project import ProjectConfigError, load_project_config
+from dander.project import (
+    PlatformRuntimeSpec,
+    PlatformSafetySpec,
+    PlatformSpec,
+    ProjectConfigError,
+    load_project_config,
+)
 from dander.runtime import PipelineRunner
 from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafetyError
 from dander.security import (
@@ -147,9 +154,39 @@ def init(
         help="Secured stage-zero plan directory outside the repository.",
     ),
     state_location: str = typer.Option("US", "--state-location"),
-    region: str = typer.Option("us-central1", "--region", help="GCP region."),
-    bigquery_location: str = typer.Option(
-        "US", "--bigquery-location", help="BigQuery dataset location."
+    region: str | None = typer.Option(
+        None, "--region", help="Override platform.region from dander.yaml."
+    ),
+    bigquery_location: str | None = typer.Option(
+        None,
+        "--bigquery-location",
+        help="Override platform.bigquery_location from dander.yaml.",
+    ),
+    runtime_cpu: int | None = typer.Option(
+        None, "--runtime-cpu", help="Override platform.runtime.cpu from dander.yaml."
+    ),
+    runtime_memory: str | None = typer.Option(
+        None, "--runtime-memory", help="Override platform.runtime.memory from dander.yaml."
+    ),
+    runtime_timeout_seconds: int | None = typer.Option(
+        None,
+        "--runtime-timeout-seconds",
+        help="Override platform.runtime.timeout_seconds from dander.yaml.",
+    ),
+    runtime_max_retries: int | None = typer.Option(
+        None,
+        "--runtime-max-retries",
+        help="Override platform.runtime.max_retries from dander.yaml.",
+    ),
+    runtime_batch_rows: int | None = typer.Option(
+        None,
+        "--runtime-batch-rows",
+        help="Override platform.runtime.batch_rows from dander.yaml.",
+    ),
+    require_guarded_free_tier: bool | None = typer.Option(
+        None,
+        "--require-guarded-free-tier/--no-require-guarded-free-tier",
+        help="Override platform.safety.require_guarded_free_tier from dander.yaml.",
     ),
     enable_runtime: bool = typer.Option(
         True,
@@ -219,14 +256,31 @@ def init(
     infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
 ) -> None:
     """Build or update Dander's complete GCP platform from ``dander.yaml``."""
-    pipelines: dict[str, dict[str, object]] = {}
-    if enable_runtime:
-        try:
-            manifest = load_project_config(config)
+    try:
+        manifest = load_project_config(config)
+        if enable_runtime:
             manifest.validate_references(config.resolve().parent)
-            pipelines = manifest.terraform_pipelines()
-        except ProjectConfigError as error:
-            raise ClickException(str(error)) from error
+        platform = _resolve_platform_config(
+            manifest.platform,
+            region=region,
+            bigquery_location=bigquery_location,
+            runtime_cpu=runtime_cpu,
+            runtime_memory=runtime_memory,
+            runtime_timeout_seconds=runtime_timeout_seconds,
+            runtime_max_retries=runtime_max_retries,
+            runtime_batch_rows=runtime_batch_rows,
+            require_guarded_free_tier=require_guarded_free_tier,
+        )
+    except ProjectConfigError as error:
+        raise ClickException(str(error)) from error
+    pipelines = manifest.terraform_pipelines() if enable_runtime else {}
+    runtime = platform.runtime
+    safety = platform.safety
+    if enable_runtime and safety.require_guarded_free_tier and not enable_cost_guard:
+        raise ClickException(
+            "platform.safety.require_guarded_free_tier=true requires the cost guard; "
+            "enable it or explicitly override the safety setting"
+        )
     resolved_state_bucket = state_bucket or f"{project}-dander-state"
     resolved_bootstrap_account = bootstrap_service_account or (
         f"dander-bootstrap@{project}.iam.gserviceaccount.com"
@@ -263,7 +317,7 @@ def init(
                 state_bucket=resolved_state_bucket,
                 admin_member=resolved_admin_member,
                 apply=True,
-                region=region,
+                region=platform.region,
                 state_location=state_location,
                 billing_account_id=billing_account_id,
                 github_repository=github_repository,
@@ -276,7 +330,7 @@ def init(
         try:
             container_image = RuntimeImagePublisher(infra_dir.resolve().parent).publish(
                 project=project,
-                region=region,
+                region=platform.region,
             )
         except ProjectBootstrapError as error:
             raise ClickException(str(error)) from error
@@ -291,8 +345,14 @@ def init(
         state_prefix=state_prefix,
         bootstrap_service_account=resolved_bootstrap_account,
         apply=apply,
-        region=region,
-        bigquery_location=bigquery_location,
+        region=platform.region,
+        bigquery_location=platform.bigquery_location,
+        runtime_cpu=runtime.cpu,
+        runtime_memory=runtime.memory,
+        runtime_timeout_seconds=runtime.timeout_seconds,
+        runtime_max_retries=runtime.max_retries,
+        runtime_batch_rows=runtime.batch_rows,
+        require_guarded_free_tier=safety.require_guarded_free_tier,
         enable_runtime=enable_runtime,
         billing_account_id=billing_account_id,
         container_image=container_image,
@@ -312,6 +372,61 @@ def init(
     console.print(f"[green]Bootstrap {action}.[/green] Saved plan: {plan_path}")
 
 
+def _resolve_platform_config(
+    authored: PlatformSpec,
+    *,
+    region: str | None,
+    bigquery_location: str | None,
+    runtime_cpu: int | None,
+    runtime_memory: str | None,
+    runtime_timeout_seconds: int | None,
+    runtime_max_retries: int | None,
+    runtime_batch_rows: int | None,
+    require_guarded_free_tier: bool | None,
+) -> PlatformSpec:
+    """Apply only explicit CLI overrides and revalidate the complete platform contract."""
+    try:
+        runtime = PlatformRuntimeSpec(
+            cpu=runtime_cpu if runtime_cpu is not None else authored.runtime.cpu,
+            memory=runtime_memory if runtime_memory is not None else authored.runtime.memory,
+            timeout_seconds=(
+                runtime_timeout_seconds
+                if runtime_timeout_seconds is not None
+                else authored.runtime.timeout_seconds
+            ),
+            max_retries=(
+                runtime_max_retries
+                if runtime_max_retries is not None
+                else authored.runtime.max_retries
+            ),
+            batch_rows=(
+                runtime_batch_rows
+                if runtime_batch_rows is not None
+                else authored.runtime.batch_rows
+            ),
+        )
+        safety = PlatformSafetySpec(
+            require_guarded_free_tier=(
+                require_guarded_free_tier
+                if require_guarded_free_tier is not None
+                else authored.safety.require_guarded_free_tier
+            )
+        )
+        return PlatformSpec(
+            region=region if region is not None else authored.region,
+            bigquery_location=(
+                bigquery_location if bigquery_location is not None else authored.bigquery_location
+            ),
+            runtime=runtime,
+            safety=safety,
+        )
+    except ValidationError as error:
+        fields = sorted({".".join(str(part) for part in issue["loc"]) for issue in error.errors()})
+        raise ProjectConfigError(
+            f"Invalid explicit platform override; check: {', '.join(fields)}"
+        ) from error
+
+
 def _execute_platform_bootstrap(
     *,
     project: str,
@@ -321,6 +436,12 @@ def _execute_platform_bootstrap(
     apply: bool,
     region: str,
     bigquery_location: str,
+    runtime_cpu: int,
+    runtime_memory: str,
+    runtime_timeout_seconds: int,
+    runtime_max_retries: int,
+    runtime_batch_rows: int,
+    require_guarded_free_tier: bool,
     enable_runtime: bool,
     billing_account_id: str,
     container_image: str,
@@ -344,6 +465,12 @@ def _execute_platform_bootstrap(
             apply=apply,
             region=region,
             bigquery_location=bigquery_location,
+            runtime_cpu=runtime_cpu,
+            runtime_memory=runtime_memory,
+            runtime_timeout_seconds=runtime_timeout_seconds,
+            runtime_max_retries=runtime_max_retries,
+            runtime_batch_rows=runtime_batch_rows,
+            require_guarded_free_tier=require_guarded_free_tier,
             enable_runtime=enable_runtime,
             billing_account_id=billing_account_id,
             container_image=container_image,
@@ -466,6 +593,12 @@ def init_platform_plan(
         apply=False,
         region=region,
         bigquery_location=bigquery_location,
+        runtime_cpu=1,
+        runtime_memory="512Mi",
+        runtime_timeout_seconds=300,
+        runtime_max_retries=1,
+        runtime_batch_rows=10_000,
+        require_guarded_free_tier=False,
         enable_runtime=False,
         billing_account_id="",
         container_image="",
@@ -695,6 +828,13 @@ def run(
         "--guarded-free-tier",
         help="Require billing plus a <=$5 budget guard before using the production GCP path.",
     ),
+    batch_rows: int = typer.Option(
+        10_000,
+        "--batch-rows",
+        min=1,
+        max=100_000,
+        help="Maximum rows sent in one BigQuery writer request.",
+    ),
     budget_name: str = typer.Option("dander-sbx-cap", "--budget-name", hidden=True),
     state_path: Path = typer.Option(Path(".dander/state.db"), hidden=True),  # noqa: B008
     build_models: bool = typer.Option(
@@ -762,6 +902,7 @@ def run(
             config.endpoints,
             sandbox=sandbox,
             guarded_free_tier=guarded_free_tier,
+            batch_rows=batch_rows,
         )
         return
     if not resolved_project:
@@ -814,9 +955,9 @@ def run(
     ingestion_runner = PipelineRunner(
         source=source_adapter,
         writer=(
-            BigQueryReplaceWriter(project=resolved_project)
+            BigQueryReplaceWriter(project=resolved_project, max_batch_rows=batch_rows)
             if sandbox
-            else BigQueryScd1Writer(project=resolved_project)
+            else BigQueryScd1Writer(project=resolved_project, max_batch_rows=batch_rows)
         ),
         watermarks=(
             SqliteWatermarkStore(state_path)
@@ -1360,6 +1501,7 @@ def _print_plan(
     *,
     sandbox: bool = False,
     guarded_free_tier: bool = False,
+    batch_rows: int = 10_000,
 ) -> None:
     """Render a credential-free execution plan."""
     table = Table(title=f"Dander dry run: {source}")
@@ -1376,6 +1518,7 @@ def _print_plan(
             mode = "SCD1"
         table.add_row(str(name), f"{project or '<unset>'}.{dataset}.{source}_{name}", mode)
     console.print(table)
+    console.print(f"Writer batch rows: {batch_rows}")
 
 
 if __name__ == "__main__":

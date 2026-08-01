@@ -25,6 +25,67 @@ variable "bigquery_location" {
   default     = "US"
 }
 
+variable "runtime_cpu" {
+  type        = number
+  description = "Cloud Run CPU count shared by every hosted pipeline."
+  default     = 1
+
+  validation {
+    condition     = contains([1, 2, 4, 6, 8], var.runtime_cpu)
+    error_message = "runtime_cpu must be one of 1, 2, 4, 6, or 8."
+  }
+}
+
+variable "runtime_memory" {
+  type        = string
+  description = "Cloud Run memory limit shared by every hosted pipeline."
+  default     = "512Mi"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*(Mi|Gi)$", var.runtime_memory))
+    error_message = "runtime_memory must be a positive Mi or Gi quantity."
+  }
+}
+
+variable "runtime_timeout_seconds" {
+  type        = number
+  description = "Per-task timeout in seconds shared by every hosted pipeline."
+  default     = 300
+
+  validation {
+    condition     = var.runtime_timeout_seconds >= 1 && var.runtime_timeout_seconds <= 86400 && floor(var.runtime_timeout_seconds) == var.runtime_timeout_seconds
+    error_message = "runtime_timeout_seconds must be an integer from 1 through 86400."
+  }
+}
+
+variable "runtime_max_retries" {
+  type        = number
+  description = "Task retries after the initial attempt for every hosted pipeline."
+  default     = 1
+
+  validation {
+    condition     = var.runtime_max_retries >= 0 && var.runtime_max_retries <= 10 && floor(var.runtime_max_retries) == var.runtime_max_retries
+    error_message = "runtime_max_retries must be an integer from 0 through 10."
+  }
+}
+
+variable "runtime_batch_rows" {
+  type        = number
+  description = "Maximum rows sent in one BigQuery writer request by hosted pipelines."
+  default     = 10000
+
+  validation {
+    condition     = var.runtime_batch_rows >= 1 && var.runtime_batch_rows <= 100000 && floor(var.runtime_batch_rows) == var.runtime_batch_rows
+    error_message = "runtime_batch_rows must be an integer from 1 through 100000."
+  }
+}
+
+variable "require_guarded_free_tier" {
+  type        = bool
+  description = "Require hosted pipelines to run Dander's guarded-free-tier preflight."
+  default     = true
+}
+
 variable "datasets" {
   type        = list(string)
   description = "BigQuery datasets created for the first runtime slice."

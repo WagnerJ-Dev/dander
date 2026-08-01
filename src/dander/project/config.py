@@ -16,6 +16,7 @@ _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _SECRET_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,254}$")
 _GCP_RESOURCE_ID = re.compile(r"^[a-z][a-z0-9-]*[a-z0-9]$")
 _SERVICE_ACCOUNT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+_RUNTIME_MEMORY = re.compile(r"^[1-9][0-9]*(?:Mi|Gi)$")
 
 
 class ProjectConfigError(ValueError):
@@ -88,13 +89,42 @@ class PipelineSpec(BaseModel):
         return values
 
 
+class PlatformRuntimeSpec(BaseModel):
+    """Shared Cloud Run and writer-request limits for every hosted pipeline."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cpu: int = 1
+    memory: str = Field(default="512Mi", pattern=_RUNTIME_MEMORY.pattern)
+    timeout_seconds: int = Field(default=300, ge=1, le=86_400)
+    max_retries: int = Field(default=1, ge=0, le=10)
+    batch_rows: int = Field(default=10_000, ge=1, le=100_000)
+
+    @field_validator("cpu")
+    @classmethod
+    def validate_cpu(cls, value: int) -> int:
+        if value not in {1, 2, 4, 6, 8}:
+            raise ValueError("cpu must be one of 1, 2, 4, 6, or 8")
+        return value
+
+
+class PlatformSafetySpec(BaseModel):
+    """Hosted execution safeguards that must agree with provisioned infrastructure."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    require_guarded_free_tier: bool = True
+
+
 class PlatformSpec(BaseModel):
-    """Cloud-neutral project defaults that affect every pipeline."""
+    """Repository-owned GCP defaults that affect every hosted pipeline."""
 
     model_config = ConfigDict(extra="forbid")
 
     region: str = Field(default="us-central1", min_length=1)
     bigquery_location: str = Field(default="US", min_length=1)
+    runtime: PlatformRuntimeSpec = Field(default_factory=PlatformRuntimeSpec)
+    safety: PlatformSafetySpec = Field(default_factory=PlatformSafetySpec)
 
 
 class DanderProject(BaseModel):

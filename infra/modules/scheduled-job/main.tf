@@ -187,13 +187,15 @@ resource "google_cloud_run_v2_job" "ingestion" {
 
     template {
       service_account = google_service_account.runtime[each.key].email
-      timeout         = "300s"
-      max_retries     = 1
+      timeout         = "${var.runtime_timeout_seconds}s"
+      max_retries     = var.runtime_max_retries
 
       containers {
         image = var.container_image
         args = concat(
-          ["run", each.key, "--config", "/app/dander.yaml", "--guarded-free-tier"],
+          ["run", each.key, "--config", "/app/dander.yaml"],
+          var.require_guarded_free_tier ? ["--guarded-free-tier"] : [],
+          ["--batch-rows", tostring(var.runtime_batch_rows)],
           each.value.build_models ? concat(
             ["--build-models", "--models-dir", "/app/models"],
             flatten([
@@ -206,8 +208,8 @@ resource "google_cloud_run_v2_job" "ingestion" {
 
         resources {
           limits = {
-            cpu    = "1"
-            memory = "512Mi"
+            cpu    = tostring(var.runtime_cpu)
+            memory = var.runtime_memory
           }
         }
 
