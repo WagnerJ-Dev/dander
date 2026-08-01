@@ -2,38 +2,38 @@
 
 ## Finished
 
-- Replaced the stale hosted runtime with the Linux/AMD64 image built from commit `554669d` and pinned Cloud Run to manifest digest `sha256:765b5a9b8fd5a2db7514238809a5565e4779e8a2e200b4c9d58c28c44abc2a69`.
-- Applied the reviewed Terraform plan as one in-place Cloud Run image update: 0 added, 1 changed, 0 destroyed.
-- Completed execution `dander-greenhouse-public-wngdn` successfully with ingestion, selected transform build/tests, and local catalog compilation.
-- Verified 25 raw rows, 25 staging rows, 25 distinct job ids, and zero null job ids or titles.
-- Left the daily scheduler enabled for 09:00 America/New_York with no IAM, dataset, billing, scheduler, or Terraform source changes.
+- Created the `Dander BigQuery Pipeline` private app in HubSpot sandbox portal `246915065` with only company read/write scopes.
+- Stored the access token as enabled Secret Manager version 3 in `hubspot-private-app-token`; invalid versions 1 and 2 are disabled, and only the Dander runtime service account has accessor permission.
+- Reconfigured the existing hosted job in place for `hubspot_test` plus `stg_hubspot__companies`, with the daily scheduler paused.
+- Passed the controlled initial/update/replay proof and removed both synthetic HubSpot companies afterward.
 
 ## Try It
 
-- Inspect the latest run with `gcloud run jobs executions describe dander-greenhouse-public-wngdn --region=us-central1`.
-- Query `raw.greenhouse_job_board_jobs` and `staging.stg_greenhouse__jobs` directly; `INFORMATION_SCHEMA` access is not required.
+- Inspect the sanitized proof at `evidence/hubspot-20260731/authenticated-ingestion.json` (local and intentionally ignored).
+- Run the job manually with `gcloud run jobs execute dander-greenhouse-public --project=dander-sbx-harrison-20260729 --region=us-central1 --wait`.
 
 ## Checks
 
-- Exact production command parsed successfully in the replacement container, and both selected model files were present.
-- Targeted CLI, bootstrap, and transform tests passed: 54 passed.
-- Manual Cloud Run execution succeeded in one task attempt with container exit code 0.
-- Direct BigQuery assertions passed: raw/staging counts matched at 25, ids were unique and non-null, and titles were non-null.
-- Final Terraform 1.15.8 plan returned exit code 0 with no changes.
+- Targeted CLI, bootstrap, ingestion, and security tests passed: 29 passed.
+- Three Cloud Run executions completed successfully; the proof recorded passed update, idempotency, and watermark assertions.
+- BigQuery contains 2 raw rows and 2 staging rows, with 2 unique company IDs and 1 observed update.
+- Both temporary HubSpot company IDs return 404 after cleanup.
+- Final Terraform plan returned exit code 0 with no changes; scheduler state is `PAUSED`.
 
 ## Decisions
 
-- Recovered through the existing Terraform-managed immutable-image path rather than introducing `gcloud` drift.
-- Kept Dataplex publication disabled and retained local ephemeral catalog output.
-- Kept the scheduler enabled because the manual end-to-end proof passed before its next invocation.
+- Used the existing private-app bearer-token connector path; HubSpot marks legacy private apps as limited and recommends Service Keys for future work.
+- Granted write scope only so controlled proof data could be created and removed.
+- Kept the scheduler paused after proof to prevent unattended sandbox writes.
 
 ## Remaining
 
-- Observe the next scheduled execution after 09:00 America/New_York; no recovery blocker remains.
-- Optional `INFORMATION_SCHEMA` metadata access remains unavailable, but direct table metadata and row queries work.
+- Decide whether HubSpot should receive its own renamed Cloud Run job instead of reusing `dander-greenhouse-public`.
+- Enable scheduling only after choosing the intended production HubSpot account and cadence.
+- Migrate from the legacy private app to HubSpot Service Keys when Dander supports that authentication flow.
 
 ## Review First
 
-- Cloud Run execution `dander-greenhouse-public-wngdn`
-- Terraform plan SHA-256 `66c08b2e3517fbd14b7239bac2455d6eaaf7db1f35a4dc1ba8be3dfe980c3f53`
-- `infra/sandbox.auto.tfvars` immutable runtime image reference
+- `connectors/hubspot_test.yaml`
+- `models/staging/stg_hubspot__companies.sql`
+- `scripts/live_proof/hubspot.py`
