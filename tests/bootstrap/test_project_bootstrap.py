@@ -49,8 +49,10 @@ def test_state_bucket_bootstrap_creates_only_the_hardened_backend(tmp_path: Path
     assert created
     create = next(command for command in runner.commands if "create" in command)
     assert "--uniform-bucket-level-access" in create
-    assert "--public-access-prevention=enforced" in create
-    assert any("--versioning" in command for command in runner.commands)
+    assert "--public-access-prevention" in create
+    update = next(command for command in runner.commands if "update" in command)
+    assert "--versioning" in update
+    assert "--update-labels=managed-by=dander,purpose=terraform-state" in update
 
 
 def test_runtime_image_publisher_returns_an_immutable_digest(tmp_path: Path) -> None:

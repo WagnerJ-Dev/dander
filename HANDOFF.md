@@ -2,39 +2,39 @@
 
 ## Finished
 
-- Added a typed `dander.yaml` control plane that keeps Greenhouse and HubSpot as independent hosted pipelines with separate jobs, schedules, identities, models, and secret scope.
-- Added one end-to-end executor for ingestion, transforms/tests, durable run history, and atomic metadata snapshots with governed metrics and CLI inspection.
-- Made `dander init --apply` own state-bucket bootstrap, administrative IAM, Artifact Registry image publication, datasets, Secret Manager, Cloud Run, Scheduler, and the simulation-first cost guard.
-- Reconciled the sandbox to immutable image `sha256:a4ec1a3e…62289`; both pipelines completed successfully and Terraform now reports no changes.
-- Repaired the approval-gated live-proof workflow for the additive CLI: both jobs deploy paused, evidence is preserved, and retained resources are always inventoried without deletion.
+- Completed the approved single-command clean-project bootstrap in `dander-proof-harrison-20260801` with immutable image `sha256:d81d865a…4c125`.
+- Deployed additive Greenhouse and HubSpot jobs with distinct identities, both schedulers paused, an empty HubSpot secret container, and a simulation-only USD 5 guard.
+- Ran Greenhouse three times: every run extracted/affected 21 rows, built one model, passed three tests, and published one metadata asset; replay counts and hashes matched.
+- Verified metadata list/metrics/lineage/runs, both deployment contracts, retained inventory, and a final `No changes` infrastructure plan.
+- Fixed clean-project issues in current `gcloud` bucket flags, required API ordering, billing budget identity/ID format, and explicit proof-helper project targeting.
 
 ## Try It
 
-- Run `uv run dander validate`, then inspect `uv run dander metadata list --project dander-sbx-harrison-20260729` and `uv run dander metadata runs --project dander-sbx-harrison-20260729`.
-- Recheck the existing environment with the explicit plan-only `dander init` command in `README.md`; it currently produces `No changes.`
+- Inspect `uv run dander metadata list --project dander-proof-harrison-20260801` and `uv run dander metadata runs --project dander-proof-harrison-20260801`.
+- Review ignored sanitized evidence in `evidence/clean-project-20260801`, especially `manifest.json`, both final verification summaries, and `teardown.json`.
 
 ## Checks
 
-- Current full gate passes: 492 tests, Ruff, formatting, strict mypy, and both Terraform roots.
-- Greenhouse execution `dander-greenhouse-public-nm8wg` succeeded: 21 extracted/affected rows, one model, three tests, and one metadata asset.
-- HubSpot execution `dander-hubspot-companies-l2g6c` succeeded: source access, one model, three tests, and one metadata asset; the earlier controlled three-run update/replay proof also passed and its synthetic companies were deleted.
-- BigQuery retains 25 Greenhouse and 4 HubSpot rows in both raw and staging; the durable ledger/catalog contain current snapshots for both pipelines.
-- Both read-only deployment verifiers and the retained-resource inventory pass; a fresh Terraform detailed-exitcode plan returned 0 with no drift.
+- Full gate passes: 497 tests, Ruff, formatting, production/changed-helper mypy, Terraform formatting, and validation of both roots.
+- Clean BigQuery has 21 raw/staging Greenhouse rows and three terminal `complete/succeeded` run records.
+- Both final deployment verifiers passed; every expected dataset, IAM edge, paused scheduler, secret scope, cost-guard component, and billing link is healthy.
+- Retained inventory passed: one state bucket, four datasets, two jobs, two schedules, seven service accounts, one secret container, and one repository.
+- Follow-up `dander init` returned `No changes`.
 
 ## Decisions
 
-- Keep Greenhouse enabled and HubSpot paused until the user chooses an unattended HubSpot cadence.
+- Retain the clean proof project exactly as inventoried; both schedules stay paused.
 - Treat `dander_meta` as the durable built-in catalog/semantic registry; Dataplex remains an optional projection.
-- Keep clean-project creation as a separately approved external proof because it creates billable GCP resources.
+- Require explicit `--project` on every proof helper invocation; local gcloud defaults are never authoritative.
 
 ## Remaining
 
-- Run the single-command bootstrap once in a newly approved billing-linked proof project and retain its resource inventory or teardown record.
-- Optionally publish and read back Dataplex aspects if that billable integration is required for the release claim.
+- Run a WIF workflow dispatch only if uploaded GitHub evidence is required; the interactive clean-project proof is complete.
+- Run authenticated HubSpot, Storage Write, or Dataplex proofs only with separate authorization and credentials.
 - Push this branch and open a PR only when the user authorizes publication.
 
 ## Review First
 
-- `src/dander/executor.py`
-- `src/dander/cli/main.py`
-- `.github/workflows/live-proof.yml`
+- `infra/modules/cost-guard/main.tf`
+- `src/dander/bootstrap/project.py`
+- `scripts/live_proof/transforms.py`

@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from scripts.live_proof.prepare_config import prepare_config
+from scripts.live_proof.transforms import _run_job
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def _project(root: Path) -> Path:
@@ -73,3 +79,32 @@ def test_live_proof_workflow_uses_current_additive_cli_and_safe_inventory() -> N
         0
     ]
     assert "--evidence-dir" not in final_verification
+
+
+def test_transform_proof_targets_the_requested_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(args: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    _run_job("dander-greenhouse-public", "us-central1", "proof-project")
+
+    assert commands == [
+        (
+            "gcloud",
+            "run",
+            "jobs",
+            "execute",
+            "dander-greenhouse-public",
+            "--project",
+            "proof-project",
+            "--region",
+            "us-central1",
+            "--wait",
+        )
+    ]

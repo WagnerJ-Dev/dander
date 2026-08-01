@@ -1,4 +1,4 @@
-# Session Resume — 2026-07-31
+# Session Resume — 2026-08-01
 
 Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and `docs/release-audit.md` before changing code or cloud resources.
 
@@ -6,10 +6,17 @@ Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and `docs/rele
 
 - Repository: `/Users/harrison/Documents/dander`.
 - Working branch: `codex/multi-pipeline-control-plane`; base `main`/`origin/main` is `15b7543`.
-- Implementation commits: `605318e` (project-defined hosted pipelines) and `7a1698c` (end-to-end execution/control plane).
+- Implementation history includes `605318e`, `7a1698c`, `a7da7df`, and `57f6a8a`; the clean-project compatibility fixes and proof record are the current branch tip.
 - The branch is local and unpublished. Do not push or open a PR without user authorization.
-- The branch also includes the final Terraform dataset-ordering fix, verifier guidance, and refreshed release evidence.
-- The approval-gated live-proof workflow now uses the additive manifest, forces both schedules paused, verifies both jobs, and always records inventory without deletion.
+- The branch includes the additive control plane, shared executor/metadata spine, clean-project bootstrap fixes, verifier guidance, and refreshed release evidence.
+
+## Clean-project proof
+
+- Approved project: `dander-proof-harrison-20260801`; region `us-central1`; remote state bucket `dander-proof-harrison-20260801-dander-state`.
+- `dander init --apply` completed with immutable image `sha256:d81d865a…4c125`, four datasets, two jobs, two `PAUSED` schedulers, an empty HubSpot secret container, and a USD 5 simulation-only cost guard.
+- Greenhouse executions `dander-greenhouse-public-8x9j9`, `-9ndj6`, and `-g77d2` all succeeded. Each extracted/affected 21 rows, built one model, passed three tests, and published one metadata asset; replay counts and hashes matched.
+- Metadata list/metrics/lineage/runs, both deployment verifiers, retained inventory, and the follow-up `No changes` plan passed. Sanitized evidence is ignored under `evidence/clean-project-20260801`.
+- The project is intentionally retained. Do not enable schedules, add the HubSpot token, publish Dataplex, delete resources, or make the cost guard live without new approval.
 
 ## Retained sandbox state
 
@@ -20,7 +27,7 @@ Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and `docs/rele
 - Only `dander-runtime-hubspot` can access `hubspot-private-app-token`.
 - `raw`, `staging`, `marts`, and `dander_meta` exist; a fresh Terraform plan reports no changes.
 
-## Latest proof
+## Retained sandbox proof
 
 - Greenhouse execution `dander-greenhouse-public-nm8wg` and Dander run `2441c4843aab418fb9d6e9523eb9b0c2` succeeded with 21 extracted/affected rows, one model, three tests, and one asset.
 - HubSpot execution `dander-hubspot-companies-l2g6c` and Dander run `6e3258bc0eab4a47ad1bfeae38704912` succeeded with one model, three tests, and one asset after controlled proof data had been removed.
@@ -33,4 +40,4 @@ Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and `docs/rele
 
 - Do not enable HubSpot scheduling, publish Dataplex aspects, create a new billable proof project, or change the cost guard without explicit user approval.
 - Secret values must remain in Secret Manager and out of Git, logs, plans, and chat.
-- A separate clean-project apply is the only core release proof still requiring external authorization; the existing-project `dander init` upgrade path already produces a no-change plan.
+- Clean-project proof authorization is consumed. Any later cloud mutation—including teardown—requires its own scope and approval.

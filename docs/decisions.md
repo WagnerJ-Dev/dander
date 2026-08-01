@@ -1,5 +1,16 @@
 # Engineering Decisions
 
+## 2026-08-01 — Clean-project bootstrap compatibility and retention
+
+- Current `gcloud storage` creates hardened buckets with boolean public-access prevention, then
+  applies versioning and labels through `buckets update`; the CLI contract is regression-tested.
+- Stage zero enables Cloud Resource Manager before the platform cost guard reads project metadata.
+  Budget Pub/Sub uses Google's singular `billing-budget-alert` publisher identity, and the
+  Terraform budget resource receives the bare billing-account ID expected by provider v6.50.
+- Proof helpers always pass their requested GCP project to `gcloud`. The approved proof project is
+  retained with both schedulers paused, an empty HubSpot secret container, and a simulation-only
+  cost guard; inventory is evidence, not deletion authorization.
+
 ## 2026-07-31 — Approval-gated clean-project proof
 
 - The manual proof derives an ephemeral manifest from `dander.yaml`, forces every schedule paused,

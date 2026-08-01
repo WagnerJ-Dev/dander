@@ -1,7 +1,7 @@
 ---
 id: DANDER-51
 title: Prove clean-project bootstrap
-status: pending
+status: completed
 component: operations
 epic: bootstrap
 created: 2026-07-30
@@ -9,20 +9,23 @@ created: 2026-07-30
 
 ## Acceptance criteria
 
-- [ ] Run `dander init plan` from a clean billing-linked proof project with an approved bootstrap
+- [x] Run `dander init plan` from a clean billing-linked proof project with an approved bootstrap
       identity.
-- [ ] Apply the reviewed plan with runtime and Scheduler paused.
-- [ ] Attach `evidence/bootstrap-summary.json` from `dander verify deployment` to the proof run.
-- [ ] Record teardown or an explicit retained-resource inventory before merge.
+- [x] Apply the reviewed plan with runtime and Scheduler paused.
+- [x] Attach `evidence/bootstrap-summary.json` from `dander verify deployment` to the proof run.
+- [x] Record teardown or an explicit retained-resource inventory before merge.
 
-This ticket remains pending until a separately approved GCP proof run is performed; local tests and
-Terraform validation do not claim that external resources were created.
+Completed interactively on 2026-08-01 in approved project
+`dander-proof-harrison-20260801`. `dander init --apply` created stage zero, published immutable
+image `sha256:d81d865a…4c125`, and deployed both additive jobs with both schedulers `PAUSED`, the
+HubSpot secret container empty, and the USD 5 cost guard in simulation mode.
 
-The single-command implementation is complete: orchestration tests cover backend creation/adoption,
-administrative bootstrap, image publication, and platform apply. On 2026-07-31 the same `dander
-init` entrypoint produced a no-change plan against the retained sandbox. A separately approved
-billing-linked project is still required to check the four acceptance boxes above.
+Greenhouse execution `dander-greenhouse-public-8x9j9` succeeded with 21 extracted/affected rows,
+one model, three tests, and one catalog asset. Two subsequent replay executions retained 21 rows
+and identical stable hashes. Metadata list/metrics/lineage/runs queries succeeded, both final
+deployment verifiers passed, and a fresh `dander init` plan reported `No changes`.
 
-The approval-gated workflow is now ready for that run: it generates an all-paused additive manifest,
-uses the current `dander init` contract, verifies both hosted jobs, and always writes a sanitized
-retained-resource inventory. It does not create a project, link billing, or delete resources.
+Sanitized evidence is retained locally under ignored `evidence/clean-project-20260801`; inventory
+records one state bucket, four datasets, two jobs, two schedulers, seven service accounts, one
+secret container, and one repository. The project and resources were retained; nothing was
+deleted, no schedule was enabled, and Dataplex was not published.

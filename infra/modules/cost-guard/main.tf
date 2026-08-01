@@ -17,6 +17,8 @@ locals {
 
 data "google_project" "current" {
   project_id = var.project_id
+
+  depends_on = [google_project_service.required]
 }
 
 resource "google_project_service" "required" {
@@ -38,7 +40,7 @@ resource "google_pubsub_topic_iam_member" "billing_publisher" {
   project = var.project_id
   topic   = google_pubsub_topic.budget.name
   role    = "roles/pubsub.publisher"
-  member  = "serviceAccount:billing-budget-alerts@system.gserviceaccount.com"
+  member  = "serviceAccount:billing-budget-alert@system.gserviceaccount.com"
 }
 
 resource "google_service_account" "function" {
@@ -153,7 +155,7 @@ resource "google_cloudfunctions2_function" "stop_billing" {
 resource "google_billing_budget" "project" {
   provider = google.billing
 
-  billing_account = "billingAccounts/${var.billing_account_id}"
+  billing_account = var.billing_account_id
   display_name    = var.budget_name
 
   budget_filter {
