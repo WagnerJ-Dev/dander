@@ -2,37 +2,38 @@
 
 ## Finished
 
-- Prepared one `removed` block for the stale platform Artifact Registry binding with `destroy = false`.
-- Documented the corrected discovery: the platform state has no bucket binding; stage-zero exclusively manages the bucket.
-- Added focused static tests proving the exact address, stage-zero identity match, preservation, and exclusion of bucket, broad-module, unrelated, and cost-guard resources.
-- Used Terraform's valid counted-module `removed.from` form without `[0]`; the sole scheduled-job instance and exact live state address are documented and tested.
+- Created the bootstrap identity and approved IAM boundary with Terraform 1.15.8.
+- Reconciled the Cloud Run argument array through the approved targeted saved plan.
+- Applied the approved Phase 3B plan; the platform forgot the repository binding without destroying the repository.
+- Proved stage zero retains repository ownership and both Terraform roots converge with detailed exit code 0.
+- Preserved four approved state backups and the private evidence bundle outside the repository.
 
 ## Try It
 
-- Review `infra/ownership-cutover.tf` and `docs/phase3b-ownership.md`.
-- Run the focused test with `uv run pytest tests/infra/test_phase3b_ownership.py`.
-- Do not run a platform plan, apply, or ownership cutover.
+- Review the retained private operator evidence outside the repository.
+- Run full plans only with Terraform 1.15.8 and the recorded external variables and `TF_DATA_DIR` values.
 
 ## Checks
 
-- Pre-edit safety checks passed: approved `main` commit, clean worktree, no Terraform operation, and unchanged platform/stage-zero generations.
-- Focused proof: 4 passed; full pytest: 471 passed; Ruff, formatting, mypy, dependency audit, Terraform format, and backend-disabled validation for both roots passed.
-- Docker build/run was attempted but the local Docker daemon was unavailable; GitHub CI remains authoritative for the container check.
-- GitHub CI run `30666687920` passed all four required jobs for final head `6bb45f49ef731527922910b42760c16d54d884d4`, including Container build and scan.
+- Phase 3B apply: 0 added, 0 changed, 0 destroyed.
+- Full platform plan at `01bbb720682ca2bbd35ca4e3cc2a51e17404ec08`: detailed exit code 0.
+- Full stage-zero plan at `728272b53c680a6547862797688a10318d1d6536`: detailed exit code 0.
+- Repository identity, Docker format, cleanup policies, image digest, ordered Cloud Run arguments, and scheduler configuration remained unchanged.
+- No Cloud Run execution began during the recorded maintenance window.
 
 ## Decisions
 
-- Select only `module.scheduled_job[0].google_artifact_registry_repository.images`.
-- Do not add a bucket `removed` block because no platform-state bucket binding exists.
-- Keep the Terraform-valid configuration form `module.scheduled_job.google_artifact_registry_repository.images` while the module has exactly one instance.
+- Terraform 1.15.8 is the sole operational version for this cutover.
+- Accepted only the two Gate 2 BigQuery dataset drift records adding the authorized runtime `WRITER` membership.
+- Stage zero is now the sole managed-state owner of the Artifact Registry repository.
 
 ## Remaining
 
-- Draft PR #4 is at the Phase 3B evidence gate.
-- Do not merge the PR or use it for a live ownership cutover without Harrison's explicit approval.
+- Manage `cloudresourcemanager.googleapis.com` in the appropriate Terraform-owned service set; any live apply remains separately reviewed.
+- Complete Phase 3B retirement and cleanup: define when to remove the `removed` block, apply evidence and backup retention policy, then delete temporary cutover directories after retention expires.
 
 ## Review First
 
-- `infra/ownership-cutover.tf`: exact preserved binding.
-- `tests/infra/test_phase3b_ownership.py`: scope and identity assertions.
-- `docs/phase3b-ownership.md`: sanitized live-state discrepancy evidence.
+- `infra/ownership-cutover.tf`
+- The private semantic manifest retained with the operator evidence
+- Current platform and stage-zero backend state generations
