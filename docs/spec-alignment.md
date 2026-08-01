@@ -11,6 +11,6 @@ This ledger maps `steering/00-project-overview.md` to current code and observed 
 | Metadata spine | Live-proven | Atomic per-pipeline BigQuery snapshots contain sources, models, columns, upstreams, tests, and metrics; CLI list/show/lineage/metrics/runs work live | Dataplex is an optional projection and was not mutated |
 | Bootstrap CLI | Live-proven for reconciliation | `dander init` owns state bootstrap, administrative IAM, image publication, Terraform plan/apply, and safe defaults; real upgrade plan is idempotent | Fresh billable-project creation/apply awaits explicit approval |
 | Orchestration/state | Live-proven | Independent jobs/schedules, a shared end-to-end executor, cursor state, durable stage checkpoints, and terminal truth for both pipelines | HubSpot remains intentionally paused |
-| Release evidence | Live-proven | Two passing deployment summaries, two successful executor runs, metadata/run queries, secret-scope inspection, row counts, and a zero-drift plan | Ignored evidence must be attached explicitly if a PR/release process requires it |
+| Release evidence | Live-proven in retained sandbox | Two passing deployment summaries, two successful executor runs, metadata/run queries, secret-scope inspection, row counts, zero drift, and a passing retained-resource inventory | The repaired all-paused WIF workflow still needs one approved clean-project dispatch |
 
 Detailed execution identifiers and release boundaries are in [`release-audit.md`](release-audit.md).

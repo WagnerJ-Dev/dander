@@ -1,32 +1,32 @@
 # Manual live proof
 
-The live-proof workflow is intentionally manual and approval-gated. It is the only path that may
-use a HubSpot token or mutate a billing-linked proof project.
+The `Live proof` workflow is manual, protected by the `live-proof` GitHub environment, and the only automated path authorized to mutate a billing-linked proof project. It never creates a GCP project or links billing.
 
-## GitHub environment
+## Stage-zero prerequisite
 
-Create a protected environment named `live-proof` and require at least one reviewer. Add these
-environment variables from the outputs of `infra/bootstrap-admin`:
+Use a disposable, billing-linked project. Before the first workflow run, an approved administrator must create only the state bucket, bootstrap identity, Artifact Registry repository, and repository/ref-scoped Workload Identity Federation resources with `dander init-admin-plan` and `dander init-admin-apply`. Store these non-secret environment variables:
 
-- `DANDER_WIF_PROVIDER` — the full Workload Identity Federation provider resource name.
-- `DANDER_WIF_SERVICE_ACCOUNT` — the stage-zero GitHub service-account email.
+- `DANDER_WIF_PROVIDER` — full Workload Identity Federation provider resource name.
+- `DANDER_WIF_SERVICE_ACCOUNT` — stage-zero GitHub service-account email.
 
-Add the private-app token only as the environment secret `HUBSPOT_PRIVATE_APP_TOKEN`. The token is
-used to create, update, and remove invented companies in the owned HubSpot developer test account;
-it must never be put in a repository variable, Terraform variable, log, or evidence artifact.
+The workflow inputs identify that same project, state bucket, bootstrap service account, and billing account. No service-account key file is allowed.
 
-## Proof project
+For an interactive clean-project proof instead, an approved `gcloud` administrator can run the single `dander init --project ... --billing-account ... --apply` command documented in the README; that path owns stage zero, image publication, and platform apply itself.
 
-Use a disposable billing-linked project with the simulation-first cost guard. The stage-zero
-bootstrap must be configured for the exact repository and the ref from which the manual workflow
-will be dispatched. Run the main platform plan and apply through `dander-bootstrap`; do not use a
-service-account key file.
+## Safety and proof behavior
 
-Dispatch `.github/workflows/live-proof.yml` with the project id, state bucket, bootstrap service
-account, billing account, and only the proof switches you have approved. Keep `teardown_after`
-false unless the retained-resource inventory is specifically desired. The workflow always uploads
-sanitized evidence, including skipped or failed proof files.
+The workflow derives `dander.live-proof.yaml` from the tracked manifest and forces every pipeline schedule to `paused: true`. It then builds one immutable image, plans and applies both Greenhouse and HubSpot as additive jobs, verifies both deployments, executes Greenhouse manually, and optionally runs the controlled HubSpot, Storage Write, or Dataplex proofs.
 
-Review `manifest.json` before changing the pull request out of draft. It must identify the commit,
-workflow run, Terraform plan hash, immutable image digest, and successful proof statuses. Never
-attach raw logs, Terraform state, source rows, billing responses, or credentials to the PR.
+Add `HUBSPOT_PRIVATE_APP_TOKEN` only as a protected environment secret. When the authenticated proof is selected, the workflow adds a secret version only after Terraform has created its container, then creates, updates, validates, and removes invented companies. The token, payloads, Terraform state, and raw provider responses are never retained.
+
+Dataplex publication is disabled by default and scoped to the selected proof pipeline when explicitly enabled. The cost guard remains simulation-first. All schedules remain paused after the workflow.
+
+## Evidence and retention
+
+Every run uploads a sanitized evidence bundle even after failure. It includes:
+
+- the commit, workflow run, Terraform plan hash, and immutable image digest;
+- deployment summaries for both pipelines and the canonical proof results;
+- an always-run retained-resource inventory covering state, datasets, jobs, schedules, service accounts, secrets, and Artifact Registry.
+
+The inventory records state only; it never deletes resources. Review `manifest.json`, both deployment summaries, and `teardown.json` before completing the proof ticket. Never attach raw logs, Terraform state, source rows, billing responses, or credentials to a pull request.

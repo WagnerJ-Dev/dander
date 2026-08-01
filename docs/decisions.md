@@ -1,5 +1,17 @@
 # Engineering Decisions
 
+## 2026-07-31 — Approval-gated clean-project proof
+
+- The manual proof derives an ephemeral manifest from `dander.yaml`, forces every schedule paused,
+  and keeps both additive pipelines present. Optional Dataplex IAM is scoped only to the selected
+  proof pipeline; no proof flag may silently replace another pipeline.
+- Secret containers and IAM are applied before an optional HubSpot value is added. The value flows
+  from a protected environment secret directly to Secret Manager and never enters Terraform,
+  generated configuration, evidence, or logs.
+- Every proof records a sanitized retained-resource inventory even after failure. “Teardown”
+  evidence is inventory-only; deletion is a separate explicit operation and is never automated by
+  the proof workflow.
+
 ## 2026-07-31 — End-to-end executor and durable metadata spine
 
 - `PipelineExecutor` owns the full named-pipeline lifecycle: ingestion, selected model builds,

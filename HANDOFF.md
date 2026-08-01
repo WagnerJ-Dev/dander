@@ -6,7 +6,7 @@
 - Added one end-to-end executor for ingestion, transforms/tests, durable run history, and atomic metadata snapshots with governed metrics and CLI inspection.
 - Made `dander init --apply` own state-bucket bootstrap, administrative IAM, Artifact Registry image publication, datasets, Secret Manager, Cloud Run, Scheduler, and the simulation-first cost guard.
 - Reconciled the sandbox to immutable image `sha256:a4ec1a3e…62289`; both pipelines completed successfully and Terraform now reports no changes.
-- Captured sanitized, ignored deployment evidence for both jobs under `evidence/platform-greenhouse` and `evidence/platform-hubspot`.
+- Repaired the approval-gated live-proof workflow for the additive CLI: both jobs deploy paused, evidence is preserved, and retained resources are always inventoried without deletion.
 
 ## Try It
 
@@ -15,11 +15,11 @@
 
 ## Checks
 
-- Current full gate passes: 489 tests, Ruff, formatting, strict mypy, and both Terraform roots.
+- Current full gate passes: 492 tests, Ruff, formatting, strict mypy, and both Terraform roots.
 - Greenhouse execution `dander-greenhouse-public-nm8wg` succeeded: 21 extracted/affected rows, one model, three tests, and one metadata asset.
 - HubSpot execution `dander-hubspot-companies-l2g6c` succeeded: source access, one model, three tests, and one metadata asset; the earlier controlled three-run update/replay proof also passed and its synthetic companies were deleted.
 - BigQuery retains 25 Greenhouse and 4 HubSpot rows in both raw and staging; the durable ledger/catalog contain current snapshots for both pipelines.
-- Both read-only deployment verifiers pass and a fresh Terraform detailed-exitcode plan returned 0 with no drift.
+- Both read-only deployment verifiers and the retained-resource inventory pass; a fresh Terraform detailed-exitcode plan returned 0 with no drift.
 
 ## Decisions
 
@@ -37,4 +37,4 @@
 
 - `src/dander/executor.py`
 - `src/dander/cli/main.py`
-- `src/dander/catalog/store.py`
+- `.github/workflows/live-proof.yml`

@@ -9,6 +9,7 @@ Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and `docs/rele
 - Implementation commits: `605318e` (project-defined hosted pipelines) and `7a1698c` (end-to-end execution/control plane).
 - The branch is local and unpublished. Do not push or open a PR without user authorization.
 - The branch also includes the final Terraform dataset-ordering fix, verifier guidance, and refreshed release evidence.
+- The approval-gated live-proof workflow now uses the additive manifest, forces both schedules paused, verifies both jobs, and always records inventory without deletion.
 
 ## Retained sandbox state
 
@@ -26,6 +27,7 @@ Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and `docs/rele
 - BigQuery retains 25 Greenhouse and 4 HubSpot rows in both raw and staging.
 - `dander_meta._dander_catalog` has schema-v2 snapshots for both pipelines and `dander_meta._dander_runs` has their terminal outcomes.
 - Read-only deployment verification passes for both pipelines; sanitized output is ignored under `evidence/platform-*`.
+- The inventory collector passes read-only against the sandbox: one state bucket, four datasets, two jobs, two schedules, six Dander service accounts, one secret, and one image repository.
 
 ## Safety boundaries
 

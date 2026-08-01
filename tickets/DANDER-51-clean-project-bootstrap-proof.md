@@ -22,3 +22,7 @@ The single-command implementation is complete: orchestration tests cover backend
 administrative bootstrap, image publication, and platform apply. On 2026-07-31 the same `dander
 init` entrypoint produced a no-change plan against the retained sandbox. A separately approved
 billing-linked project is still required to check the four acceptance boxes above.
+
+The approval-gated workflow is now ready for that run: it generates an all-paused additive manifest,
+uses the current `dander init` contract, verifies both hosted jobs, and always writes a sanitized
+retained-resource inventory. It does not create a project, link billing, or delete resources.
