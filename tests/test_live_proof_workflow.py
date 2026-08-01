@@ -18,7 +18,20 @@ def _project(root: Path) -> Path:
     (root / "connectors").mkdir()
     (root / "models").mkdir()
     for source in ("greenhouse", "hubspot"):
-        (root / "connectors" / f"{source}.yaml").write_text("name: example\n", encoding="utf-8")
+        (root / "connectors" / f"{source}.yaml").write_text(
+            f"""
+name: {source}
+base_url: https://example.test
+auth_strategy: none
+endpoints:
+  - name: records
+    path: /records
+    raw_schema:
+      - name: id
+        type: STRING
+""".strip(),
+            encoding="utf-8",
+        )
     for model in ("stg_greenhouse", "stg_hubspot"):
         (root / "models" / f"{model}.sql").write_text("SELECT 1\n", encoding="utf-8")
     path = root / "dander.yaml"

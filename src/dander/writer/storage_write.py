@@ -15,6 +15,7 @@ from dander.writer.bigquery import (
     _apply_schema_evolution,
     _create_target_sql,
     _deduplicate_keyed,
+    _field_type_sql,
     _merge_sql,
     _target_id,
     _validate_declared_schema,
@@ -147,7 +148,7 @@ class BigQueryStorageScd1Writer(WritePattern):
             return 0
         staged_rows = _deduplicate_keyed(rows, columns, target.business_key)
         declared = _validate_declared_schema(target, SchemaEvolution.ADDITIVE)
-        declared_names = tuple(name for name, _ in declared)
+        declared_names = tuple(field.name for field in declared)
         if set(declared_names) != set(columns):
             raise BigQueryWriteError(
                 "Storage Write API schema must exactly match the incoming columns"
@@ -162,7 +163,7 @@ class BigQueryStorageScd1Writer(WritePattern):
             schema=target.schema,
         )
         staging_id = _target_id(staging_target)
-        schema_sql = ", ".join(f"`{name}` {data_type}" for name, data_type in declared)
+        schema_sql = ", ".join(f"`{field.name}` {_field_type_sql(field)}" for field in declared)
         try:
             self._client.query(f"CREATE TABLE `{staging_id}` ({schema_sql})").result()
             self._backend.append(

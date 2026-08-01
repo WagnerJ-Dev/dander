@@ -157,7 +157,9 @@ class DanderProject(BaseModel):
         connectors_dir: Path = Path("connectors"),
         models_dir: Path = Path("models"),
     ) -> None:
-        """Require every configured connector and selected SQL/YAML model to exist."""
+        """Require every hosted connector, raw schema, and selected model to exist."""
+        from dander.ingestion import ConnectorConfigError, load_source_config
+
         connectors = (root / connectors_dir).resolve()
         models = (root / models_dir).resolve()
         available_models = {path.stem for path in models.rglob("*.sql")}
@@ -167,6 +169,18 @@ class DanderProject(BaseModel):
                 raise ProjectConfigError(
                     f"Pipeline {pipeline_id!r} references missing connector {pipeline.source!r}"
                 )
+            try:
+                source = load_source_config(connector)
+            except ConnectorConfigError as error:
+                raise ProjectConfigError(
+                    f"Pipeline {pipeline_id!r} references invalid connector {pipeline.source!r}"
+                ) from error
+            for endpoint in source.endpoints:
+                if not endpoint.raw_schema:
+                    raise ProjectConfigError(
+                        f"Pipeline {pipeline_id!r} endpoint {endpoint.name!r} "
+                        "must declare raw_schema"
+                    )
             if missing := sorted(set(pipeline.models) - available_models):
                 raise ProjectConfigError(
                     f"Pipeline {pipeline_id!r} references missing model {missing[0]!r}"

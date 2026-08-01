@@ -82,7 +82,7 @@ from dander.transform import (
     TransformProjectError,
     TransformRunError,
 )
-from dander.writer import BigQueryReplaceWriter, BigQueryScd1Writer
+from dander.writer import BigQueryReplaceWriter, BigQueryScd1Writer, SchemaEvolution
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -957,7 +957,13 @@ def run(
         writer=(
             BigQueryReplaceWriter(project=resolved_project, max_batch_rows=batch_rows)
             if sandbox
-            else BigQueryScd1Writer(project=resolved_project, max_batch_rows=batch_rows)
+            else BigQueryScd1Writer(
+                project=resolved_project,
+                max_batch_rows=batch_rows,
+                schema_evolution=(
+                    SchemaEvolution.ADDITIVE if project_pipeline else SchemaEvolution.STRICT
+                ),
+            )
         ),
         watermarks=(
             SqliteWatermarkStore(state_path)

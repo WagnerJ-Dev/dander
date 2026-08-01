@@ -17,10 +17,11 @@ SCD2 reserves `valid_from`, `valid_to`, and `is_current`. Snapshot input must co
 configured non-null timestamp/date partition field. Hosted SCD1 receives bounded endpoint batches;
 sandbox replace loads bounded batches into expiring staging and publishes only after extraction
 completes. Other writers validate their logical batch once, then bound individual BigQuery load
-requests with `max_batch_rows`. Strict schema behavior is the default. An opt-in additive mode issues only
-`ADD COLUMN IF NOT EXISTS` for the target's declared scalar fields; it never changes types, modes,
-or existing columns and rejects nested/unknown declarations before loading. Storage Write API
-selection is explicit through target `transport`: load jobs remain the low-latency-insensitive
-batch default, while `storage_write` uses offset-checked protobuf appends to a pending stream,
-finalizes it, commits atomically, and then merges from staging. The Python path currently accepts
-BOOL, BYTES, FLOAT64, INT64, and STRING schemas; other types fail before creating staging.
+requests with `max_batch_rows`. Strict schema behavior is the default. Hosted SCD1 validates the
+complete declared schema against BigQuery and may add only missing top-level nullable fields; it
+never changes types, modes, nested fields, or deployed-only columns. Empty SCD1 and replace writes
+can bootstrap a target directly from the declaration. Storage Write API selection is explicit
+through target `transport`: load jobs remain the low-latency-insensitive batch default, while
+`storage_write` uses offset-checked protobuf appends to a pending stream, finalizes it, commits
+atomically, and then merges from staging. The Python path currently accepts BOOL, BYTES, FLOAT64,
+INT64, and STRING schemas; other types fail before creating staging.

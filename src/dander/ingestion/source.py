@@ -16,11 +16,57 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from dander.ingestion.pagination import NoPagination, PaginationStrategy
+from dander.schema import BIGQUERY_FIELD_MODES, BIGQUERY_FIELD_TYPES, normalize_bigquery_type
 
 _FIELD_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
+
+
+class RawField(BaseModel):
+    """One complete field declaration for a raw BigQuery relation."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    name: str
+    data_type: str = Field(alias="type")
+    mode: str = "NULLABLE"
+    fields: list[RawField] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        if not _FIELD_NAME.fullmatch(value):
+            raise ValueError("raw schema field names must be BigQuery identifiers")
+        return value
+
+    @field_validator("data_type")
+    @classmethod
+    def _validate_data_type(cls, value: str) -> str:
+        normalized = normalize_bigquery_type(value)
+        if normalized not in BIGQUERY_FIELD_TYPES:
+            raise ValueError(f"unsupported raw schema type: {value}")
+        return normalized
+
+    @field_validator("mode")
+    @classmethod
+    def _validate_mode(cls, value: str) -> str:
+        normalized = value.upper()
+        if normalized not in BIGQUERY_FIELD_MODES:
+            raise ValueError(f"unsupported raw schema mode: {value}")
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_nested_contract(self) -> RawField:
+        if self.data_type == "RECORD" and not self.fields:
+            raise ValueError("RECORD raw schema fields must declare nested fields")
+        if self.data_type != "RECORD" and self.fields:
+            raise ValueError("only RECORD raw schema fields can declare nested fields")
+        names = [field.name for field in self.fields]
+        if len(names) != len(set(names)):
+            raise ValueError("nested raw schema field names must be unique")
+        return self
 
 
 class Endpoint(BaseModel):
@@ -54,6 +100,8 @@ class Endpoint(BaseModel):
         data_selector: Optional JSONPath selecting records from an enveloped response.
         query_params: Non-secret scalar query parameters applied to every request. Authentication
             material must use the source's auth strategy instead.
+        raw_schema: Complete raw relation schema for hosted project execution. Direct-source
+            callers may omit it temporarily through the deprecated inference path.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -69,6 +117,10 @@ class Endpoint(BaseModel):
     field_types: dict[str, str] = Field(
         default_factory=dict,
         description="Explicit BigQuery type overrides applied by hand-rolled enterprise sources.",
+    )
+    raw_schema: list[RawField] = Field(
+        default_factory=list,
+        description="Complete raw BigQuery schema for empty and sparse endpoint results.",
     )
 
     @field_validator("field_types")
@@ -110,6 +162,22 @@ class Endpoint(BaseModel):
                     "use auth_strategy"
                 )
         return value
+
+    @model_validator(mode="after")
+    def _validate_raw_schema(self) -> Endpoint:
+        if not self.raw_schema:
+            return self
+        names = [field.name for field in self.raw_schema]
+        if len(names) != len(set(names)):
+            raise ValueError("raw schema field names must be unique")
+        declared = set(names)
+        if missing_keys := sorted(set(self.primary_key) - declared):
+            raise ValueError(f"raw schema is missing primary-key field {missing_keys[0]!r}")
+        if self.incremental_cursor is not None and self.incremental_cursor not in declared:
+            raise ValueError(
+                f"raw schema is missing incremental cursor {self.incremental_cursor!r}"
+            )
+        return self
 
     @field_validator("pagination", mode="before")
     @classmethod

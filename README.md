@@ -366,6 +366,39 @@ small number of Scheduler jobs and Cloud Run executions may fit current free all
 allowances are not a hard spending cap. The guarded CLI preflight and budget kill switch remain
 required.
 
+### Declared raw schemas
+
+Every endpoint used by a pipeline in `dander.yaml` declares its complete raw BigQuery schema in
+the connector. The declaration is recursive and supports `NULLABLE`, `REQUIRED`, and `REPEATED`
+fields, including nested `RECORD` fields:
+
+```yaml
+endpoints:
+  - name: companies
+    path: /crm/v3/objects/companies
+    primary_key: [id]
+    raw_schema:
+      - name: id
+        type: INT64
+      - name: properties
+        type: RECORD
+        fields:
+          - name: name
+            type: STRING
+```
+
+Before loading, Dander recursively rejects undeclared fields and invalid structural or scalar
+types, fills missing nullable fields with `null`, and fills missing repeated fields with `[]`.
+An empty first extraction creates the raw table directly from the declaration, so hosted sources
+do not need synthetic seed rows.
+
+Hosted SCD1 execution compares the declaration with the deployed table before loading. It may add
+only missing, explicitly declared top-level `NULLABLE` fields. New nested fields, deployed-only
+fields, type changes, mode changes, and removals fail before a load begins. Tables created by an
+older inference-based release may therefore need an operator-reviewed migration or rebootstrap;
+Dander will not guess a destructive conversion. Running a connector directly without
+`dander.yaml` may still omit `raw_schema` for compatibility, but that inference path is deprecated.
+
 ### Build and test SQL models
 
 Every SQL model has a YAML sidecar that defines its materialization, catalog metadata, columns, and

@@ -68,6 +68,28 @@ def test_hubspot_connector_maps_bearer_auth_and_cursor_pagination() -> None:
     }
     assert endpoint["data_selector"] == "results"
     assert isinstance(endpoint["paginator"], JSONResponseCursorPaginator)
+    declaration = config.endpoints[0]
+    assert [field.name for field in declaration.raw_schema] == [
+        "id",
+        "properties",
+        "createdAt",
+        "updatedAt",
+        "archived",
+        "url",
+    ]
+    assert declaration.raw_schema[1].data_type == "RECORD"
+
+
+def test_greenhouse_connector_declares_nested_raw_schema() -> None:
+    config = load_source_config(_CONNECTORS / "greenhouse_job_board.yaml")
+
+    declaration = config.endpoints[0]
+    fields = {field.name: field for field in declaration.raw_schema}
+    assert fields["id"].data_type == "INT64"
+    assert fields["data_compliance"].mode == "REPEATED"
+    assert fields["data_compliance"].data_type == "RECORD"
+    assert fields["location"].fields[0].name == "name"
+    assert fields["metadata"].data_type == "JSON"
 
 
 class SecretStore:

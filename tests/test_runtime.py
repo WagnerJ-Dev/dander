@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from dander.ingestion.source import Endpoint, Source, SourceConfig
-from dander.runtime import PipelineRunner
+from dander.ingestion.source import Endpoint, RawField, Source, SourceConfig
+from dander.runtime import PipelineRunner, RawSchemaError
 from dander.state import RunHistoryStore, RunStage, RunStatus, WatermarkStore
 from dander.writer import WriteMode, WritePattern, WriteTarget
 
@@ -88,6 +88,69 @@ class _BatchedWriter(WritePattern):
         return len(batch)
 
 
+class _DeclaredSource(Source):
+    def __init__(self, records: list[Mapping[str, Any]]) -> None:
+        super().__init__(
+            SourceConfig(
+                name="declared",
+                base_url="https://example.test",
+                auth_strategy="none",
+                endpoints=[
+                    Endpoint(
+                        name="companies",
+                        path="/companies",
+                        primary_key=["id"],
+                        raw_schema=[
+                            RawField(name="id", data_type="INT64", mode="REQUIRED"),
+                            RawField(
+                                name="properties",
+                                data_type="RECORD",
+                                fields=[
+                                    RawField(name="name", data_type="STRING"),
+                                    RawField(name="active", data_type="BOOL"),
+                                ],
+                            ),
+                            RawField(name="tags", data_type="STRING", mode="REPEATED"),
+                            RawField(
+                                name="contacts",
+                                data_type="RECORD",
+                                mode="REPEATED",
+                                fields=[
+                                    RawField(name="email", data_type="STRING"),
+                                    RawField(name="primary", data_type="BOOL"),
+                                ],
+                            ),
+                            RawField(name="metadata", data_type="JSON"),
+                        ],
+                    )
+                ],
+            )
+        )
+        self._records = records
+
+    def discover(self) -> Mapping[str, Any]:
+        return {}
+
+    def extract(self, endpoint: str, *, since: str | None = None) -> Iterator[Mapping[str, Any]]:
+        assert endpoint == "companies"
+        assert since is None
+        yield from self._records
+
+
+class _CapturingWriter(WritePattern):
+    mode = WriteMode.SCD1
+    supports_batched_writes = True
+
+    def __init__(self) -> None:
+        self.rows: list[dict[str, Any]] = []
+        self.target: WriteTarget | None = None
+
+    def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
+        self.rows.extend(dict(record) for record in records)
+        self.target = target
+        return len(self.rows)
+
+
 class _Watermarks(WatermarkStore):
     def __init__(self, events: list[str]) -> None:
         self._events = events
@@ -153,6 +216,128 @@ def test_runner_commits_maximum_cursor_after_write() -> None:
     assert events == ["get", "extract", "write", "set"]
     assert watermarks.committed == "2026-01-03T00:00:00Z"
     assert result.endpoints[0].affected == 2
+
+
+def test_runner_normalizes_sparse_nested_records_from_declared_schema() -> None:
+    writer = _CapturingWriter()
+    runner = PipelineRunner(
+        source=_DeclaredSource(
+            [
+                {
+                    "id": "42",
+                    "properties": {"name": "Dander"},
+                    "tags": None,
+                    "contacts": [{"email": "proof@example.test"}],
+                    "metadata": {"source": ["proof", 1]},
+                }
+            ]
+        ),
+        writer=writer,
+        watermarks=_Watermarks([]),
+        project="unit-project",
+        dataset="raw",
+    )
+
+    result = runner.run()
+
+    assert writer.rows == [
+        {
+            "id": 42,
+            "properties": {"name": "Dander", "active": None},
+            "tags": [],
+            "contacts": [{"email": "proof@example.test", "primary": None}],
+            "metadata": {"source": ["proof", 1]},
+        }
+    ]
+    assert result.endpoints[0].extracted == 1
+    assert writer.target is not None
+    assert writer.target.schema[0].mode == "REQUIRED"
+    assert writer.target.schema[1].fields[1].name == "active"
+
+
+def test_runner_propagates_declared_schema_for_empty_endpoint() -> None:
+    writer = _CapturingWriter()
+    runner = PipelineRunner(
+        source=_DeclaredSource([]),
+        writer=writer,
+        watermarks=_Watermarks([]),
+        project="unit-project",
+        dataset="raw",
+    )
+
+    result = runner.run()
+
+    assert result.endpoints[0].extracted == 0
+    assert writer.rows == []
+    assert writer.target is not None
+    assert [field.name for field in writer.target.schema] == [
+        "id",
+        "properties",
+        "tags",
+        "contacts",
+        "metadata",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("record", "match"),
+    [
+        ({"id": 1, "unexpected": "x"}, r"record\[0\]\.unexpected"),
+        (
+            {"id": 1, "properties": {"unexpected": "x"}},
+            r"record\[0\]\.properties\.unexpected",
+        ),
+        ({"properties": {}}, r"record\[0\]\.id"),
+        ({"id": "not-an-integer"}, r"Invalid INT64 field at record\[0\]\.id"),
+        ({"id": 1, "properties": "not-an-object"}, r"record\[0\]\.properties"),
+        ({"id": 1, "tags": "not-a-list"}, r"record\[0\]\.tags"),
+        ({"id": 1, "tags": [None]}, r"record\[0\]\.tags\[0\]"),
+    ],
+)
+def test_runner_rejects_records_that_violate_declared_schema(
+    record: Mapping[str, Any],
+    match: str,
+) -> None:
+    writer = _CapturingWriter()
+    runner = PipelineRunner(
+        source=_DeclaredSource([record]),
+        writer=writer,
+        watermarks=_Watermarks([]),
+        project="unit-project",
+        dataset="raw",
+    )
+
+    with pytest.raises(RawSchemaError, match=match):
+        runner.run()
+
+    assert writer.rows == []
+
+
+def test_raw_schema_failure_does_not_include_or_chain_source_value() -> None:
+    source_value = "sensitive-not-an-integer"
+    runner = PipelineRunner(
+        source=_DeclaredSource([{"id": source_value}]),
+        writer=_CapturingWriter(),
+        watermarks=_Watermarks([]),
+        project="unit-project",
+        dataset="raw",
+    )
+
+    with pytest.raises(RawSchemaError) as raised:
+        runner.run()
+
+    assert source_value not in str(raised.value)
+    assert raised.value.__cause__ is None
+
+
+def test_direct_source_without_declared_schema_logs_deprecation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runner, _ = _runner([])
+
+    runner.run()
+
+    assert "undeclared_raw_schema_deprecated" in caplog.messages
 
 
 def test_runner_does_not_advance_cursor_when_write_fails() -> None:

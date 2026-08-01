@@ -10,3 +10,47 @@ endpoints:
     pagination: none
     data_selector: jobs
     primary_key: [id]
+    raw_schema:
+      - name: absolute_url
+        type: STRING
+      - name: data_compliance
+        type: RECORD
+        mode: REPEATED
+        fields:
+          - name: type
+            type: STRING
+          - name: requires_consent
+            type: BOOL
+          - name: requires_processing_consent
+            type: BOOL
+          - name: requires_retention_consent
+            type: BOOL
+          - name: retention_period
+            type: INT64
+          - name: demographic_data_consent_applies
+            type: BOOL
+      - name: internal_job_id
+        type: INT64
+      - name: location
+        type: RECORD
+        fields:
+          - name: name
+            type: STRING
+      - name: metadata
+        type: JSON
+      - name: id
+        type: INT64
+      - name: updated_at
+        type: TIMESTAMP
+      - name: requisition_id
+        type: STRING
+      - name: title
+        type: STRING
+      - name: company_name
+        type: STRING
+      - name: first_published
+        type: TIMESTAMP
+      - name: language
+        type: STRING
+      - name: application_deadline
+        type: TIMESTAMP

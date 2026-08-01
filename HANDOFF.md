@@ -2,37 +2,40 @@
 
 ## Finished
 
-- Streamed hosted SCD1 extraction in `platform.runtime.batch_rows` batches.
-- Delayed endpoint watermark commits until every SCD1 batch succeeds.
-- Made sandbox replace stage bounded batches and publish only after complete extraction.
-- Added deterministic cross-batch overwrite, failure cleanup, and 100,003-row regression coverage.
-- Left SCD2, snapshot, incremental-writer, Storage Write, Terraform, and GCP behavior unchanged.
+- Added recursive `Endpoint.raw_schema` declarations and required them for hosted pipelines.
+- Normalized sparse/nested/repeated records and rejected undeclared or invalid values safely.
+- Bootstrapped empty BigQuery targets and preserved atomic sandbox replacement through table copy.
+- Limited hosted evolution to missing top-level nullable fields; all other deployed drift fails.
+- Declared the retained Greenhouse and HubSpot raw schemas without changing GCP or Terraform.
 
 ## Try It
 
+- Run `uv run dander validate`.
 - Run `uv run pytest tests/test_runtime.py tests/writer/test_bigquery_writer.py`.
 - Run `uv run dander run greenhouse_jobs --dry-run --project PROJECT_ID`.
 
 ## Checks
 
-- Focused runtime, writer, and CLI tests pass.
-- Ruff lint/format pass and strict mypy passes across 119 source files.
-- All 522 tests pass.
+- Ruff lint/format and strict mypy pass across source and tests.
+- All 550 tests pass; both tracked pipeline dry-runs and `dander validate` pass.
+- Terraform format/init/validate pass for root and bootstrap-admin modules.
+- Locked dependency audit reports no known vulnerabilities.
+- Local container build, CLI/user smoke, and bundled HubSpot asset checks pass.
 
 ## Decisions
 
-- SCD1 publishes batches idempotently; a later failure is repaired by replay before watermark advance.
-- Replace alone uses one endpoint-scoped staging table to retain atomic publication.
-- Other writer modes do not become streaming-capable in Phase 2.
+- Hosted schemas are complete source contracts, not metadata-spine projections.
+- Only missing top-level `NULLABLE` fields evolve automatically; nested/type/mode/removal drift fails.
+- Legacy direct-source inference remains deprecated compatibility behavior.
 
 ## Remaining
 
-- Merge Phase 2 through protected main before starting schema-reality work.
-- Phase 3 must remove the empty-source synthetic-seed requirement.
-- No Terraform apply or GCP mutation is authorized.
+- Merge Phase 3 through protected main before starting Phase 4.
+- Pre-schema inferred tables may need an operator-reviewed migration before a future live proof.
+- No Terraform apply or GCP mutation occurred; none is authorized in this phase.
 
 ## Review First
 
 - `src/dander/runtime.py`
 - `src/dander/writer/bigquery.py`
-- `tests/test_runtime.py`
+- `src/dander/ingestion/source.py`
