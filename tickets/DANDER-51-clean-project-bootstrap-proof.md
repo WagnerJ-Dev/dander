@@ -17,3 +17,8 @@ created: 2026-07-30
 
 This ticket remains pending until a separately approved GCP proof run is performed; local tests and
 Terraform validation do not claim that external resources were created.
+
+The single-command implementation is complete: orchestration tests cover backend creation/adoption,
+administrative bootstrap, image publication, and platform apply. On 2026-07-31 the same `dander
+init` entrypoint produced a no-change plan against the retained sandbox. A separately approved
+billing-linked project is still required to check the four acceptance boxes above.

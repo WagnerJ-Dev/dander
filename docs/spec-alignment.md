@@ -1,20 +1,16 @@
 # Upstream Spec Alignment
 
-This is the completion ledger for the architecture in `steering/00-project-overview.md`. Statuses
-are deliberately limited to the release-audit vocabulary; missing live evidence remains explicit
-in the final column.
+This ledger maps `steering/00-project-overview.md` to current code and observed runtime state.
 
-| Upstream module | Status | Current evidence | Missing proof |
+| Module | Status | Current evidence | Deliberate boundary |
 |---|---|---|---|
-| Security | Implemented locally | Audited Secret Manager/environment stores; API-key/basic, no-auth, OAuth2 client-credentials, OAuth2 JWT bearer, and OAuth1 TBA strategies; per-secret runtime IAM and keyless GitHub WIF | Live provider exchanges intentionally require customer credentials |
-| Hybrid ingestion | Implemented locally | Config-driven dlt REST extraction with per-source pacing/retry, live public Greenhouse/Lever/Ashby connectors, a Marketo template, plus concrete Workday RaaS enterprise execution with auth, pagination, cursor params, and BigQuery scalar casts | Live private-tenant proof intentionally unavailable without customer access; broader nested schema evolution |
-| BigQuery Writer | Implemented locally | Idempotent SCD1/incremental MERGE, append-only snapshots, transactional SCD2, sandbox replace, bounded load jobs, additive scalar evolution, and selectable atomic pending-stream Storage Write staging | A billing-linked project is available, but the real Storage Write service path has not yet been run |
-| Transform | Implemented locally | Typed YAML, restricted `ref()` compilation, DAG ordering, view/table/incremental builds, four generic tests, safe visual SQL compilation, and a live selected Greenhouse view/test proof | Incremental and visual transform execution remain proven offline rather than through additional billable runs |
-| Metadata spine/catalog | Implemented locally | One YAML projects to transforms/tests, deterministic semantic JSON, reusable Dataplex system-aspect requests, and a live read-only entry lookup | Dataplex aspect mutation remains intentionally unrun because stored metadata may be billable |
-| Bootstrap CLI | Implemented locally | Stage-zero `infra/bootstrap-admin` creates the state bucket, Artifact Registry repository, and bootstrap identity; `dander init` requires impersonation; `dander verify deployment` writes sanitized evidence | A real stage-zero/platform apply and retained evidence bundle are still required |
-| Orchestration/state | Implemented locally | Cloud Scheduler invokes guarded public ingestion; BigQuery watermarks commit only after successful writes; SQLite/BigQuery run history records terminal aggregates; manual workflow can run hosted transform proofs | A real clean-project run and retained workflow evidence are still required |
-| Evidence/release gates | Implemented locally | Enforced CI, closed evidence schemas, resource-scoped IAM/cost checks, and a protected manual live-proof workflow | No live proof is claimed until a workflow artifact is reviewed |
-| Compliance/release | Implemented locally | Public-data path contains no customer credential or HR row data; sensitive-system names are hypothetical connector scope, not company provenance | Normal provenance, licensing, and privacy review if employer-owned material or non-public data is ever introduced |
+| Security | Live-proven | Secret Manager references, per-pipeline accessor bindings, separate bootstrap/runtime/scheduler identities, account-scoped billing visibility, and no service-account keys | Other private vendors require their own tenant credentials |
+| Hybrid ingestion | Live-proven | Config-driven dlt REST paths plus hand-rolled enterprise `Source`; hosted Greenhouse and authenticated HubSpot executions succeeded | Workday/NetSuite/Xactly remain provider-specific extensions |
+| BigQuery writer | Live-proven for hosted SCD1 | Additive raw/staging relations, controlled HubSpot update/replay proof, stable watermarks, and preserved row counts | Live Storage Write/SCD2 are covered offline, not by this proof |
+| Transform | Live-proven | Restricted `ref()` DAG, topological execution, materialization, and generic tests ran inside both Cloud Run jobs | None for the demonstrated staging slice |
+| Metadata spine | Live-proven | Atomic per-pipeline BigQuery snapshots contain sources, models, columns, upstreams, tests, and metrics; CLI list/show/lineage/metrics/runs work live | Dataplex is an optional projection and was not mutated |
+| Bootstrap CLI | Live-proven for reconciliation | `dander init` owns state bootstrap, administrative IAM, image publication, Terraform plan/apply, and safe defaults; real upgrade plan is idempotent | Fresh billable-project creation/apply awaits explicit approval |
+| Orchestration/state | Live-proven | Independent jobs/schedules, a shared end-to-end executor, cursor state, durable stage checkpoints, and terminal truth for both pipelines | HubSpot remains intentionally paused |
+| Release evidence | Live-proven | Two passing deployment summaries, two successful executor runs, metadata/run queries, secret-scope inspection, row counts, and a zero-drift plan | Ignored evidence must be attached explicitly if a PR/release process requires it |
 
-The requirement-by-requirement verdict and explicit release boundaries are in
-[`release-audit.md`](release-audit.md).
+Detailed execution identifiers and release boundaries are in [`release-audit.md`](release-audit.md).

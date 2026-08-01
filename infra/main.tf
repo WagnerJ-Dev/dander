@@ -19,6 +19,8 @@ module "scheduled_job" {
     toset(var.datasets),
     toset(["raw"]),
   )
+
+  depends_on = [module.bigquery]
 }
 
 locals {

@@ -2,38 +2,39 @@
 
 ## Finished
 
-- Created the `Dander BigQuery Pipeline` private app in HubSpot sandbox portal `246915065` with only company read/write scopes.
-- Stored the access token as enabled Secret Manager version 3 in `hubspot-private-app-token`; invalid versions 1 and 2 are disabled, and only the Dander runtime service account has accessor permission.
-- Reconfigured the existing hosted job in place for `hubspot_test` plus `stg_hubspot__companies`, with the daily scheduler paused.
-- Passed the controlled initial/update/replay proof and removed both synthetic HubSpot companies afterward.
+- Added a typed `dander.yaml` control plane that keeps Greenhouse and HubSpot as independent hosted pipelines with separate jobs, schedules, identities, models, and secret scope.
+- Added one end-to-end executor for ingestion, transforms/tests, durable run history, and atomic metadata snapshots with governed metrics and CLI inspection.
+- Made `dander init --apply` own state-bucket bootstrap, administrative IAM, Artifact Registry image publication, datasets, Secret Manager, Cloud Run, Scheduler, and the simulation-first cost guard.
+- Reconciled the sandbox to immutable image `sha256:a4ec1a3e…62289`; both pipelines completed successfully and Terraform now reports no changes.
+- Captured sanitized, ignored deployment evidence for both jobs under `evidence/platform-greenhouse` and `evidence/platform-hubspot`.
 
 ## Try It
 
-- Inspect the sanitized proof at `evidence/hubspot-20260731/authenticated-ingestion.json` (local and intentionally ignored).
-- Run the job manually with `gcloud run jobs execute dander-greenhouse-public --project=dander-sbx-harrison-20260729 --region=us-central1 --wait`.
+- Run `uv run dander validate`, then inspect `uv run dander metadata list --project dander-sbx-harrison-20260729` and `uv run dander metadata runs --project dander-sbx-harrison-20260729`.
+- Recheck the existing environment with the explicit plan-only `dander init` command in `README.md`; it currently produces `No changes.`
 
 ## Checks
 
-- Targeted CLI, bootstrap, ingestion, and security tests passed: 29 passed.
-- Three Cloud Run executions completed successfully; the proof recorded passed update, idempotency, and watermark assertions.
-- BigQuery contains 2 raw rows and 2 staging rows, with 2 unique company IDs and 1 observed update.
-- Both temporary HubSpot company IDs return 404 after cleanup.
-- Final Terraform plan returned exit code 0 with no changes; scheduler state is `PAUSED`.
+- Current full gate passes: 489 tests, Ruff, formatting, strict mypy, and both Terraform roots.
+- Greenhouse execution `dander-greenhouse-public-nm8wg` succeeded: 21 extracted/affected rows, one model, three tests, and one metadata asset.
+- HubSpot execution `dander-hubspot-companies-l2g6c` succeeded: source access, one model, three tests, and one metadata asset; the earlier controlled three-run update/replay proof also passed and its synthetic companies were deleted.
+- BigQuery retains 25 Greenhouse and 4 HubSpot rows in both raw and staging; the durable ledger/catalog contain current snapshots for both pipelines.
+- Both read-only deployment verifiers pass and a fresh Terraform detailed-exitcode plan returned 0 with no drift.
 
 ## Decisions
 
-- Used the existing private-app bearer-token connector path; HubSpot marks legacy private apps as limited and recommends Service Keys for future work.
-- Granted write scope only so controlled proof data could be created and removed.
-- Kept the scheduler paused after proof to prevent unattended sandbox writes.
+- Keep Greenhouse enabled and HubSpot paused until the user chooses an unattended HubSpot cadence.
+- Treat `dander_meta` as the durable built-in catalog/semantic registry; Dataplex remains an optional projection.
+- Keep clean-project creation as a separately approved external proof because it creates billable GCP resources.
 
 ## Remaining
 
-- Decide whether HubSpot should receive its own renamed Cloud Run job instead of reusing `dander-greenhouse-public`.
-- Enable scheduling only after choosing the intended production HubSpot account and cadence.
-- Migrate from the legacy private app to HubSpot Service Keys when Dander supports that authentication flow.
+- Run the single-command bootstrap once in a newly approved billing-linked proof project and retain its resource inventory or teardown record.
+- Optionally publish and read back Dataplex aspects if that billable integration is required for the release claim.
+- Push this branch and open a PR only when the user authorizes publication.
 
 ## Review First
 
-- `connectors/hubspot_test.yaml`
-- `models/staging/stg_hubspot__companies.sql`
-- `scripts/live_proof/hubspot.py`
+- `src/dander/executor.py`
+- `src/dander/cli/main.py`
+- `src/dander/catalog/store.py`

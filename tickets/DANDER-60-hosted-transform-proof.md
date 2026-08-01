@@ -14,9 +14,9 @@ The hosted transform tail needs a real model and incremental proof from authenti
 
 ## Acceptance Criteria
 
-- [ ] `stg_hubspot__companies` builds in the hosted path.
+- [x] `stg_hubspot__companies` builds in the hosted path.
 - [ ] Meaningful not-null, unique, accepted-values, and safe relationship tests pass.
-- [ ] An update changes only the intended row and evidence links the source run.
+- [x] An update changes only the intended row and evidence links the source run.
 
 ## Design
 
@@ -24,7 +24,10 @@ Add a narrow staging model YAML/SQL and run the existing transform runner after 
 
 ## Implementation Notes
 
-Implemented in the hosted runtime toggle, HubSpot staging model, and
-`scripts/live_proof/transforms.py`; the live Cloud Run proof is intentionally unclaimed.
+Implemented in the shared executor, HubSpot staging model, and `scripts/live_proof/transforms.py`.
+The controlled update proof changed only the intended row. Execution
+`dander-hubspot-companies-l2g6c` then built the model and passed its three applicable declarations
+(not-null, unique, accepted-values) in the hosted path. The relationship-test item remains open
+because this single-entity proof has no safe governed parent relation.
 
 ## Review Log

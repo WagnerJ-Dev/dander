@@ -381,10 +381,16 @@ class DeploymentVerifier:
                     VerificationStatus.BROAD_BINDING_DETECTED,
                 )
             if missing:
+                detail = "required project role missing"
+                if "roles/billing.viewer" in missing and billing_account_id is None:
+                    detail = (
+                        "project-level billing.viewer missing; pass --billing-account "
+                        "to verify the account-scoped binding"
+                    )
                 return VerificationCheck(
                     "runtime_iam",
                     False,
-                    "required project role missing",
+                    detail,
                     VerificationStatus.MISSING_REQUIRED_BINDING,
                 )
             ok = True

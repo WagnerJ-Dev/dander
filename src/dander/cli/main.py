@@ -566,7 +566,10 @@ def verify_deployment(
     billing_account_id: str | None = typer.Option(
         None,
         "--billing-account",
-        help="Billing account id used by --expect-cost-guard.",
+        help=(
+            "Billing account used to verify runtime billing.viewer access and, with "
+            "--expect-cost-guard, the budget guard."
+        ),
     ),
     cost_guard_budget_name: str = typer.Option("dander-sbx-cap", "--cost-guard-budget-name"),
     cost_guard_amount: float = typer.Option(5.0, "--cost-guard-amount"),

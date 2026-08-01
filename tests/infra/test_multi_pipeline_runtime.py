@@ -13,6 +13,8 @@ def test_root_passes_pipeline_map_and_scopes_secrets_per_runtime() -> None:
     assert "pipeline_secret_accessors" in root
     assert "accessors_by_secret = local.pipeline_secret_accessors" in root
     assert "setproduct(var.secret_ids" not in secret_module
+    assert "depends_on = [module.bigquery]" in root
+    assert 'toset(["raw"])' in root
 
 
 def test_scheduled_module_preserves_greenhouse_and_creates_each_pipeline() -> None:
