@@ -1,5 +1,16 @@
 # Engineering Decisions
 
+## 2026-08-01 — Hosted HubSpot activation and failure alerting
+
+- The dedicated HubSpot test account intentionally retains company read/write scopes. Its private
+  app token is versioned only in Secret Manager and remains readable only by the HubSpot runtime.
+- The account keeps one clearly synthetic company at `dander-integration-sandbox.invalid` so an
+  empty first extraction can bootstrap the nested raw relation. General empty-source schema
+  creation remains a separate engine improvement.
+- A private operator email is supplied at deploy time through `--failure-alert-email`, never in the
+  public manifest. Terraform owns one channel and one exact-job failed-execution policy per hosted
+  pipeline; the HubSpot cadence is 10:00 ET, one hour after Greenhouse.
+
 ## 2026-08-01 — Clean-project bootstrap compatibility and retention
 
 - Current `gcloud storage` creates hardened buckets with boolean public-access prevention, then

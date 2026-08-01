@@ -25,6 +25,7 @@ _GITHUB_REF = re.compile(r"^refs/(?:heads|tags)/[A-Za-z0-9._/-]+$")
 _BUDGET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _BOOTSTRAP_SERVICE_ACCOUNT = re.compile(
     r"^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$"
 )
@@ -54,6 +55,7 @@ class TerraformBootstrap:
         billing_account_id: str = "",
         container_image: str = "",
         pipelines: Mapping[str, Mapping[str, object]] | None = None,
+        failure_alert_email: str = "",
         secret_ids: tuple[str, ...] = (),
         github_repository: str = "",
         github_ref: str = "refs/heads/main",
@@ -76,6 +78,7 @@ class TerraformBootstrap:
             billing_account_id: Billing account used by the runtime safety check.
             container_image: Immutable runtime image reference including a sha256 digest.
             pipelines: Expanded additive hosted-pipeline definitions from ``dander.yaml``.
+            failure_alert_email: Operator email receiving hosted-pipeline failure notifications.
             secret_ids: Secret Manager container ids to create without values.
             github_repository: Optional GitHub owner/repository allowed to deploy.
             github_ref: Exact Git branch or tag ref allowed to deploy.
@@ -125,6 +128,12 @@ class TerraformBootstrap:
         elif expanded_pipelines:
             raise TerraformBootstrapError("Pipeline definitions require --enable-runtime")
         _validate_pipelines(expanded_pipelines)
+        if failure_alert_email and not enable_runtime:
+            raise TerraformBootstrapError("--failure-alert-email requires --enable-runtime")
+        if failure_alert_email and (
+            len(failure_alert_email) > 254 or not _EMAIL_ADDRESS.fullmatch(failure_alert_email)
+        ):
+            raise TerraformBootstrapError("Invalid failure-alert email address")
         if billing_account_id and not (enable_runtime or enable_cost_guard):
             raise TerraformBootstrapError(
                 "--billing-account requires --enable-runtime or --enable-cost-guard"
@@ -183,6 +192,7 @@ class TerraformBootstrap:
             f"-var=billing_account_id={billing_account_id}",
             f"-var=runtime_container_image={container_image}",
             f"-var=pipelines={dumps(expanded_pipelines, sort_keys=True, separators=(',', ':'))}",
+            f"-var=failure_alert_email={failure_alert_email}",
             f"-var=secret_ids={dumps(sorted(set(secret_ids)), separators=(',', ':'))}",
             f"-var=github_repository={github_repository}",
             f"-var=github_ref={github_ref}",

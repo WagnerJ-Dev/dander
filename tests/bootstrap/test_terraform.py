@@ -96,6 +96,7 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         billing_account_id="ABCDEF-123456-ABCDEF",
         container_image=f"us-east1-docker.pkg.dev/unit-project/dander/dander@sha256:{digest}",
         pipelines=_pipelines(paused=False, publish_dataplex=True),
+        failure_alert_email="operator@example.invalid",
         secret_ids=("greenhouse-client-secret", "greenhouse-client-id"),
         github_repository="WagnerJ-Dev/dander",
         github_ref="refs/heads/main",
@@ -113,6 +114,7 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
     assert '"greenhouse_jobs"' in pipeline_argument
     assert '"paused":false' in pipeline_argument
     assert '"publish_dataplex":true' in pipeline_argument
+    assert "-var=failure_alert_email=operator@example.invalid" in plan
     assert '-var=secret_ids=["greenhouse-client-id","greenhouse-client-secret"]' in plan
     assert "-var=github_repository=WagnerJ-Dev/dander" in plan
     assert "-var=enable_cost_guard=false" in plan
@@ -204,6 +206,8 @@ def test_apply_saved_plan_does_not_replan(
         ({"secret_ids": ("bad secret",)}, "secret id"),
         ({"github_repository": "not-a-repository"}, "GitHub repository"),
         ({"github_repository": "WagnerJ-Dev/dander"}, "enable-runtime"),
+        ({"failure_alert_email": "operator@example.invalid"}, "enable-runtime"),
+        ({"failure_alert_email": "not-an-email"}, "failure-alert"),
         ({"pipelines": _pipelines()}, "enable-runtime"),
         ({"github_ref": "main"}, "GitHub ref"),
         ({"enable_cost_guard": True}, "billing-account"),

@@ -10,11 +10,12 @@ module "scheduled_job" {
   count  = var.enable_scheduled_job ? 1 : 0
   source = "./modules/scheduled-job"
 
-  project_id         = var.project_id
-  region             = var.region
-  billing_account_id = var.billing_account_id
-  container_image    = var.runtime_container_image
-  pipelines          = var.pipelines
+  project_id          = var.project_id
+  region              = var.region
+  billing_account_id  = var.billing_account_id
+  container_image     = var.runtime_container_image
+  pipelines           = var.pipelines
+  failure_alert_email = var.failure_alert_email
   transform_dataset_ids = setsubtract(
     toset(var.datasets),
     toset(["raw"]),
@@ -79,6 +80,13 @@ check "pipelines_require_runtime" {
   assert {
     condition     = var.enable_scheduled_job || length(var.pipelines) == 0
     error_message = "pipelines entries require enable_scheduled_job=true."
+  }
+}
+
+check "failure_alerts_require_runtime" {
+  assert {
+    condition     = var.failure_alert_email == "" || var.enable_scheduled_job
+    error_message = "failure_alert_email requires enable_scheduled_job=true."
   }
 }
 

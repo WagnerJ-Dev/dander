@@ -43,6 +43,8 @@ def test_init_passes_optional_runtime_inputs(
             "api-token",
             "--github-repository",
             "WagnerJ-Dev/dander",
+            "--failure-alert-email",
+            "operator@example.invalid",
             "--enable-cost-guard",
             "--cost-guard-budget-amount",
             "4.50",
@@ -55,9 +57,10 @@ def test_init_passes_optional_runtime_inputs(
     assert isinstance(pipelines, dict)
     assert set(pipelines) == {"greenhouse_jobs", "hubspot_companies"}
     assert pipelines["greenhouse_jobs"]["paused"] is False
-    assert pipelines["hubspot_companies"]["paused"] is True
+    assert pipelines["hubspot_companies"]["paused"] is False
     assert captured["secret_ids"] == ("api-token",)
     assert captured["github_repository"] == "WagnerJ-Dev/dander"
+    assert captured["failure_alert_email"] == "operator@example.invalid"
     assert captured["enable_cost_guard"] is True
     assert captured["cost_guard_budget_amount"] == "4.50"
     assert captured["live_cost_guard"] is False

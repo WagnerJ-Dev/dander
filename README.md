@@ -273,6 +273,7 @@ simulation-first budget guard from `dander.yaml`:
 uv run dander init \
   --project my-gcp-project \
   --billing-account ABCDEF-123456-ABCDEF \
+  --failure-alert-email operator@example.com \
   --github-repository owner/repository \
   --apply
 ```
@@ -281,8 +282,11 @@ The state bucket defaults to `<project>-dander-state`; the active `gcloud` user 
 approved administrator; operator-only stage-zero artifacts default to `~/.dander/<project>` and
 remain outside the repository. Terraform never receives secret values. Add each named value after
 bootstrap with `gcloud secrets versions add`, then execute a paused pipeline manually before
-enabling its schedule. Plan-only mode remains available for established environments but requires
-an existing backend, bootstrap identity, and immutable `--container-image`.
+enabling its schedule. `--failure-alert-email` is an operator input rather than a manifest field,
+so personal addresses stay out of public repositories; repeat it on later reconciliations to retain
+the email channel and per-pipeline Cloud Run failure policies. Plan-only mode remains available for
+established environments but requires an existing backend, bootstrap identity, and immutable
+`--container-image`.
 
 The granular `init-admin-*` and `init-platform-*` commands remain available for operators who need
 to review/apply each identity boundary separately. The normal path is the single command above.

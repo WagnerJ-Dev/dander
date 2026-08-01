@@ -67,6 +67,18 @@ variable "pipelines" {
   default = {}
 }
 
+variable "failure_alert_email" {
+  type        = string
+  description = "Operator email receiving hosted-pipeline failure notifications; empty disables alerts."
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = var.failure_alert_email == "" || can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.failure_alert_email))
+    error_message = "failure_alert_email must be empty or a valid email address."
+  }
+}
+
 variable "secret_ids" {
   type        = set(string)
   description = "Secret Manager containers to create; secret values are never managed by Terraform."
