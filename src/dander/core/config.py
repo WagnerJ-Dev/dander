@@ -19,3 +19,4 @@ class Settings(BaseSettings):
     bq_dataset_raw: str = "raw"
     bq_dataset_staging: str = "staging"
     bq_dataset_marts: str = "marts"
+    bq_dataset_metadata: str = "dander_meta"

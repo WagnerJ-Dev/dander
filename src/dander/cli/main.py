@@ -17,19 +17,28 @@ from dander.bootstrap import (
     AdministrativeBootstrapError,
     DeploymentSummary,
     DeploymentVerifier,
+    ProjectBootstrapError,
+    RuntimeImagePublisher,
+    StateBucketBootstrap,
     TerraformBootstrap,
     TerraformBootstrapError,
+    active_admin_member,
     write_summary,
 )
 from dander.catalog import (
+    BigQueryMetadataStore,
     CatalogPublishError,
     DataplexCatalogPublisher,
+    MetadataSnapshot,
     MetadataSpine,
+    MetadataStore,
     SemanticRegistryError,
     SemanticRegistryPublisher,
+    SqliteMetadataStore,
 )
 from dander.core.config import Settings
 from dander.evidence import EvidenceBundle, EvidenceManifest, ProofEvidence, ProofStatus
+from dander.executor import PipelineExecutor
 from dander.ingestion import (
     DltRestSource,
     Endpoint,
@@ -38,6 +47,7 @@ from dander.ingestion import (
     WorkdayRaasSource,
     load_source_config,
 )
+from dander.project import ProjectConfigError, load_project_config
 from dander.runtime import PipelineRunner
 from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafetyError
 from dander.security import (
@@ -55,6 +65,7 @@ from dander.security import (
 from dander.state import (
     BigQueryRunHistoryStore,
     BigQueryWatermarkStore,
+    RunHistoryStore,
     SqliteRunHistoryStore,
     SqliteWatermarkStore,
 )
@@ -74,7 +85,9 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 verify_app = typer.Typer(help="Verify deployed resources with read-only checks.")
+metadata_app = typer.Typer(help="Inspect the durable metadata spine and run ledger.")
 app.add_typer(verify_app, name="verify")
+app.add_typer(metadata_app, name="metadata")
 console = Console()
 _SOURCE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _DEFAULT_CONNECTORS_DIR = Path("connectors")
@@ -82,13 +95,38 @@ _DEFAULT_INFRA_DIR = Path("infra")
 _DEFAULT_MODELS_DIR = Path("models")
 _DEFAULT_CATALOG_PATH = Path(".dander/catalog.json")
 _DEFAULT_BOOTSTRAP_ADMIN_DIR = Path("infra/bootstrap-admin")
+_DEFAULT_PROJECT_CONFIG = Path("dander.yaml")
+
+
+@app.command("validate")
+def validate_project(
+    project_config: Path = typer.Option(_DEFAULT_PROJECT_CONFIG, "--config"),  # noqa: B008
+    connectors_dir: Path = typer.Option(  # noqa: B008
+        _DEFAULT_CONNECTORS_DIR, "--connectors-dir"
+    ),
+    models_dir: Path = typer.Option(_DEFAULT_MODELS_DIR, "--models-dir"),  # noqa: B008
+) -> None:
+    """Validate the project manifest and all configured connector/model references."""
+    try:
+        manifest = load_project_config(project_config)
+        manifest.validate_references(
+            project_config.resolve().parent,
+            connectors_dir=connectors_dir,
+            models_dir=models_dir,
+        )
+    except ProjectConfigError as error:
+        raise ClickException(str(error)) from error
+    summary = f"Validated {len(manifest.pipelines)} additive pipeline(s) from {project_config}."
+    console.print(f"[green]{summary}[/green]")
 
 
 @app.command()
 def init(
     project: str = typer.Option(..., "--project", help="GCP project id."),
     state_bucket: str = typer.Option(
-        ..., "--state-bucket", help="Existing GCS bucket for remote Terraform state."
+        "",
+        "--state-bucket",
+        help="GCS Terraform-state bucket; defaults to <project>-dander-state.",
     ),
     state_prefix: str = typer.Option(
         "dander/state", "--state-prefix", help="Object prefix for Terraform state."
@@ -98,14 +136,25 @@ def init(
         "--bootstrap-service-account",
         help="Existing dander-bootstrap service account used for platform impersonation.",
     ),
+    admin_member: str = typer.Option(
+        "",
+        "--admin-member",
+        help="Stage-zero user:/group:/serviceAccount: principal; inferred from gcloud when empty.",
+    ),
+    operator_artifact_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--operator-artifact-dir",
+        help="Secured stage-zero plan directory outside the repository.",
+    ),
+    state_location: str = typer.Option("US", "--state-location"),
     region: str = typer.Option("us-central1", "--region", help="GCP region."),
     bigquery_location: str = typer.Option(
         "US", "--bigquery-location", help="BigQuery dataset location."
     ),
     enable_runtime: bool = typer.Option(
-        False,
-        "--enable-runtime",
-        help="Provision the scheduled Cloud Run ingestion runtime.",
+        True,
+        "--enable-runtime/--no-runtime",
+        help="Provision project-defined Cloud Run pipelines (enabled by default).",
     ),
     billing_account_id: str = typer.Option(
         "",
@@ -117,40 +166,10 @@ def init(
         "--container-image",
         help="Immutable Artifact Registry image reference ending in @sha256 digest.",
     ),
-    scheduler_paused: bool = typer.Option(
-        True,
-        "--scheduler-paused/--scheduler-enabled",
-        help="Keep the daily scheduler paused until a manual run succeeds.",
-    ),
-    runtime_publish_dataplex: bool = typer.Option(
-        False,
-        "--runtime-publish-dataplex",
-        help="Publish catalog aspects from hosted runs; stored metadata may be billable.",
-    ),
-    runtime_source: str = typer.Option(
-        "greenhouse_job_board",
-        "--runtime-source",
-        help="Connector source name passed to the hosted Cloud Run Job.",
-    ),
-    runtime_model: str = typer.Option(
-        "stg_greenhouse__jobs",
-        "--runtime-model",
-        help="Transform model selected by the hosted Cloud Run Job.",
-    ),
-    runtime_build_models: bool = typer.Option(
-        True,
-        "--runtime-build-models/--runtime-no-build-models",
-        help="Run hosted transform builds/tests after ingestion.",
-    ),
-    runtime_secret_id: str = typer.Option(
-        "",
-        "--runtime-secret-id",
-        help="Secret Manager container exposed to the hosted connector.",
-    ),
-    runtime_secret_env: str = typer.Option(
-        "HUBSPOT_PRIVATE_APP_TOKEN",
-        "--runtime-secret-env",
-        help="Environment variable carrying the hosted Secret Manager reference.",
+    config: Path = typer.Option(  # noqa: B008
+        _DEFAULT_PROJECT_CONFIG,
+        "--config",
+        help="Versioned Dander project manifest containing additive pipeline definitions.",
     ),
     secret_ids: list[str] | None = typer.Option(  # noqa: B008
         None,
@@ -168,9 +187,9 @@ def init(
         help="Exact branch or tag ref allowed to deploy.",
     ),
     enable_cost_guard: bool = typer.Option(
-        False,
-        "--enable-cost-guard",
-        help="Provision the project budget and simulation-first kill switch.",
+        True,
+        "--enable-cost-guard/--no-cost-guard",
+        help="Provision the USD 5 simulation-first budget guard (enabled by default).",
     ),
     cost_guard_budget_name: str = typer.Option(
         "dander-sbx-cap",
@@ -194,8 +213,23 @@ def init(
     ),
     infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
 ) -> None:
-    """Plan the GCP bootstrap; apply only with explicit confirmation."""
-    confirmation = f"Apply the Dander bootstrap to GCP project {project!r}?"
+    """Build or update Dander's complete GCP platform from ``dander.yaml``."""
+    pipelines: dict[str, dict[str, object]] = {}
+    if enable_runtime:
+        try:
+            manifest = load_project_config(config)
+            manifest.validate_references(config.resolve().parent)
+            pipelines = manifest.terraform_pipelines()
+        except ProjectConfigError as error:
+            raise ClickException(str(error)) from error
+    resolved_state_bucket = state_bucket or f"{project}-dander-state"
+    resolved_bootstrap_account = bootstrap_service_account or (
+        f"dander-bootstrap@{project}.iam.gserviceaccount.com"
+    )
+    confirmation = (
+        f"Build/update the complete Dander platform in GCP project {project!r} "
+        f"using state bucket {resolved_state_bucket!r}?"
+    )
     if live_cost_guard:
         confirmation = f"{confirmation[:-1]} with LIVE automatic billing detachment enabled?"
     if apply and not typer.confirm(
@@ -203,24 +237,61 @@ def init(
         default=False,
     ):
         raise typer.Abort()
+    if apply and not bootstrap_service_account:
+        try:
+            repository_dir = infra_dir.resolve().parent
+            resolved_operator_dir = operator_artifact_dir or (
+                Path("~/.dander").expanduser() / project / "bootstrap"
+            )
+            StateBucketBootstrap(cwd=repository_dir).ensure(
+                project=project,
+                bucket=resolved_state_bucket,
+                location=state_location,
+                apply=True,
+            )
+            resolved_admin_member = admin_member or active_admin_member(cwd=repository_dir)
+            AdministrativeBootstrap(
+                infra_dir / "bootstrap-admin",
+                resolved_operator_dir,
+            ).execute(
+                project=project,
+                state_bucket=resolved_state_bucket,
+                admin_member=resolved_admin_member,
+                apply=True,
+                region=region,
+                state_location=state_location,
+                billing_account_id=billing_account_id,
+                github_repository=github_repository,
+                github_ref=github_ref,
+                adopt_state_bucket=True,
+            )
+        except (AdministrativeBootstrapError, ProjectBootstrapError) as error:
+            raise ClickException(str(error)) from error
+    if apply and enable_runtime and not container_image:
+        try:
+            container_image = RuntimeImagePublisher(infra_dir.resolve().parent).publish(
+                project=project,
+                region=region,
+            )
+        except ProjectBootstrapError as error:
+            raise ClickException(str(error)) from error
+    if enable_runtime and not container_image:
+        raise ClickException(
+            "Plan-only runtime initialization requires --container-image; "
+            "use --apply to build and publish it automatically"
+        )
     plan_path = _execute_platform_bootstrap(
         project=project,
-        state_bucket=state_bucket,
+        state_bucket=resolved_state_bucket,
         state_prefix=state_prefix,
-        bootstrap_service_account=bootstrap_service_account,
+        bootstrap_service_account=resolved_bootstrap_account,
         apply=apply,
         region=region,
         bigquery_location=bigquery_location,
         enable_runtime=enable_runtime,
         billing_account_id=billing_account_id,
         container_image=container_image,
-        scheduler_paused=scheduler_paused,
-        runtime_publish_dataplex=runtime_publish_dataplex,
-        runtime_source=runtime_source,
-        runtime_model=runtime_model,
-        runtime_build_models=runtime_build_models,
-        runtime_secret_id=runtime_secret_id,
-        runtime_secret_env=runtime_secret_env,
+        pipelines=pipelines,
         secret_ids=tuple(secret_ids or ()),
         github_repository=github_repository,
         github_ref=github_ref,
@@ -247,13 +318,7 @@ def _execute_platform_bootstrap(
     enable_runtime: bool,
     billing_account_id: str,
     container_image: str,
-    scheduler_paused: bool,
-    runtime_publish_dataplex: bool,
-    runtime_source: str,
-    runtime_model: str,
-    runtime_build_models: bool,
-    runtime_secret_id: str,
-    runtime_secret_env: str,
+    pipelines: dict[str, dict[str, object]],
     secret_ids: tuple[str, ...],
     github_repository: str,
     github_ref: str,
@@ -275,13 +340,7 @@ def _execute_platform_bootstrap(
             enable_runtime=enable_runtime,
             billing_account_id=billing_account_id,
             container_image=container_image,
-            scheduler_paused=scheduler_paused,
-            runtime_publish_dataplex=runtime_publish_dataplex,
-            runtime_source=runtime_source,
-            runtime_model=runtime_model,
-            runtime_build_models=runtime_build_models,
-            runtime_secret_id=runtime_secret_id,
-            runtime_secret_env=runtime_secret_env,
+            pipelines=pipelines,
             secret_ids=tuple(secret_ids or ()),
             github_repository=github_repository,
             github_ref=github_ref,
@@ -402,13 +461,7 @@ def init_platform_plan(
         enable_runtime=False,
         billing_account_id="",
         container_image="",
-        scheduler_paused=True,
-        runtime_publish_dataplex=False,
-        runtime_source="greenhouse_job_board",
-        runtime_model="stg_greenhouse__jobs",
-        runtime_build_models=True,
-        runtime_secret_id="",
-        runtime_secret_env="HUBSPOT_PRIVATE_APP_TOKEN",
+        pipelines={},
         secret_ids=(),
         github_repository="",
         github_ref="refs/heads/main",
@@ -472,7 +525,10 @@ def verify_deployment(
     dataset: list[str] | None = typer.Option(  # noqa: B008
         None,
         "--dataset",
-        help="Dataset to verify; repeat for multiple datasets (defaults to raw, staging, marts).",
+        help=(
+            "Dataset to verify; repeat for multiple datasets "
+            "(defaults to raw, staging, marts, dander_meta)."
+        ),
     ),
     runtime_job: str | None = typer.Option(
         None,
@@ -510,7 +566,10 @@ def verify_deployment(
     billing_account_id: str | None = typer.Option(
         None,
         "--billing-account",
-        help="Billing account id used by --expect-cost-guard.",
+        help=(
+            "Billing account used to verify runtime billing.viewer access and, with "
+            "--expect-cost-guard, the budget guard."
+        ),
     ),
     cost_guard_budget_name: str = typer.Option("dander-sbx-cap", "--cost-guard-budget-name"),
     cost_guard_amount: float = typer.Option(5.0, "--cost-guard-amount"),
@@ -530,7 +589,7 @@ def verify_deployment(
 ) -> None:
     """Verify the bootstrap's actual resources and save sanitized evidence."""
     summary = DeploymentVerifier(project=project, infra_dir=infra_dir).verify(
-        datasets=tuple(dataset or ("raw", "staging", "marts")),
+        datasets=tuple(dataset or ("raw", "staging", "marts", "dander_meta")),
         state_bucket=state_bucket,
         state_prefix=state_prefix,
         runtime_job=runtime_job,
@@ -603,12 +662,15 @@ def _write_bootstrap_evidence(summary: DeploymentSummary, evidence_dir: Path) ->
 
 @app.command()
 def run(
-    source: str = typer.Argument(..., help="Source name from connectors/."),
+    pipeline_or_source: str = typer.Argument(
+        ..., help="Pipeline name from dander.yaml (or a legacy source name from connectors/)."
+    ),
     project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
     dataset: str | None = typer.Option(None, "--dataset", help="Override BQ_DATASET_RAW."),
     connectors_dir: Path = typer.Option(  # noqa: B008
         _DEFAULT_CONNECTORS_DIR, "--connectors-dir"
     ),
+    project_config: Path = typer.Option(_DEFAULT_PROJECT_CONFIG, "--config"),  # noqa: B008
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -650,6 +712,27 @@ def run(
     dataplex_location: str = typer.Option("us", "--dataplex-location"),
 ) -> None:
     """Run ingestion, then optionally build transforms and publish the metadata spine."""
+    source = pipeline_or_source
+    pipeline_id = pipeline_or_source
+    project_pipeline = False
+    if project_config.is_file():
+        try:
+            manifest = load_project_config(project_config)
+            pipeline = manifest.pipelines.get(pipeline_or_source)
+            if pipeline is not None:
+                project_pipeline = True
+                manifest.validate_references(
+                    project_config.resolve().parent,
+                    connectors_dir=connectors_dir,
+                    models_dir=models_dir,
+                )
+                source = pipeline.source
+                if selected_models is None:
+                    selected_models = list(pipeline.models)
+                build_models = build_models or pipeline.build_models
+                publish_dataplex = publish_dataplex or pipeline.publish_dataplex
+        except ProjectConfigError as error:
+            raise ClickException(str(error)) from error
     if not _SOURCE_NAME.fullmatch(source):
         raise typer.BadParameter("Source names may contain only letters, numbers, '_' and '-'")
 
@@ -696,7 +779,30 @@ def run(
         if config.engine is IngestionEngine.WORKDAY_RAAS
         else DltRestSource(config, auth)
     )
-    result = PipelineRunner(
+    history = (
+        SqliteRunHistoryStore(state_path)
+        if sandbox
+        else BigQueryRunHistoryStore(
+            project=resolved_project,
+            dataset=(settings.bq_dataset_metadata if project_pipeline else resolved_dataset),
+        )
+    )
+    metadata_store = None
+    if project_pipeline:
+        metadata_store = (
+            SqliteMetadataStore(state_path)
+            if sandbox
+            else BigQueryMetadataStore(
+                project=resolved_project,
+                dataset=settings.bq_dataset_metadata,
+            )
+        )
+    dataplex_publisher = (
+        DataplexCatalogPublisher(project=resolved_project, location=dataplex_location)
+        if publish_dataplex
+        else None
+    )
+    ingestion_runner = PipelineRunner(
         source=source_adapter,
         writer=(
             BigQueryReplaceWriter(project=resolved_project)
@@ -714,32 +820,38 @@ def run(
         project=resolved_project,
         dataset=resolved_dataset,
         resume_from_watermark=not sandbox,
-        history=(
-            SqliteRunHistoryStore(state_path)
-            if sandbox
-            else BigQueryRunHistoryStore(
-                project=resolved_project,
-                dataset=resolved_dataset,
-            )
-        ),
-    ).run()
-
-    _run_post_ingestion(
-        project=resolved_project,
-        models_dir=models_dir,
-        selected_models=selected_models,
-        build_models=build_models,
-        catalog_output=catalog_output,
-        publish_dataplex=publish_dataplex,
-        dataplex_location=dataplex_location,
     )
+    try:
+        result = PipelineExecutor(
+            pipeline_id=pipeline_id,
+            source_config=config,
+            ingestion=ingestion_runner,
+            history=history,
+            project=resolved_project,
+            models_dir=models_dir,
+            selected_models=selected_models,
+            build_models=build_models,
+            transform_runner=(
+                BigQueryTransformRunner(project=resolved_project) if build_models else None
+            ),
+            metadata_store=metadata_store,
+            registry_output=catalog_output,
+            dataplex_publisher=dataplex_publisher,
+        ).execute()
+    except (
+        CatalogPublishError,
+        SemanticRegistryError,
+        TransformProjectError,
+        TransformRunError,
+    ) as error:
+        raise ClickException(str(error)) from error
 
     table = Table(title=f"Dander run {result.run_id}")
     table.add_column("Endpoint")
     table.add_column("Extracted", justify="right")
     table.add_column("Affected", justify="right")
     table.add_column("Cursor committed")
-    for endpoint in result.endpoints:
+    for endpoint in result.ingestion.endpoints:
         table.add_row(
             endpoint.endpoint,
             str(endpoint.extracted),
@@ -920,6 +1032,229 @@ def catalog(
         f"[green]Cataloged {len(assets)} model(s) in {registry_path}; "
         f"published {published} Dataplex entr{'y' if published == 1 else 'ies'}.[/green]"
     )
+
+
+@metadata_app.command("list")
+def metadata_list(
+    project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
+    dataset: str = typer.Option("dander_meta", "--dataset"),
+    local: bool = typer.Option(False, "--local", help="Read the local SQLite spine."),
+    state_path: Path = typer.Option(Path(".dander/state.db"), "--state-path"),  # noqa: B008
+) -> None:
+    """List source and model assets in the current metadata snapshots."""
+    snapshots = _metadata_snapshots(
+        project=project,
+        dataset=dataset,
+        local=local,
+        state_path=state_path,
+    )
+    table = Table(title="Dander metadata spine")
+    table.add_column("Pipeline")
+    table.add_column("Kind")
+    table.add_column("Name")
+    table.add_column("Relation")
+    for snapshot in snapshots:
+        source = snapshot.manifest.get("source")
+        if isinstance(source, dict):
+            table.add_row(snapshot.pipeline_id, "source", str(source.get("name", "")), "")
+        for asset in _manifest_assets(snapshot):
+            table.add_row(
+                snapshot.pipeline_id,
+                "model",
+                str(asset.get("name", "")),
+                str(asset.get("relation", "")),
+            )
+    console.print(table)
+
+
+@metadata_app.command("show")
+def metadata_show(
+    name: str = typer.Argument(..., help="Source, model, or metric name."),
+    project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
+    dataset: str = typer.Option("dander_meta", "--dataset"),
+    local: bool = typer.Option(False, "--local"),
+    state_path: Path = typer.Option(Path(".dander/state.db"), "--state-path"),  # noqa: B008
+) -> None:
+    """Show one governed source, model, or metric definition as JSON."""
+    matches: list[dict[str, object]] = []
+    for snapshot in _metadata_snapshots(
+        project=project,
+        dataset=dataset,
+        local=local,
+        state_path=state_path,
+    ):
+        source = snapshot.manifest.get("source")
+        if isinstance(source, dict) and source.get("name") == name:
+            matches.append({"pipeline_id": snapshot.pipeline_id, "kind": "source", **source})
+        for asset in _manifest_assets(snapshot):
+            if asset.get("name") == name:
+                matches.append({"pipeline_id": snapshot.pipeline_id, "kind": "model", **asset})
+            metrics = asset.get("metrics")
+            if isinstance(metrics, list):
+                for metric in metrics:
+                    if isinstance(metric, dict) and metric.get("name") == name:
+                        matches.append(
+                            {
+                                "pipeline_id": snapshot.pipeline_id,
+                                "kind": "metric",
+                                "relation": asset.get("relation", ""),
+                                **metric,
+                            }
+                        )
+    if not matches:
+        raise ClickException(f"Metadata entry {name!r} was not found")
+    console.print_json(data=matches[0] if len(matches) == 1 else matches)
+
+
+@metadata_app.command("lineage")
+def metadata_lineage(
+    model: str = typer.Argument(..., help="Model name."),
+    project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
+    dataset: str = typer.Option("dander_meta", "--dataset"),
+    local: bool = typer.Option(False, "--local"),
+    state_path: Path = typer.Option(Path(".dander/state.db"), "--state-path"),  # noqa: B008
+) -> None:
+    """Show direct upstream relations for one governed model."""
+    table = Table(title=f"Dander lineage: {model}")
+    table.add_column("Model relation")
+    table.add_column("Upstream relation")
+    found = False
+    for snapshot in _metadata_snapshots(
+        project=project,
+        dataset=dataset,
+        local=local,
+        state_path=state_path,
+    ):
+        for asset in _manifest_assets(snapshot):
+            if asset.get("name") != model:
+                continue
+            found = True
+            upstream = asset.get("upstream_relations")
+            if isinstance(upstream, list):
+                for relation in upstream:
+                    table.add_row(str(asset.get("relation", "")), str(relation))
+    if not found:
+        raise ClickException(f"Model {model!r} was not found in the metadata spine")
+    console.print(table)
+
+
+@metadata_app.command("metrics")
+def metadata_metrics(
+    project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
+    dataset: str = typer.Option("dander_meta", "--dataset"),
+    local: bool = typer.Option(False, "--local"),
+    state_path: Path = typer.Option(Path(".dander/state.db"), "--state-path"),  # noqa: B008
+) -> None:
+    """List governed metric names, calculations, and definitions."""
+    table = Table(title="Dander governed metrics")
+    table.add_column("Metric")
+    table.add_column("Relation")
+    table.add_column("Calculation")
+    table.add_column("Definition")
+    for snapshot in _metadata_snapshots(
+        project=project,
+        dataset=dataset,
+        local=local,
+        state_path=state_path,
+    ):
+        for asset in _manifest_assets(snapshot):
+            metrics = asset.get("metrics")
+            if not isinstance(metrics, list):
+                continue
+            for metric in metrics:
+                if isinstance(metric, dict):
+                    table.add_row(
+                        str(metric.get("name", "")),
+                        str(asset.get("relation", "")),
+                        str(metric.get("calculation", "")),
+                        str(metric.get("description", "")),
+                    )
+    console.print(table)
+
+
+@metadata_app.command("runs")
+def metadata_runs(
+    project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
+    dataset: str = typer.Option("dander_meta", "--dataset"),
+    pipeline: str | None = typer.Option(None, "--pipeline"),
+    limit: int = typer.Option(20, "--limit", min=1, max=1000),
+    local: bool = typer.Option(False, "--local"),
+    state_path: Path = typer.Option(Path(".dander/state.db"), "--state-path"),  # noqa: B008
+) -> None:
+    """List recent end-to-end pipeline outcomes from the durable run ledger."""
+    history = _run_history_store(
+        project=project,
+        dataset=dataset,
+        local=local,
+        state_path=state_path,
+    )
+    table = Table(title="Dander pipeline runs")
+    for column in ("Run", "Pipeline", "Status", "Stage", "Rows", "Models", "Tests", "Assets"):
+        table.add_column(column)
+    for record in history.recent(limit=limit, pipeline_id=pipeline):
+        table.add_row(
+            record.run_id,
+            record.pipeline_id,
+            record.status.value,
+            record.stage.value,
+            str(record.affected),
+            str(record.models),
+            str(record.assertions),
+            str(record.assets),
+        )
+    console.print(table)
+
+
+def _metadata_snapshots(
+    *,
+    project: str | None,
+    dataset: str,
+    local: bool,
+    state_path: Path,
+) -> tuple[MetadataSnapshot, ...]:
+    return _metadata_store(
+        project=project,
+        dataset=dataset,
+        local=local,
+        state_path=state_path,
+    ).snapshots()
+
+
+def _metadata_store(
+    *,
+    project: str | None,
+    dataset: str,
+    local: bool,
+    state_path: Path,
+) -> MetadataStore:
+    if local:
+        return SqliteMetadataStore(state_path)
+    resolved_project = project or Settings().gcp_project_id
+    if not resolved_project:
+        raise ClickException("GCP project is required via --project or GCP_PROJECT_ID")
+    return BigQueryMetadataStore(project=resolved_project, dataset=dataset)
+
+
+def _run_history_store(
+    *,
+    project: str | None,
+    dataset: str,
+    local: bool,
+    state_path: Path,
+) -> RunHistoryStore:
+    if local:
+        return SqliteRunHistoryStore(state_path)
+    resolved_project = project or Settings().gcp_project_id
+    if not resolved_project:
+        raise ClickException("GCP project is required via --project or GCP_PROJECT_ID")
+    return BigQueryRunHistoryStore(project=resolved_project, dataset=dataset)
+
+
+def _manifest_assets(snapshot: MetadataSnapshot) -> tuple[dict[str, object], ...]:
+    raw_assets = snapshot.manifest.get("assets")
+    if not isinstance(raw_assets, list):
+        return ()
+    return tuple(asset for asset in raw_assets if isinstance(asset, dict))
 
 
 def _require_transform_guard(

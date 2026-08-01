@@ -28,7 +28,7 @@ variable "bigquery_location" {
 variable "datasets" {
   type        = list(string)
   description = "BigQuery datasets created for the first runtime slice."
-  default     = ["raw", "staging", "marts"]
+  default     = ["raw", "staging", "marts", "dander_meta"]
 }
 
 variable "enable_scheduled_job" {
@@ -49,66 +49,22 @@ variable "runtime_container_image" {
   default     = ""
 }
 
-variable "scheduler_paused" {
-  type        = bool
-  description = "Keep the daily scheduler paused until a manual job execution succeeds."
-  default     = true
-}
-
-variable "runtime_publish_dataplex" {
-  type        = bool
-  description = "Publish Dataplex aspects from the hosted job; stored metadata may be billable."
-  default     = false
-}
-
-variable "runtime_source" {
-  type        = string
-  description = "Connector source name passed to the hosted Cloud Run Job."
-  default     = "greenhouse_job_board"
-
-  validation {
-    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", var.runtime_source))
-    error_message = "runtime_source must be a valid Dander connector name."
-  }
-}
-
-variable "runtime_model" {
-  type        = string
-  description = "Transform model selected by the hosted Cloud Run Job."
-  default     = "stg_greenhouse__jobs"
-
-  validation {
-    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", var.runtime_model))
-    error_message = "runtime_model must be a valid Dander model name."
-  }
-}
-
-variable "runtime_build_models" {
-  type        = bool
-  description = "Run hosted transform builds/tests after ingestion."
-  default     = true
-}
-
-variable "runtime_secret_id" {
-  type        = string
-  description = "Optional Secret Manager container exposed to the runtime connector."
-  default     = ""
-
-  validation {
-    condition     = var.runtime_secret_id == "" || can(regex("^[A-Za-z][A-Za-z0-9_-]{0,254}$", var.runtime_secret_id))
-    error_message = "runtime_secret_id must be empty or a valid Secret Manager id."
-  }
-}
-
-variable "runtime_secret_env" {
-  type        = string
-  description = "Environment variable containing the runtime Secret Manager reference."
-  default     = "HUBSPOT_PRIVATE_APP_TOKEN"
-
-  validation {
-    condition     = can(regex("^[A-Z][A-Z0-9_]*$", var.runtime_secret_env))
-    error_message = "runtime_secret_env must be an uppercase environment variable name."
-  }
+variable "pipelines" {
+  description = "Expanded hosted pipeline definitions keyed by stable Dander pipeline id."
+  type = map(object({
+    job_name                     = string
+    runtime_service_account_id   = string
+    scheduler_service_account_id = string
+    source                       = string
+    models                       = list(string)
+    build_models                 = bool
+    publish_dataplex             = bool
+    schedule                     = string
+    time_zone                    = string
+    paused                       = bool
+    secret_env                   = map(string)
+  }))
+  default = {}
 }
 
 variable "secret_ids" {

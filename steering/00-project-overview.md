@@ -20,7 +20,7 @@ Informatica, and a customizable stand-in for dbt/SQLMesh transformation.
 - We run on **GCP** and land everything in **BigQuery**. GCP-first, with clean provider
   abstractions so AWS/Azure can be added later without a rewrite.
 
-## Modules (the target architecture — NOT yet built)
+## Modules
 
 | Module | Responsibility |
 |---|---|
@@ -29,7 +29,8 @@ Informatica, and a customizable stand-in for dbt/SQLMesh transformation.
 | **BigQuery Writer** | Multiple write patterns: SCD1 (MERGE), SCD2 (versioned rows), daily snapshot (partitioned append), incremental (watermark). Storage Write API vs load jobs per workload. |
 | **Transform** | dbt-replacement: Jinja2 `ref()` templating → parsed dependency DAG → topological execution. Materializations reuse the Writer patterns. Generic tests (not-null/unique/accepted-values/relationships). One YAML per model feeds SQL + Dataplex catalog aspects + semantic registry. |
 | **Bootstrap CLI** | pip-installable; wraps **Terraform** to provision Secret Manager, service accounts + least-privilege IAM (Workload Identity Federation), a compute target (Cloud Run jobs), and BigQuery datasets. Provider-abstracted for future AWS/Azure. |
-| **Orchestration/State** | Scheduler (Cloud Scheduler + Cloud Run, or Composer) + a small control table tracking last successful cursor per source/entity for idempotent restarts. |
+| **Orchestration/State** | `PipelineExecutor` owns ingest → transform/tests → metadata and one truthful lifecycle record; Cloud Scheduler invokes isolated Cloud Run jobs; BigQuery/SQLite persist cursors, run history, and atomic catalog snapshots. |
+| **Metadata spine** | One typed source/model definition projects source endpoints, models, columns, lineage, tests, governed metrics, local JSON, optional Dataplex aspects, and the durable `dander_meta` catalog. |
 
 ## Scope discipline (non-goals)
 
@@ -63,6 +64,21 @@ material, credentials, or non-public data is introduced.
 ## Decision Log
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
+
+- 2026-07-31 — **One executor owns end-to-end success** — named pipeline history cannot claim
+  success after ingestion alone; the terminal record includes transform/test and metadata stages,
+  aggregate counts, and a failure-stage marker without retaining data or exception text.
+- 2026-07-31 — **The metadata spine is a durable atomic snapshot** — BigQuery (`dander_meta`) and
+  SQLite retain one current per-pipeline manifest covering sources, models, lineage, tests, and
+  governed metrics; local JSON and Dataplex are projections of the same canonical assets.
+- 2026-07-31 — **`dander init` owns both bootstrap stages** — the hardened GCS backend is the sole
+  imperative stage-zero exception and is immediately imported; the remaining state, identity,
+  image, datasets, jobs, schedules, secrets, and simulation-first cost guard remain declarative.
+
+- 2026-07-31 — **Hosted orchestration is additive and project-defined** — versioned
+  `dander.yaml` pipeline definitions drive both local execution and Terraform expansion; each
+  pipeline owns its job, schedule, identities, and secret bindings while sharing the runtime image,
+  datasets, and metadata spine. Adding a connector must not repurpose or replace another pipeline.
 
 - 2026-07-29 — **The metadata spine is deterministic and local-first** — one validated model YAML
   projects to transforms/tests, stable semantic JSON, and reusable Dataplex system aspects;

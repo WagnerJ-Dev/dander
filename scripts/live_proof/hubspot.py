@@ -208,7 +208,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True)
     parser.add_argument("--table", default="staging.stg_hubspot__companies")
-    parser.add_argument("--job", default="dander-greenhouse-public")
+    parser.add_argument("--job", default="dander-hubspot-companies")
     parser.add_argument("--region", default="us-central1")
     parser.add_argument("--proof-run-id", required=True)
     parser.add_argument("--token-env", default="HUBSPOT_PRIVATE_APP_TOKEN")

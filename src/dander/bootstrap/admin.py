@@ -53,6 +53,7 @@ class AdministrativeBootstrap:
         billing_account_id: str = "",
         github_repository: str = "",
         github_ref: str = "refs/heads/main",
+        adopt_state_bucket: bool = False,
     ) -> Path:
         """Plan stage zero and optionally apply that exact saved plan.
 
@@ -67,6 +68,8 @@ class AdministrativeBootstrap:
             billing_account_id: Optional billing account for budget-management access.
             github_repository: Optional repository allowed to use proof-workflow WIF.
             github_ref: Exact branch or tag ref allowed to use proof-workflow WIF.
+            adopt_state_bucket: Import a pre-created stage-zero backend bucket when absent from
+                state. Used only by the batteries-included ``dander init`` flow.
 
         Returns:
             Path to the saved stage-zero plan.
@@ -92,6 +95,18 @@ class AdministrativeBootstrap:
             f"-backend-config=bucket={state_bucket}",
             f"-backend-config=prefix={_STAGE_ZERO_STATE_PREFIX}",
         )
+        if adopt_state_bucket:
+            self._adopt_state_bucket(
+                project=project,
+                state_bucket=state_bucket,
+                admin_member=admin_member,
+                region=region,
+                state_location=state_location,
+                bootstrap_service_account_id=bootstrap_service_account_id,
+                billing_account_id=billing_account_id,
+                github_repository=github_repository,
+                github_ref=github_ref,
+            )
         self._run(
             "terraform",
             "plan",
@@ -206,3 +221,56 @@ class AdministrativeBootstrap:
             raise AdministrativeBootstrapError(
                 f"Terraform command failed with exit code {error.returncode}"
             ) from error
+
+    def _adopt_state_bucket(
+        self,
+        *,
+        project: str,
+        state_bucket: str,
+        admin_member: str,
+        region: str,
+        state_location: str,
+        bootstrap_service_account_id: str,
+        billing_account_id: str,
+        github_repository: str,
+        github_ref: str,
+    ) -> None:
+        if (
+            self._run_status("terraform", "state", "show", "google_storage_bucket.terraform_state")
+            == 0
+        ):
+            return
+        self._run(
+            "terraform",
+            "import",
+            f"-var=project_id={project}",
+            f"-var=state_bucket={state_bucket}",
+            f"-var=admin_member={admin_member}",
+            f"-var=region={region}",
+            f"-var=state_location={state_location}",
+            f"-var=bootstrap_service_account_id={bootstrap_service_account_id}",
+            f"-var=billing_account_id={billing_account_id}",
+            f"-var=github_repository={github_repository}",
+            f"-var=github_ref={github_ref}",
+            "google_storage_bucket.terraform_state",
+            state_bucket,
+        )
+
+    def _run_status(self, *args: str) -> int:
+        environment = os.environ.copy()
+        environment["TF_DATA_DIR"] = str(self._tf_data_dir)
+        try:
+            completed = subprocess.run(
+                args,
+                cwd=self._infra_dir,
+                env=environment,
+                umask=0o077,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError as error:
+            raise AdministrativeBootstrapError(
+                "Terraform is not installed or is not available on PATH"
+            ) from error
+        return completed.returncode

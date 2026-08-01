@@ -1,5 +1,63 @@
 # Engineering Decisions
 
+## 2026-08-01 — Clean-project bootstrap compatibility and retention
+
+- Current `gcloud storage` creates hardened buckets with boolean public-access prevention, then
+  applies versioning and labels through `buckets update`; the CLI contract is regression-tested.
+- Stage zero enables Cloud Resource Manager before the platform cost guard reads project metadata.
+  Budget Pub/Sub uses Google's singular `billing-budget-alert` publisher identity, and the
+  Terraform budget resource receives the bare billing-account ID expected by provider v6.50.
+- Proof helpers always pass their requested GCP project to `gcloud`. The approved proof project is
+  retained with both schedulers paused, an empty HubSpot secret container, and a simulation-only
+  cost guard; inventory is evidence, not deletion authorization.
+
+## 2026-07-31 — Approval-gated clean-project proof
+
+- The manual proof derives an ephemeral manifest from `dander.yaml`, forces every schedule paused,
+  and keeps both additive pipelines present. Optional Dataplex IAM is scoped only to the selected
+  proof pipeline; no proof flag may silently replace another pipeline.
+- Secret containers and IAM are applied before an optional HubSpot value is added. The value flows
+  from a protected environment secret directly to Secret Manager and never enters Terraform,
+  generated configuration, evidence, or logs.
+- Every proof records a sanitized retained-resource inventory even after failure. “Teardown”
+  evidence is inventory-only; deletion is a separate explicit operation and is never automated by
+  the proof workflow.
+
+## 2026-07-31 — End-to-end executor and durable metadata spine
+
+- `PipelineExecutor` owns the full named-pipeline lifecycle: ingestion, selected model builds,
+  generic tests, metadata projection, and one truthful terminal run record. Connector-level
+  `PipelineRunner` remains reusable but no longer decides hosted success before transforms run.
+- Cloud runs persist lifecycle checkpoints and one atomic per-pipeline semantic snapshot in the
+  `dander_meta` dataset; sandbox runs use the same contracts in SQLite. Snapshots contain no rows,
+  cursors, credentials, or exception text and replace the prior definition only after compilation.
+- Governed metrics are typed model-sidecar definitions with a closed aggregation set and declared
+  field. Dander projects the human definition and deterministic calculation to the same spine used
+  for source, model, column, lineage, and test metadata.
+
+## 2026-07-31 — Batteries-included initialization boundary
+
+- `dander init --apply` owns stage zero, runtime image publication, and platform apply. Defaults
+  derive the state bucket, bootstrap identity, operator artifact directory, active gcloud user,
+  runtime enablement, and simulation-first USD 5 guard; advanced split-stage commands remain.
+- The remote-state bucket is the sole imperative exception because Terraform cannot create the
+  backend holding its own first state. The CLI creates it hardened and versioned, immediately
+  imports it into permanent stage-zero state, and leaves all later changes under Terraform.
+- The bootstrap identity receives billing administrator access only when a billing account is in
+  scope. Google exposes no narrower predefined role containing `billing.accounts.setIamPolicy`,
+  which platform Terraform needs to grant isolated runtimes read-only budget visibility.
+
+## 2026-07-31 — Additive project manifest and hosted pipelines
+
+- `dander.yaml` is the repository-owned source of truth for named pipelines. A pipeline binds one
+  connector to selected transform roots, schedule policy, secret references, and stable resource
+  names; secret values remain outside the manifest and Terraform.
+- Hosted pipelines share the immutable runtime image and warehouse datasets but receive distinct
+  Cloud Run jobs, Scheduler jobs, runtime identities, and scheduler identities. Secret Manager IAM
+  is computed per secret and pipeline rather than granting every runtime every connector secret.
+- The original Greenhouse resources migrate to the `greenhouse_jobs` map key through Terraform
+  state moves. Adding HubSpot must create new resources without replacing Greenhouse.
+
 ## 2026-07-31 — Fork-owned CI and evidence surface
 
 - The admin-owned `harrisonoconnorhover/dander` fork is the execution surface for CI, protected

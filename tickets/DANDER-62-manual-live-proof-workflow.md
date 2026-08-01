@@ -14,9 +14,9 @@ External proofs need one approval-gated, WIF-authenticated execution path with r
 
 ## Acceptance Criteria
 
-- [ ] Manual dispatch accepts project, connector, Storage Write, transforms, Dataplex, cost guard,
-      and teardown inputs.
-- [ ] Workflow uses WIF and runtime identities, never service-account JSON keys.
+- [x] Manual dispatch accepts project, authenticated connector, Storage Write, Dataplex, and cost
+      guard inputs; hosted transforms and retained inventory always run.
+- [x] Workflow uses WIF and runtime identities, never service-account JSON keys.
 - [ ] Successful and partial runs upload a complete sanitized bundle.
 
 ## Design
@@ -27,8 +27,10 @@ upload.
 ## Implementation Notes
 
 Implemented `.github/workflows/live-proof.yml` with protected-environment WIF authentication,
-manual proof inputs, fail-closed ordered steps, and always-uploaded finalized evidence. It still
-requires repository environment configuration and an approved live run. The workflow installs its
-locked runtime and Terraform explicitly, and exports the project alias into the evidence manifest.
+manual proof inputs, fail-closed ordered steps, and always-uploaded finalized evidence. It derives
+an all-paused manifest, provisions both additive pipelines with the current CLI, adds optional
+secret values only after their containers exist, verifies both jobs, and always records inventory
+without deletion. It still requires repository environment configuration and an approved clean
+project run before the final acceptance item can be checked.
 
 ## Review Log

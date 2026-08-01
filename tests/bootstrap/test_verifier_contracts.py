@@ -25,6 +25,7 @@ def test_runtime_project_iam_distinguishes_missing_and_broad_roles(tmp_path: Pat
     )
     assert not missing.ok
     assert missing.status is VerificationStatus.MISSING_REQUIRED_BINDING
+    assert "pass --billing-account" in missing.detail
 
     payload: dict[tuple[str, ...], object] = {
         (

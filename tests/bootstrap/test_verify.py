@@ -149,7 +149,7 @@ def test_verifier_checks_actual_resources_and_writes_sanitized_summary(tmp_path:
         ): {"name": "projects/proof-project/secrets/hubspot-private-app-token"},
     }
 
-    for dataset in ("raw", "staging", "marts"):
+    for dataset in ("raw", "staging", "marts", "dander_meta"):
         command_payloads[("bq", "show", "--format=json", f"proof-project:{dataset}")] = {
             "access": [
                 {
@@ -169,7 +169,9 @@ def test_verifier_checks_actual_resources_and_writes_sanitized_summary(tmp_path:
         project="proof-project",
         infra_dir=tmp_path,
         command_runner=run,
-        bigquery_client_factory=lambda _project: FakeBigQueryClient({"raw", "staging", "marts"}),
+        bigquery_client_factory=lambda _project: FakeBigQueryClient(
+            {"raw", "staging", "marts", "dander_meta"}
+        ),
     ).verify(
         state_bucket="proof-state",
         state_prefix="dander/state",

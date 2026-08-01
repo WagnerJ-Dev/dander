@@ -78,6 +78,38 @@ def test_admin_bootstrap_plans_and_applies_saved_plan(
     assert commands[2] == ("terraform", "apply", str(plan))
 
 
+def test_admin_bootstrap_adopts_precreated_backend_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    infra_dir = tmp_path / "checkout" / "infra" / "bootstrap-admin"
+    operator_dir = tmp_path / "operator"
+    infra_dir.mkdir(parents=True)
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(args: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        if args[:3] == ("terraform", "state", "show"):
+            return subprocess.CompletedProcess(args, 1)
+        for argument in args:
+            if argument.startswith("-out="):
+                Path(argument.removeprefix("-out=")).touch()
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    AdministrativeBootstrap(infra_dir, operator_dir).execute(
+        project="unit-project",
+        state_bucket="unit-state-bucket",
+        admin_member="user:operator@example.invalid",
+        apply=False,
+        adopt_state_bucket=True,
+    )
+
+    imported = next(command for command in commands if command[:2] == ("terraform", "import"))
+    assert imported[-2:] == ("google_storage_bucket.terraform_state", "unit-state-bucket")
+
+
 @pytest.mark.parametrize("artifact_name", ["terraform-data", "dander-admin-bootstrap.tfplan"])
 def test_admin_bootstrap_rejects_preexisting_operator_symlinks_before_terraform(
     monkeypatch: pytest.MonkeyPatch,

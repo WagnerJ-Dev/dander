@@ -12,6 +12,7 @@ service-account*.json
 gcp-key*.json
 secrets/
 /evidence/
+/dander.live-proof.yaml
 
 # ── Terraform ─────────────────────────────────────────────────────────
 .terraform/

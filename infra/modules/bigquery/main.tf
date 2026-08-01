@@ -1,4 +1,4 @@
-# Creates the raw / staging / marts datasets. Project id is parameterized (never hard-coded).
+# Creates raw, staging, marts, and the durable metadata/control dataset.
 resource "google_bigquery_dataset" "this" {
   for_each = toset(var.datasets)
 

@@ -8,13 +8,18 @@ variable "secret_ids" {
   description = "Secret container ids. This module never manages secret versions."
 }
 
-variable "accessor_members" {
-  type        = set(string)
-  description = "Service-account members allowed to access only these secrets."
-  default     = []
+variable "accessors_by_secret" {
+  type        = map(set(string))
+  description = "Service-account members allowed to access each named secret."
+  default     = {}
 
   validation {
-    condition     = alltrue([for member in var.accessor_members : startswith(member, "serviceAccount:")])
-    error_message = "Secret accessors must be serviceAccount: IAM members."
+    condition = alltrue(flatten([
+      for secret_id, members in var.accessors_by_secret : [
+        contains(var.secret_ids, secret_id),
+        alltrue([for member in members : startswith(member, "serviceAccount:")]),
+      ]
+    ]))
+    error_message = "Secret accessor keys must name managed secrets and members must be serviceAccount: IAM members."
   }
 }

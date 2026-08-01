@@ -8,27 +8,31 @@ output "artifact_repository_id" {
   value       = data.google_artifact_registry_repository.images.repository_id
 }
 
-output "job_name" {
-  description = "Cloud Run Job name."
-  value       = google_cloud_run_v2_job.ingestion.name
+output "jobs" {
+  description = "Hosted pipeline resource details keyed by pipeline id."
+  value = {
+    for id, pipeline in var.pipelines : id => {
+      job_name                       = try(google_cloud_run_v2_job.ingestion[id].name, null)
+      runtime_service_account        = try(google_service_account.runtime[id].email, null)
+      runtime_service_account_name   = try(google_service_account.runtime[id].name, null)
+      scheduler_job_name             = try(google_cloud_scheduler_job.ingestion[id].name, null)
+      scheduler_service_account      = try(google_service_account.scheduler[id].email, null)
+      scheduler_service_account_name = try(google_service_account.scheduler[id].name, null)
+    }
+  }
 }
 
-output "runtime_service_account" {
-  description = "Email of the least-privilege ingestion runtime identity."
-  value       = google_service_account.runtime.email
+output "runtime_service_accounts" {
+  description = "Runtime service-account emails keyed by pipeline id."
+  value       = { for id, account in google_service_account.runtime : id => account.email }
 }
 
-output "runtime_service_account_name" {
-  description = "Full resource name of the ingestion runtime identity."
-  value       = google_service_account.runtime.name
+output "runtime_service_account_names" {
+  description = "Runtime service-account resource names keyed by pipeline id."
+  value       = { for id, account in google_service_account.runtime : id => account.name }
 }
 
-output "scheduler_service_account_name" {
-  description = "Full resource name of the scheduler identity."
-  value       = google_service_account.scheduler.name
-}
-
-output "scheduler_job_name" {
-  description = "Cloud Scheduler job name."
-  value       = google_cloud_scheduler_job.ingestion.name
+output "scheduler_service_account_names" {
+  description = "Scheduler service-account resource names keyed by pipeline id."
+  value       = { for id, account in google_service_account.scheduler : id => account.name }
 }

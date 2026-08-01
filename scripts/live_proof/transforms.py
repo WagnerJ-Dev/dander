@@ -18,10 +18,21 @@ def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def _run_job(job: str, region: str) -> None:
+def _run_job(job: str, region: str, project: str) -> None:
     try:
         subprocess.run(
-            ("gcloud", "run", "jobs", "execute", job, "--region", region, "--wait"),
+            (
+                "gcloud",
+                "run",
+                "jobs",
+                "execute",
+                job,
+                "--project",
+                project,
+                "--region",
+                region,
+                "--wait",
+            ),
             check=True,
             capture_output=True,
             text=True,
@@ -50,9 +61,9 @@ def run(args: argparse.Namespace) -> None:
     started = _now()
     resource = f"{args.project}.{args.dataset}.{args.table}"
     try:
-        _run_job(args.job, args.region)
+        _run_job(args.job, args.region, args.project)
         first_count, first_hash = _snapshot(args.project, args.dataset, args.table)
-        _run_job(args.job, args.region)
+        _run_job(args.job, args.region, args.project)
         replay_count, replay_hash = _snapshot(args.project, args.dataset, args.table)
         proof = ProofEvidence(
             status=ProofStatus.PASSED,

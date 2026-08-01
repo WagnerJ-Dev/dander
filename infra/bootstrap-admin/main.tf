@@ -1,6 +1,7 @@
 locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "serviceusage.googleapis.com",
@@ -113,8 +114,10 @@ resource "google_billing_account_iam_member" "budget_admin" {
   count = var.billing_account_id == "" ? 0 : 1
 
   billing_account_id = var.billing_account_id
-  role               = "roles/billing.costsManager"
-  member             = "serviceAccount:${google_service_account.bootstrap.email}"
+  # Platform Terraform must grant each isolated runtime read-only budget visibility. Google does
+  # not expose a narrower predefined role containing billing.accounts.setIamPolicy.
+  role   = "roles/billing.admin"
+  member = "serviceAccount:${google_service_account.bootstrap.email}"
 }
 
 resource "google_iam_workload_identity_pool" "github" {

@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from dander.ingestion import SourceConfig
     from dander.transform import TransformModel, TransformProject
-    from dander.transform.config import GenericTestMetadata, Scalar
+    from dander.transform.config import GenericTestMetadata, MetricMetadata, Scalar
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,29 @@ class TestContract:
 
 
 @dataclass(frozen=True)
+class MetricDefinition:
+    """One governed business calculation attached to a model."""
+
+    name: str
+    description: str
+    aggregation: str
+    field: str | None
+    calculation: str
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return a calculation that humans and agents can inspect deterministically."""
+        manifest: dict[str, object] = {
+            "name": self.name,
+            "description": self.description,
+            "aggregation": self.aggregation,
+            "calculation": self.calculation,
+        }
+        if self.field is not None:
+            manifest["field"] = self.field
+        return manifest
+
+
+@dataclass(frozen=True)
 class CatalogAsset:
     """Cloud-neutral metadata spine record for one materialized model."""
 
@@ -68,6 +92,7 @@ class CatalogAsset:
     upstream_relations: tuple[str, ...]
     columns: tuple[CatalogColumn, ...]
     tests: tuple[TestContract, ...]
+    metrics: tuple[MetricDefinition, ...]
 
     def to_manifest(self) -> dict[str, object]:
         """Return a deterministic JSON-compatible semantic registry record."""
@@ -82,6 +107,7 @@ class CatalogAsset:
             "upstream_relations": list(self.upstream_relations),
             "columns": [column.to_manifest() for column in self.columns],
             "tests": [test.to_manifest() for test in self.tests],
+            "metrics": [metric.to_manifest() for metric in self.metrics],
         }
 
 
@@ -104,6 +130,41 @@ class MetadataSpine:
         return {
             "schema_version": 1,
             "projects": projects,
+            "assets": [asset.to_manifest() for asset in ordered],
+        }
+
+    def pipeline_manifest(
+        self,
+        *,
+        pipeline_id: str,
+        source: SourceConfig,
+        assets: Iterable[CatalogAsset],
+    ) -> dict[str, object]:
+        """Project source, model, lineage, test, and metric metadata as one snapshot."""
+        ordered = sorted(assets, key=lambda asset: asset.relation)
+        projects = sorted({asset.project for asset in ordered})
+        project_id = projects[0] if len(projects) == 1 else ""
+        return {
+            "schema_version": 2,
+            "pipeline_id": pipeline_id,
+            "projects": projects,
+            "source": {
+                "name": source.name,
+                "engine": source.engine.value,
+                "endpoints": [
+                    {
+                        "name": endpoint.name,
+                        "relation": (
+                            f"{project_id}.raw.{source.name}_{endpoint.name}"
+                            if project_id
+                            else f"raw.{source.name}_{endpoint.name}"
+                        ),
+                        "primary_key": list(endpoint.primary_key),
+                        "incremental_cursor": endpoint.incremental_cursor,
+                    }
+                    for endpoint in source.endpoints
+                ],
+            },
             "assets": [asset.to_manifest() for asset in ordered],
         }
 
@@ -135,6 +196,7 @@ class MetadataSpine:
             tests=tuple(
                 contract for test in metadata.tests for contract in _test_contracts(project, test)
             ),
+            metrics=tuple(_metric_definition(metric) for metric in metadata.metrics),
         )
 
 
@@ -169,3 +231,22 @@ def _test_contracts(
 
 def _unquote(relation: str) -> str:
     return relation.removeprefix("`").removesuffix("`")
+
+
+def _metric_definition(metric: MetricMetadata) -> MetricDefinition:
+    field = metric.field
+    calculations = {
+        "count": "COUNT(*)",
+        "count_distinct": f"COUNT(DISTINCT `{field}`)",
+        "sum": f"SUM(`{field}`)",
+        "average": f"AVG(`{field}`)",
+        "minimum": f"MIN(`{field}`)",
+        "maximum": f"MAX(`{field}`)",
+    }
+    return MetricDefinition(
+        name=metric.name,
+        description=metric.description,
+        aggregation=metric.aggregation.value,
+        field=field,
+        calculation=calculations[metric.aggregation.value],
+    )

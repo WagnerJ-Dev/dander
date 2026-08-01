@@ -65,9 +65,9 @@ class PipelineRunner:
         self._resume_from_watermark = resume_from_watermark
         self._history = history
 
-    def run(self) -> PipelineRunResult:
+    def run(self, *, run_id: str | None = None) -> PipelineRunResult:
         """Run every configured endpoint and commit each cursor after its successful write."""
-        run_id = uuid4().hex
+        run_id = run_id or uuid4().hex
         source_name = self._source.config.name
         _LOGGER.info(
             "pipeline_started",

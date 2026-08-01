@@ -2,38 +2,39 @@
 
 ## Finished
 
-- Replaced the stale hosted runtime with the Linux/AMD64 image built from commit `554669d` and pinned Cloud Run to manifest digest `sha256:765b5a9b8fd5a2db7514238809a5565e4779e8a2e200b4c9d58c28c44abc2a69`.
-- Applied the reviewed Terraform plan as one in-place Cloud Run image update: 0 added, 1 changed, 0 destroyed.
-- Completed execution `dander-greenhouse-public-wngdn` successfully with ingestion, selected transform build/tests, and local catalog compilation.
-- Verified 25 raw rows, 25 staging rows, 25 distinct job ids, and zero null job ids or titles.
-- Left the daily scheduler enabled for 09:00 America/New_York with no IAM, dataset, billing, scheduler, or Terraform source changes.
+- Completed the approved single-command clean-project bootstrap in `dander-proof-harrison-20260801` with immutable image `sha256:d81d865a…4c125`.
+- Deployed additive Greenhouse and HubSpot jobs with distinct identities, both schedulers paused, an empty HubSpot secret container, and a simulation-only USD 5 guard.
+- Ran Greenhouse three times: every run extracted/affected 21 rows, built one model, passed three tests, and published one metadata asset; replay counts and hashes matched.
+- Verified metadata list/metrics/lineage/runs, both deployment contracts, retained inventory, and a final `No changes` infrastructure plan.
+- Fixed clean-project issues in current `gcloud` bucket flags, required API ordering, billing budget identity/ID format, and explicit proof-helper project targeting.
 
 ## Try It
 
-- Inspect the latest run with `gcloud run jobs executions describe dander-greenhouse-public-wngdn --region=us-central1`.
-- Query `raw.greenhouse_job_board_jobs` and `staging.stg_greenhouse__jobs` directly; `INFORMATION_SCHEMA` access is not required.
+- Inspect `uv run dander metadata list --project dander-proof-harrison-20260801` and `uv run dander metadata runs --project dander-proof-harrison-20260801`.
+- Review ignored sanitized evidence in `evidence/clean-project-20260801`, especially `manifest.json`, both final verification summaries, and `teardown.json`.
 
 ## Checks
 
-- Exact production command parsed successfully in the replacement container, and both selected model files were present.
-- Targeted CLI, bootstrap, and transform tests passed: 54 passed.
-- Manual Cloud Run execution succeeded in one task attempt with container exit code 0.
-- Direct BigQuery assertions passed: raw/staging counts matched at 25, ids were unique and non-null, and titles were non-null.
-- Final Terraform 1.15.8 plan returned exit code 0 with no changes.
+- Full gate passes: 497 tests, Ruff, formatting, production/changed-helper mypy, Terraform formatting, and validation of both roots.
+- Clean BigQuery has 21 raw/staging Greenhouse rows and three terminal `complete/succeeded` run records.
+- Both final deployment verifiers passed; every expected dataset, IAM edge, paused scheduler, secret scope, cost-guard component, and billing link is healthy.
+- Retained inventory passed: one state bucket, four datasets, two jobs, two schedules, seven service accounts, one secret container, and one repository.
+- Follow-up `dander init` returned `No changes`.
 
 ## Decisions
 
-- Recovered through the existing Terraform-managed immutable-image path rather than introducing `gcloud` drift.
-- Kept Dataplex publication disabled and retained local ephemeral catalog output.
-- Kept the scheduler enabled because the manual end-to-end proof passed before its next invocation.
+- Retain the clean proof project exactly as inventoried; both schedules stay paused.
+- Treat `dander_meta` as the durable built-in catalog/semantic registry; Dataplex remains an optional projection.
+- Require explicit `--project` on every proof helper invocation; local gcloud defaults are never authoritative.
 
 ## Remaining
 
-- Observe the next scheduled execution after 09:00 America/New_York; no recovery blocker remains.
-- Optional `INFORMATION_SCHEMA` metadata access remains unavailable, but direct table metadata and row queries work.
+- Run a WIF workflow dispatch only if uploaded GitHub evidence is required; the interactive clean-project proof is complete.
+- Run authenticated HubSpot, Storage Write, or Dataplex proofs only with separate authorization and credentials.
+- Push this branch and open a PR only when the user authorizes publication.
 
 ## Review First
 
-- Cloud Run execution `dander-greenhouse-public-wngdn`
-- Terraform plan SHA-256 `66c08b2e3517fbd14b7239bac2455d6eaaf7db1f35a4dc1ba8be3dfe980c3f53`
-- `infra/sandbox.auto.tfvars` immutable runtime image reference
+- `infra/modules/cost-guard/main.tf`
+- `src/dander/bootstrap/project.py`
+- `scripts/live_proof/transforms.py`

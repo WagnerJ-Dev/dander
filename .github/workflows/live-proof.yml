@@ -29,11 +29,6 @@ on:
         required: true
         default: false
         type: boolean
-      run_transforms:
-        description: Run hosted transforms and generic tests
-        required: true
-        default: true
-        type: boolean
       publish_dataplex:
         description: Publish and verify one Dataplex aspect
         required: true
@@ -43,11 +38,6 @@ on:
         description: Verify the simulation-first cost guard resources
         required: true
         default: true
-        type: boolean
-      teardown_after:
-        description: Run the approved teardown script after proofs
-        required: true
-        default: false
         type: boolean
 
 permissions:
@@ -111,15 +101,34 @@ jobs:
         run: |
           gcloud config set project "$PROJECT_ID"
           gcloud config set auth/impersonate_service_account "$BOOTSTRAP_SERVICE_ACCOUNT"
-          gcloud auth application-default login \
-            --impersonate-service-account="$BOOTSTRAP_SERVICE_ACCOUNT" \
-            --quiet
       - name: Verify WIF caller and bootstrap identity
         run: |
           uv run python scripts/live_proof/identity.py \
             --project "$PROJECT_ID" \
             --bootstrap-service-account "$BOOTSTRAP_SERVICE_ACCOUNT" \
             --evidence-dir "$EVIDENCE_DIR"
+      - name: Select the approved proof pipeline
+        run: |
+          if [[ "${{ inputs.run_authenticated_connector }}" == "true" ]]; then
+            echo "PROOF_PIPELINE=hubspot_companies" >> "$GITHUB_ENV"
+            echo "PROOF_JOB=dander-hubspot-companies" >> "$GITHUB_ENV"
+            echo "PROOF_MODEL=stg_hubspot__companies" >> "$GITHUB_ENV"
+          else
+            echo "PROOF_PIPELINE=greenhouse_jobs" >> "$GITHUB_ENV"
+            echo "PROOF_JOB=dander-greenhouse-public" >> "$GITHUB_ENV"
+            echo "PROOF_MODEL=stg_greenhouse__jobs" >> "$GITHUB_ENV"
+          fi
+      - name: Generate an all-paused proof manifest
+        run: |
+          CONFIG_ARGS=()
+          if [[ "${{ inputs.publish_dataplex }}" == "true" ]]; then
+            CONFIG_ARGS+=(--publish-dataplex-pipeline "$PROOF_PIPELINE")
+          fi
+          uv run python scripts/live_proof/prepare_config.py \
+            --input dander.yaml \
+            --output dander.live-proof.yaml \
+            "${CONFIG_ARGS[@]}"
+          uv run dander validate --config dander.live-proof.yaml
       - name: Build and push immutable proof image
         id: image
         run: |
@@ -133,14 +142,6 @@ jobs:
           echo "DANDER_CONTAINER_DIGEST=$DIGEST" >> "$GITHUB_ENV"
           echo "DANDER_GCP_PROJECT_ALIAS=$PROJECT_ID" >> "$GITHUB_ENV"
           echo "CONTAINER_IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/dander/dander@${DIGEST}" >> "$GITHUB_ENV"
-      - name: Add HubSpot secret version without printing its value
-        if: ${{ inputs.run_authenticated_connector }}
-        env:
-          HUBSPOT_PRIVATE_APP_TOKEN: ${{ secrets.HUBSPOT_PRIVATE_APP_TOKEN }}
-        run: |
-          test -n "$HUBSPOT_PRIVATE_APP_TOKEN"
-          printf '%s' "$HUBSPOT_PRIVATE_APP_TOKEN" | gcloud secrets versions add \
-            hubspot-private-app-token --data-file=- --quiet
       - name: Plan platform bootstrap through dander-bootstrap
         run: |
           uv run dander init \
@@ -151,41 +152,61 @@ jobs:
             --enable-runtime \
             --billing-account "$BILLING_ACCOUNT_ID" \
             --container-image "$CONTAINER_IMAGE" \
-            --scheduler-paused \
-            --runtime-source "${{ inputs.run_authenticated_connector && 'hubspot_test' || 'greenhouse_job_board' }}" \
-            --runtime-model "${{ inputs.run_authenticated_connector && 'stg_hubspot__companies' || 'stg_greenhouse__jobs' }}" \
-            ${{ inputs.run_transforms && '--runtime-build-models' || '--runtime-no-build-models' }} \
-            ${{ inputs.run_authenticated_connector && '--runtime-secret-id hubspot-private-app-token' || '' }} \
-            ${{ inputs.publish_dataplex && '--runtime-publish-dataplex' || '' }} \
+            --config dander.live-proof.yaml \
             --github-repository "${GITHUB_REPOSITORY}" \
-            --github-ref "refs/heads/${GITHUB_REF_NAME}" \
+            --github-ref "${GITHUB_REF}" \
             --enable-cost-guard \
             --cost-guard-budget-amount 5.00
           sha256sum infra/dander-bootstrap.tfplan | cut -d ' ' -f1 > /tmp/dander-plan.sha256
           echo "DANDER_TERRAFORM_PLAN_SHA256=$(cat /tmp/dander-plan.sha256)" >> "$GITHUB_ENV"
       - name: Apply reviewed platform plan
         run: terraform -chdir=infra apply -input=false dander-bootstrap.tfplan
-      - name: Verify deployment and create sanitized evidence
+      - name: Add HubSpot secret version without printing its value
+        if: ${{ inputs.run_authenticated_connector }}
+        env:
+          HUBSPOT_PRIVATE_APP_TOKEN: ${{ secrets.HUBSPOT_PRIVATE_APP_TOKEN }}
         run: |
-          VERIFY_COST_ARGS=()
+          test -n "$HUBSPOT_PRIVATE_APP_TOKEN"
+          printf '%s' "$HUBSPOT_PRIVATE_APP_TOKEN" | gcloud secrets versions add \
+            hubspot-private-app-token --data-file=- --quiet
+      - name: Verify both paused deployments and create sanitized evidence
+        run: |
+          VERIFY_COST_ARGS=(--billing-account "$BILLING_ACCOUNT_ID")
           if [[ "${{ inputs.verify_cost_guard }}" == "true" ]]; then
-            VERIFY_COST_ARGS+=(--expect-cost-guard --billing-account "$BILLING_ACCOUNT_ID")
+            VERIFY_COST_ARGS+=(--expect-cost-guard)
           fi
+          HUBSPOT_DATAPLEX_ARGS=()
+          GREENHOUSE_DATAPLEX_ARGS=()
+          if [[ "${{ inputs.publish_dataplex }}" == "true" ]]; then
+            if [[ "$PROOF_PIPELINE" == "hubspot_companies" ]]; then
+              HUBSPOT_DATAPLEX_ARGS+=(--publish-dataplex)
+            else
+              GREENHOUSE_DATAPLEX_ARGS+=(--publish-dataplex)
+            fi
+          fi
+          uv run dander verify deployment \
+            --project "$PROJECT_ID" \
+            --state-bucket "$STATE_BUCKET" \
+            --state-prefix dander/state \
+            --runtime-job dander-hubspot-companies \
+            --scheduler-job dander-hubspot-companies-daily \
+            --secret-id hubspot-private-app-token \
+            --runtime-image "$CONTAINER_IMAGE" \
+            "${HUBSPOT_DATAPLEX_ARGS[@]}" \
+            "${VERIFY_COST_ARGS[@]}" \
+            --evidence-dir "$EVIDENCE_DIR" \
+            --json "$EVIDENCE_DIR/bootstrap-summary.json"
           uv run dander verify deployment \
             --project "$PROJECT_ID" \
             --state-bucket "$STATE_BUCKET" \
             --state-prefix dander/state \
             --runtime-job dander-greenhouse-public \
             --scheduler-job dander-greenhouse-public-daily \
-            --dataset raw --dataset staging --dataset marts \
-            ${{ inputs.run_authenticated_connector && '--secret-id hubspot-private-app-token' || '' }} \
             --runtime-image "$CONTAINER_IMAGE" \
-            ${{ inputs.publish_dataplex && '--publish-dataplex' || '' }} \
+            "${GREENHOUSE_DATAPLEX_ARGS[@]}" \
             "${VERIFY_COST_ARGS[@]}" \
-            --evidence-dir "$EVIDENCE_DIR" \
-            --json "$EVIDENCE_DIR/bootstrap-summary.json"
-      - name: Execute paused public Cloud Run job
-        if: ${{ !inputs.run_authenticated_connector }}
+            --json "$EVIDENCE_DIR/greenhouse-deployment-summary.json"
+      - name: Execute the paused Greenhouse pipeline
         run: gcloud run jobs execute dander-greenhouse-public --region "$REGION" --wait
       - name: Run HubSpot authenticated proof
         if: ${{ inputs.run_authenticated_connector }}
@@ -195,6 +216,7 @@ jobs:
           uv run python scripts/live_proof/hubspot.py \
             --project "$PROJECT_ID" \
             --proof-run-id "${GITHUB_RUN_ID}" \
+            --job dander-hubspot-companies \
             --evidence-dir "$EVIDENCE_DIR"
       - name: Run Storage Write proof
         if: ${{ inputs.run_storage_write }}
@@ -203,43 +225,68 @@ jobs:
             --project "$PROJECT_ID" \
             --evidence-dir "$EVIDENCE_DIR"
       - name: Run hosted transform proof
-        if: ${{ inputs.run_transforms }}
         run: |
           uv run python scripts/live_proof/transforms.py \
             --project "$PROJECT_ID" \
-            --table "${{ inputs.run_authenticated_connector && 'stg_hubspot__companies' || 'stg_greenhouse__jobs' }}" \
+            --table "$PROOF_MODEL" \
+            --job "$PROOF_JOB" \
             --evidence-dir "$EVIDENCE_DIR"
       - name: Publish and read back Dataplex metadata
         if: ${{ inputs.publish_dataplex }}
         run: |
           uv run python scripts/live_proof/dataplex.py \
             --project "$PROJECT_ID" \
+            --model "$PROOF_MODEL" \
             --evidence-dir "$EVIDENCE_DIR"
-      - name: Re-verify IAM and cost guard after proofs
-        if: ${{ always() && (inputs.verify_cost_guard || inputs.run_authenticated_connector || inputs.publish_dataplex) }}
+      - name: Inspect the durable run and metadata spine
         run: |
-          VERIFY_COST_ARGS=()
+          uv run dander metadata list --project "$PROJECT_ID"
+          uv run dander metadata metrics --project "$PROJECT_ID"
+          uv run dander metadata runs --project "$PROJECT_ID" --limit 20
+      - name: Re-verify IAM and cost guard after proofs
+        if: always()
+        run: |
+          VERIFY_COST_ARGS=(--billing-account "$BILLING_ACCOUNT_ID")
           if [[ "${{ inputs.verify_cost_guard }}" == "true" ]]; then
-            VERIFY_COST_ARGS+=(--expect-cost-guard --billing-account "$BILLING_ACCOUNT_ID")
+            VERIFY_COST_ARGS+=(--expect-cost-guard)
           fi
+          HUBSPOT_DATAPLEX_ARGS=()
+          GREENHOUSE_DATAPLEX_ARGS=()
+          if [[ "${{ inputs.publish_dataplex }}" == "true" ]]; then
+            if [[ "$PROOF_PIPELINE" == "hubspot_companies" ]]; then
+              HUBSPOT_DATAPLEX_ARGS+=(--publish-dataplex)
+            else
+              GREENHOUSE_DATAPLEX_ARGS+=(--publish-dataplex)
+            fi
+          fi
+          uv run dander verify deployment \
+            --project "$PROJECT_ID" \
+            --state-bucket "$STATE_BUCKET" \
+            --state-prefix dander/state \
+            --runtime-job dander-hubspot-companies \
+            --scheduler-job dander-hubspot-companies-daily \
+            --secret-id hubspot-private-app-token \
+            --runtime-image "$CONTAINER_IMAGE" \
+            "${HUBSPOT_DATAPLEX_ARGS[@]}" \
+            "${VERIFY_COST_ARGS[@]}" \
+            --json "$EVIDENCE_DIR/final-hubspot-verification-summary.json"
           uv run dander verify deployment \
             --project "$PROJECT_ID" \
             --state-bucket "$STATE_BUCKET" \
             --state-prefix dander/state \
             --runtime-job dander-greenhouse-public \
             --scheduler-job dander-greenhouse-public-daily \
-            --dataset raw --dataset staging --dataset marts \
-            ${{ inputs.run_authenticated_connector && '--secret-id hubspot-private-app-token' || '' }} \
             --runtime-image "$CONTAINER_IMAGE" \
-            ${{ inputs.publish_dataplex && '--publish-dataplex' || '' }} \
+            "${GREENHOUSE_DATAPLEX_ARGS[@]}" \
             "${VERIFY_COST_ARGS[@]}" \
-            --evidence-dir "$EVIDENCE_DIR" \
-            --json "$EVIDENCE_DIR/final-verification-summary.json"
-      - name: Record approved teardown inventory
-        if: ${{ always() && inputs.teardown_after }}
+            --json "$EVIDENCE_DIR/final-greenhouse-verification-summary.json"
+      - name: Record retained-resource inventory
+        if: always()
         run: |
           uv run python scripts/live_proof/teardown.py \
             --project "$PROJECT_ID" \
+            --state-bucket "$STATE_BUCKET" \
+            --region "$REGION" \
             --evidence-dir "$EVIDENCE_DIR"
       - name: Finalize sanitized evidence manifest
         if: always()

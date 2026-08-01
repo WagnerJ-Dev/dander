@@ -1,0 +1,30 @@
+version: 1
+
+platform:
+  region: us-central1
+  bigquery_location: US
+
+pipelines:
+  greenhouse_jobs:
+    source: greenhouse_job_board
+    models: [stg_greenhouse__jobs]
+    schedule: "0 9 * * *"
+    time_zone: America/New_York
+    paused: false
+    resources:
+      job: dander-greenhouse-public
+      runtime_service_account: dander-runtime
+      scheduler_service_account: dander-scheduler
+
+  hubspot_companies:
+    source: hubspot_test
+    models: [stg_hubspot__companies]
+    schedule: "0 10 * * *"
+    time_zone: America/New_York
+    paused: true
+    secrets:
+      HUBSPOT_PRIVATE_APP_TOKEN: hubspot-private-app-token
+    resources:
+      job: dander-hubspot-companies
+      runtime_service_account: dander-runtime-hubspot
+      scheduler_service_account: dander-scheduler-hubspot
