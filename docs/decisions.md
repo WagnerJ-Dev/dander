@@ -1,5 +1,15 @@
 # Engineering Decisions
 
+## 2026-08-01 — Manifest-owned production runtime configuration
+
+- `platform.runtime` is one typed, repository-owned contract shared by all hosted jobs: CPU,
+  memory, task timeout, Cloud Run retries, and the existing BigQuery writer-request row limit.
+- `dander init` reads region, BigQuery location, runtime, and safety from `dander.yaml`; CLI values
+  replace authored values only when their flags are explicitly supplied.
+- `platform.safety.require_guarded_free_tier` conditionally adds the hosted preflight flag and
+  cannot be true for an enabled runtime when the infrastructure cost guard is disabled. This phase
+  does not stream extraction batches or alter pipeline definitions.
+
 ## 2026-08-01 — Hosted HubSpot activation and failure alerting
 
 - The dedicated HubSpot test account intentionally retains company read/write scopes. Its private

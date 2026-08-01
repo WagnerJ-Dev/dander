@@ -10,12 +10,18 @@ module "scheduled_job" {
   count  = var.enable_scheduled_job ? 1 : 0
   source = "./modules/scheduled-job"
 
-  project_id          = var.project_id
-  region              = var.region
-  billing_account_id  = var.billing_account_id
-  container_image     = var.runtime_container_image
-  pipelines           = var.pipelines
-  failure_alert_email = var.failure_alert_email
+  project_id                = var.project_id
+  region                    = var.region
+  billing_account_id        = var.billing_account_id
+  container_image           = var.runtime_container_image
+  runtime_cpu               = var.runtime_cpu
+  runtime_memory            = var.runtime_memory
+  runtime_timeout_seconds   = var.runtime_timeout_seconds
+  runtime_max_retries       = var.runtime_max_retries
+  runtime_batch_rows        = var.runtime_batch_rows
+  require_guarded_free_tier = var.require_guarded_free_tier
+  pipelines                 = var.pipelines
+  failure_alert_email       = var.failure_alert_email
   transform_dataset_ids = setsubtract(
     toset(var.datasets),
     toset(["raw"]),
@@ -87,6 +93,15 @@ check "failure_alerts_require_runtime" {
   assert {
     condition     = var.failure_alert_email == "" || var.enable_scheduled_job
     error_message = "failure_alert_email requires enable_scheduled_job=true."
+  }
+}
+
+check "guarded_runtime_requires_cost_guard" {
+  assert {
+    condition = !var.enable_scheduled_job || (
+      !var.require_guarded_free_tier || var.enable_cost_guard
+    )
+    error_message = "require_guarded_free_tier=true requires enable_cost_guard=true for hosted jobs."
   }
 }
 

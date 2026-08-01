@@ -61,6 +61,14 @@ def test_init_passes_optional_runtime_inputs(
     assert captured["secret_ids"] == ("api-token",)
     assert captured["github_repository"] == "WagnerJ-Dev/dander"
     assert captured["failure_alert_email"] == "operator@example.invalid"
+    assert captured["region"] == "us-central1"
+    assert captured["bigquery_location"] == "US"
+    assert captured["runtime_cpu"] == 1
+    assert captured["runtime_memory"] == "512Mi"
+    assert captured["runtime_timeout_seconds"] == 300
+    assert captured["runtime_max_retries"] == 1
+    assert captured["runtime_batch_rows"] == 10_000
+    assert captured["require_guarded_free_tier"] is True
     assert captured["enable_cost_guard"] is True
     assert captured["cost_guard_budget_amount"] == "4.50"
     assert captured["live_cost_guard"] is False
@@ -181,3 +189,142 @@ def test_init_apply_bootstraps_state_identity_image_and_platform(
     assert captured["bootstrap_service_account"] == (
         "dander-bootstrap@unit-project.iam.gserviceaccount.com"
     )
+
+
+def test_init_uses_manifest_platform_and_only_explicit_cli_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: list[dict[str, object]] = []
+
+    def fake_execute(self: object, **kwargs: object) -> Path:
+        captured.append(kwargs)
+        return tmp_path / "dander-bootstrap.tfplan"
+
+    connector_dir = tmp_path / "connectors"
+    models_dir = tmp_path / "models"
+    connector_dir.mkdir()
+    models_dir.mkdir()
+    (connector_dir / "source.yaml").write_text("name: source\n", encoding="utf-8")
+    (models_dir / "model.sql").write_text("SELECT 1\n", encoding="utf-8")
+    config = tmp_path / "dander.yaml"
+    config.write_text(
+        """
+version: 1
+platform:
+  region: us-east1
+  bigquery_location: EU
+  runtime:
+    cpu: 2
+    memory: 1Gi
+    timeout_seconds: 900
+    max_retries: 3
+    batch_rows: 2048
+  safety:
+    require_guarded_free_tier: false
+pipelines:
+  example:
+    source: source
+    models: [model]
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("dander.cli.main.TerraformBootstrap.execute", fake_execute)
+    base_args = [
+        "init",
+        "--project",
+        "unit-project",
+        "--billing-account",
+        "ABCDEF-123456-ABCDEF",
+        "--container-image",
+        f"example.invalid/project/repository/image@sha256:{'a' * 64}",
+        "--config",
+        str(config),
+    ]
+
+    authored = CliRunner().invoke(app, base_args)
+    overridden = CliRunner().invoke(
+        app,
+        [
+            *base_args,
+            "--region",
+            "europe-west1",
+            "--bigquery-location",
+            "europe-west1",
+            "--runtime-cpu",
+            "4",
+            "--runtime-memory",
+            "2Gi",
+            "--runtime-timeout-seconds",
+            "1200",
+            "--runtime-max-retries",
+            "5",
+            "--runtime-batch-rows",
+            "4096",
+            "--require-guarded-free-tier",
+        ],
+    )
+
+    assert authored.exit_code == 0, authored.output
+    assert overridden.exit_code == 0, overridden.output
+    assert {
+        key: captured[0][key]
+        for key in (
+            "region",
+            "bigquery_location",
+            "runtime_cpu",
+            "runtime_memory",
+            "runtime_timeout_seconds",
+            "runtime_max_retries",
+            "runtime_batch_rows",
+            "require_guarded_free_tier",
+        )
+    } == {
+        "region": "us-east1",
+        "bigquery_location": "EU",
+        "runtime_cpu": 2,
+        "runtime_memory": "1Gi",
+        "runtime_timeout_seconds": 900,
+        "runtime_max_retries": 3,
+        "runtime_batch_rows": 2048,
+        "require_guarded_free_tier": False,
+    }
+    assert captured[1]["region"] == "europe-west1"
+    assert captured[1]["bigquery_location"] == "europe-west1"
+    assert captured[1]["runtime_cpu"] == 4
+    assert captured[1]["runtime_memory"] == "2Gi"
+    assert captured[1]["runtime_timeout_seconds"] == 1200
+    assert captured[1]["runtime_max_retries"] == 5
+    assert captured[1]["runtime_batch_rows"] == 4096
+    assert captured[1]["require_guarded_free_tier"] is True
+
+
+def test_init_rejects_required_guard_when_cost_guard_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = False
+
+    def fake_execute(self: object, **kwargs: object) -> Path:
+        nonlocal called
+        called = True
+        raise AssertionError("must not execute")
+
+    monkeypatch.setattr("dander.cli.main.TerraformBootstrap.execute", fake_execute)
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "--project",
+            "unit-project",
+            "--billing-account",
+            "ABCDEF-123456-ABCDEF",
+            "--container-image",
+            f"example.invalid/project/repository/image@sha256:{'a' * 64}",
+            "--no-cost-guard",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.exception is not None
+    assert "require_guarded_free_tier=true requires the cost guard" in str(result.exception)
+    assert called is False

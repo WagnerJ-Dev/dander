@@ -8,9 +8,16 @@ ROOT = Path(__file__).parents[2]
 def test_root_passes_pipeline_map_and_scopes_secrets_per_runtime() -> None:
     root = (ROOT / "infra/main.tf").read_text(encoding="utf-8")
     secret_module = (ROOT / "infra/modules/secret-manager/main.tf").read_text(encoding="utf-8")
+    normalized = "\n".join(" ".join(line.split()) for line in root.splitlines())
 
-    assert "pipelines           = var.pipelines" in root
-    assert "failure_alert_email = var.failure_alert_email" in root
+    assert "pipelines = var.pipelines" in normalized
+    assert "failure_alert_email = var.failure_alert_email" in normalized
+    assert "runtime_cpu = var.runtime_cpu" in normalized
+    assert "runtime_memory = var.runtime_memory" in normalized
+    assert "runtime_timeout_seconds = var.runtime_timeout_seconds" in normalized
+    assert "runtime_max_retries = var.runtime_max_retries" in normalized
+    assert "runtime_batch_rows = var.runtime_batch_rows" in normalized
+    assert "require_guarded_free_tier = var.require_guarded_free_tier" in normalized
     assert "pipeline_secret_accessors" in root
     assert "accessors_by_secret = local.pipeline_secret_accessors" in root
     assert "setproduct(var.secret_ids" not in secret_module
@@ -20,6 +27,7 @@ def test_root_passes_pipeline_map_and_scopes_secrets_per_runtime() -> None:
 
 def test_scheduled_module_preserves_greenhouse_and_creates_each_pipeline() -> None:
     module = (ROOT / "infra/modules/scheduled-job/main.tf").read_text(encoding="utf-8")
+    normalized = "\n".join(" ".join(line.split()) for line in module.splitlines())
 
     assert 'to   = google_cloud_run_v2_job.ingestion["greenhouse_jobs"]' in module
     assert 'to   = google_cloud_scheduler_job.ingestion["greenhouse_jobs"]' in module
@@ -30,7 +38,16 @@ def test_scheduled_module_preserves_greenhouse_and_creates_each_pipeline() -> No
     assert 'metric.type = \\"run.googleapis.com/job/completed_execution_count\\"' in module
     assert 'metric.label.\\"result\\" = \\"failed\\"' in module
     assert module.count("for_each = var.pipelines") >= 8
-    assert '["run", each.key, "--config", "/app/dander.yaml", "--guarded-free-tier"]' in module
+    assert 'timeout = "${var.runtime_timeout_seconds}s"' in normalized
+    assert "max_retries = var.runtime_max_retries" in normalized
+    assert "cpu = tostring(var.runtime_cpu)" in normalized
+    assert "memory = var.runtime_memory" in normalized
+    assert 'var.require_guarded_free_tier ? ["--guarded-free-tier"] : []' in normalized
+    assert '["--batch-rows", tostring(var.runtime_batch_rows)]' in normalized
+    assert 'timeout = "300s"' not in normalized
+    assert "max_retries = 1" not in normalized
+    assert 'cpu = "1"' not in normalized
+    assert 'memory = "512Mi"' not in normalized
 
 
 def test_container_carries_the_project_manifest() -> None:

@@ -92,6 +92,12 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         apply=True,
         region="us-east1",
         bigquery_location="US",
+        runtime_cpu=2,
+        runtime_memory="1Gi",
+        runtime_timeout_seconds=900,
+        runtime_max_retries=3,
+        runtime_batch_rows=2048,
+        require_guarded_free_tier=False,
         enable_runtime=True,
         billing_account_id="ABCDEF-123456-ABCDEF",
         container_image=f"us-east1-docker.pkg.dev/unit-project/dander/dander@sha256:{digest}",
@@ -108,6 +114,14 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         in plan
     )
     assert "-var=enable_scheduled_job=true" in plan
+    assert "-var=region=us-east1" in plan
+    assert "-var=bigquery_location=US" in plan
+    assert "-var=runtime_cpu=2" in plan
+    assert "-var=runtime_memory=1Gi" in plan
+    assert "-var=runtime_timeout_seconds=900" in plan
+    assert "-var=runtime_max_retries=3" in plan
+    assert "-var=runtime_batch_rows=2048" in plan
+    assert "-var=require_guarded_free_tier=false" in plan
     pipeline_argument = next(
         argument for argument in plan if argument.startswith("-var=pipelines=")
     )
@@ -215,6 +229,21 @@ def test_apply_saved_plan_does_not_replan(
         ({"cost_guard_budget_amount": "5.01"}, "no greater than"),
         ({"cost_guard_budget_amount": "NaN"}, "no greater than"),
         ({"cost_guard_budget_name": "bad\nname"}, "display-name"),
+        ({"runtime_cpu": 3}, "runtime_cpu"),
+        ({"runtime_memory": "512MB"}, "runtime_memory"),
+        ({"runtime_timeout_seconds": 0}, "runtime_timeout_seconds"),
+        ({"runtime_max_retries": 11}, "runtime_max_retries"),
+        ({"runtime_batch_rows": 100_001}, "runtime_batch_rows"),
+        (
+            {
+                "enable_runtime": True,
+                "billing_account_id": "ABCDEF-123456-ABCDEF",
+                "container_image": f"example.invalid/dander@sha256:{'a' * 64}",
+                "pipelines": _pipelines(),
+                "require_guarded_free_tier": True,
+            },
+            "require_guarded_free_tier.*enable-cost-guard",
+        ),
     ],
 )
 def test_bootstrap_rejects_unsafe_optional_inputs(
