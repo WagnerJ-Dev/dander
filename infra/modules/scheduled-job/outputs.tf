@@ -36,3 +36,13 @@ output "scheduler_service_account_names" {
   description = "Scheduler service-account resource names keyed by pipeline id."
   value       = { for id, account in google_service_account.scheduler : id => account.name }
 }
+
+output "failure_alerting" {
+  description = "Failure notification channel and per-pipeline alert policy names."
+  value = nonsensitive(var.failure_alert_email == "") ? null : {
+    notification_channel = google_monitoring_notification_channel.pipeline_failures[0].name
+    alert_policies = {
+      for id, policy in google_monitoring_alert_policy.pipeline_failure : id => policy.name
+    }
+  }
+}

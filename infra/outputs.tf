@@ -8,6 +8,11 @@ output "scheduled_jobs" {
   value       = var.enable_scheduled_job ? module.scheduled_job[0].jobs : {}
 }
 
+output "failure_alerting" {
+  description = "Failure notification resources when an operator email is configured."
+  value       = var.enable_scheduled_job ? module.scheduled_job[0].failure_alerting : null
+}
+
 output "secret_resources" {
   description = "Secret Manager resource names created by the bootstrap."
   value       = length(local.managed_secret_ids) > 0 ? module.secret_manager[0].secret_resources : null

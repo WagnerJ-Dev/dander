@@ -30,3 +30,8 @@ pipelines = {
 Every hosted job executes `dander run <pipeline> --config /app/dander.yaml`, so local and cloud
 execution resolve the same connector, model selection, and metadata policy. New schedules remain
 paused until their manual proof succeeds.
+
+When `failure_alert_email` is set, the module creates one email notification channel and one
+enabled Cloud Monitoring policy per pipeline. Each policy matches only failed executions for its
+pipeline's exact Cloud Run Job name. The address is supplied by the operator and is not part of
+`dander.yaml`.

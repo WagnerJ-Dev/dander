@@ -72,3 +72,15 @@ variable "pipelines" {
     error_message = "Every pipeline must use safe ids, a non-empty model selection and schedule, and valid secret bindings."
   }
 }
+
+variable "failure_alert_email" {
+  type        = string
+  description = "Operator email receiving Cloud Run Job failure notifications; empty disables alerting."
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = var.failure_alert_email == "" || can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.failure_alert_email))
+    error_message = "failure_alert_email must be empty or a valid email address."
+  }
+}

@@ -13,6 +13,8 @@ locals {
       ]
     ]) : binding.key => binding
   }
+  failure_alerts_enabled  = nonsensitive(var.failure_alert_email != "")
+  failure_alert_pipelines = local.failure_alerts_enabled ? var.pipelines : {}
 }
 
 # Preserve the original Greenhouse resources while the module evolves from one hard-coded job to
@@ -82,6 +84,7 @@ resource "google_project_service" "required" {
   for_each = toset(concat([
     "artifactregistry.googleapis.com",
     "cloudscheduler.googleapis.com",
+    "monitoring.googleapis.com",
     "run.googleapis.com",
   ], local.any_pipeline_publishes_dataplex ? ["dataplex.googleapis.com"] : []))
 
@@ -291,5 +294,79 @@ resource "google_cloud_scheduler_job" "ingestion" {
   depends_on = [
     google_cloud_run_v2_job_iam_member.scheduler_invoker,
     google_project_service.required,
+  ]
+}
+
+resource "google_monitoring_notification_channel" "pipeline_failures" {
+  count = local.failure_alerts_enabled ? 1 : 0
+
+  project      = var.project_id
+  display_name = "Dander pipeline failures"
+  description  = "Operator-owned email channel for hosted Dander pipeline failures."
+  type         = "email"
+  enabled      = true
+  labels = {
+    email_address = var.failure_alert_email
+  }
+  user_labels = {
+    managed_by = "dander"
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_monitoring_alert_policy" "pipeline_failure" {
+  for_each = local.failure_alert_pipelines
+
+  project      = var.project_id
+  display_name = "Dander pipeline failure: ${each.key}"
+  combiner     = "OR"
+  enabled      = true
+
+  conditions {
+    display_name = "${each.value.job_name} execution failed"
+
+    condition_threshold {
+      filter = join(" AND ", [
+        "resource.type = \"cloud_run_job\"",
+        "resource.label.\"job_name\" = \"${each.value.job_name}\"",
+        "metric.type = \"run.googleapis.com/job/completed_execution_count\"",
+        "metric.label.\"result\" = \"failed\"",
+      ])
+      comparison      = "COMPARISON_GT"
+      duration        = "0s"
+      threshold_value = 0
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_SUM"
+      }
+
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  documentation {
+    content   = "Cloud Run reported a failed execution for `${each.value.job_name}`. Inspect the execution logs and `dander_meta._dander_runs` before replaying the pipeline."
+    mime_type = "text/markdown"
+    subject   = "Dander pipeline failed: ${each.key}"
+  }
+
+  alert_strategy {
+    auto_close           = "1800s"
+    notification_prompts = ["OPENED"]
+  }
+
+  notification_channels = [google_monitoring_notification_channel.pipeline_failures[0].name]
+  user_labels = {
+    managed_by = "dander"
+    pipeline   = replace(each.key, "_", "-")
+  }
+
+  depends_on = [
+    google_cloud_run_v2_job.ingestion,
+    google_monitoring_notification_channel.pipeline_failures,
   ]
 }

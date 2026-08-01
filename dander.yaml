@@ -21,7 +21,7 @@ pipelines:
     models: [stg_hubspot__companies]
     schedule: "0 10 * * *"
     time_zone: America/New_York
-    paused: true
+    paused: false
     secrets:
       HUBSPOT_PRIVATE_APP_TOKEN: hubspot-private-app-token
     resources:
