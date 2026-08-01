@@ -68,6 +68,26 @@ class _Writer(WritePattern):
         return 2
 
 
+class _BatchedWriter(WritePattern):
+    mode = WriteMode.SCD1
+    supports_batched_writes = True
+
+    def __init__(self, *, fail_batch: int | None = None) -> None:
+        self.batches: list[list[dict[str, Any]]] = []
+        self.state: dict[str, dict[str, Any]] = {}
+        self._fail_batch = fail_batch
+
+    def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
+        assert target.table == "example_widgets"
+        batch = [dict(record) for record in records]
+        self.batches.append(batch)
+        if self._fail_batch == len(self.batches):
+            raise RuntimeError("synthetic batch failure")
+        for record in batch:
+            self.state[str(record["id"])] = record
+        return len(batch)
+
+
 class _Watermarks(WatermarkStore):
     def __init__(self, events: list[str]) -> None:
         self._events = events
@@ -200,3 +220,118 @@ def test_runner_records_non_sensitive_terminal_history(
     run_id, source = history.started
     assert source == "example"
     assert history.finished == (run_id, status, endpoints, extracted, affected)
+
+
+def test_scd1_runtime_writes_large_endpoint_in_bounded_batches() -> None:
+    total = 100_003
+    yielded = 0
+
+    class _LargeSource(_Source):
+        def extract(
+            self,
+            endpoint: str,
+            *,
+            since: str | None = None,
+        ) -> Iterator[Mapping[str, Any]]:
+            nonlocal yielded
+            assert endpoint == "widgets"
+            assert since == "2026-01-01T00:00:00Z"
+            for index in range(total):
+                yielded += 1
+                yield {
+                    "id": str(index),
+                    "updated_at": f"{index:06d}",
+                }
+
+    class _ObservingWriter(_BatchedWriter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.first_write_yielded: int | None = None
+
+        def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
+            if self.first_write_yielded is None:
+                self.first_write_yielded = yielded
+            return super().write(records, target)
+
+    writer = _ObservingWriter()
+    watermarks = _Watermarks([])
+    runner = PipelineRunner(
+        source=_LargeSource([]),
+        writer=writer,
+        watermarks=watermarks,
+        project="unit-project",
+        dataset="raw",
+        batch_rows=1_024,
+    )
+
+    result = runner.run()
+
+    assert yielded == total
+    assert writer.first_write_yielded == 1_024
+    assert len(writer.batches) == 98
+    assert max(map(len, writer.batches)) == 1_024
+    assert len(writer.batches[-1]) == 675
+    assert result.endpoints[0].extracted == total
+    assert result.endpoints[0].affected == total
+    assert watermarks.committed == "100002"
+
+
+def test_scd1_cross_batch_duplicate_is_last_record_wins() -> None:
+    events: list[str] = []
+
+    class _DuplicateSource(_Source):
+        def extract(
+            self,
+            endpoint: str,
+            *,
+            since: str | None = None,
+        ) -> Iterator[Mapping[str, Any]]:
+            assert endpoint == "widgets"
+            assert since == "2026-01-01T00:00:00Z"
+            yield {"id": "one", "updated_at": "2026-01-02T00:00:00Z"}
+            yield {"id": "one", "updated_at": "2026-01-03T00:00:00Z"}
+
+    writer = _BatchedWriter()
+    runner = PipelineRunner(
+        source=_DuplicateSource(events),
+        writer=writer,
+        watermarks=_Watermarks(events),
+        project="unit-project",
+        dataset="raw",
+        batch_rows=1,
+    )
+
+    runner.run()
+
+    assert writer.state["one"]["updated_at"] == "2026-01-03T00:00:00Z"
+
+
+def test_scd1_does_not_advance_watermark_when_later_batch_fails() -> None:
+    events: list[str] = []
+    watermarks = _Watermarks(events)
+    runner = PipelineRunner(
+        source=_Source(events),
+        writer=_BatchedWriter(fail_batch=2),
+        watermarks=watermarks,
+        project="unit-project",
+        dataset="raw",
+        batch_rows=1,
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic batch failure"):
+        runner.run()
+
+    assert watermarks.committed is None
+
+
+@pytest.mark.parametrize("batch_rows", [0, 100_001, True])
+def test_runner_rejects_invalid_batch_rows(batch_rows: int) -> None:
+    with pytest.raises(ValueError, match="batch_rows"):
+        PipelineRunner(
+            source=_Source([]),
+            writer=_Writer([]),
+            watermarks=_Watermarks([]),
+            project="unit-project",
+            dataset="raw",
+            batch_rows=batch_rows,
+        )

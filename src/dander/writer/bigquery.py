@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from itertools import islice
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import uuid4
 
@@ -53,6 +54,7 @@ class BigQueryScd1Writer(WritePattern):
     """Load a batch through a unique staging table and merge on its business key."""
 
     mode = WriteMode.SCD1
+    supports_batched_writes = True
 
     def __init__(
         self,
@@ -121,6 +123,7 @@ class BigQueryScd1Writer(WritePattern):
                 staged_rows,
                 staging_id,
                 max_batch_rows=self._max_batch_rows,
+                expire=True,
             )
             self._client.query(_create_target_sql(target_id, staging_id, columns)).result()
             _apply_schema_evolution(
@@ -146,6 +149,7 @@ class BigQueryIncrementalWriter(BigQueryScd1Writer):
     """Merge a watermark-bounded batch after validating its cursor column."""
 
     mode = WriteMode.INCREMENTAL
+    supports_batched_writes = False
 
     def __init__(
         self,
@@ -313,9 +317,10 @@ class BigQueryScd2Writer(WritePattern):
 
 
 class BigQueryReplaceWriter(WritePattern):
-    """Replace a table using only BigQuery load and table-management APIs."""
+    """Stage bounded load batches, then replace through one atomic BigQuery DDL statement."""
 
     mode = WriteMode.REPLACE
+    accepts_streaming_input = True
 
     def __init__(
         self,
@@ -329,37 +334,55 @@ class BigQueryReplaceWriter(WritePattern):
         self._max_batch_rows = _validated_batch_size(max_batch_rows)
 
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
-        """Replace the target without SQL or DML, including clearing an empty snapshot."""
+        """Stage a bounded input stream, then atomically replace the target."""
         target_id = _target_id(target)
         if target.project != self._project:
             raise BigQueryWriteError(
                 f"Writer project {self._project!r} does not match target project {target.project!r}"
             )
 
-        rows = [dict(record) for record in records]
-        if not rows:
+        record_iterator = iter(records)
+        first_batch = [dict(record) for record in islice(record_iterator, self._max_batch_rows)]
+        if not first_batch:
             self._client.delete_table(target_id, not_found_ok=True)
             return 0
 
-        columns = tuple(rows[0])
+        columns = tuple(first_batch[0])
         if not columns:
             raise BigQueryWriteError("Cannot write records with no columns")
         for column in columns:
             _validated_identifier(column, "column")
         expected_columns = set(columns)
-        for index, row in enumerate(rows):
-            if set(row) != expected_columns:
-                raise BigQueryWriteError(
-                    f"Record {index} has a different column set from the first record"
+        staging_id = _staging_id(target)
+        written = 0
+        try:
+            batch = first_batch
+            first = True
+            while batch:
+                for index, row in enumerate(batch, start=written):
+                    if set(row) != expected_columns:
+                        raise BigQueryWriteError(
+                            f"Record {index} has a different column set from the first record"
+                        )
+                disposition = (
+                    bigquery.WriteDisposition.WRITE_TRUNCATE
+                    if first
+                    else bigquery.WriteDisposition.WRITE_APPEND
                 )
-
-        _load_rows_in_chunks(
-            self._client,
-            rows,
-            target_id,
-            max_batch_rows=self._max_batch_rows,
-        )
-        return len(rows)
+                self._client.load_table_from_json(
+                    batch,
+                    staging_id,
+                    job_config=_load_config(disposition),
+                ).result()
+                if first:
+                    self._client.query(_expire_staging_sql(staging_id)).result()
+                    first = False
+                written += len(batch)
+                batch = [dict(record) for record in islice(record_iterator, self._max_batch_rows)]
+            self._client.query(_replace_from_staging_sql(target_id, staging_id, columns)).result()
+            return written
+        finally:
+            self._client.delete_table(staging_id, not_found_ok=True)
 
 
 def _validated_identifier(value: str, label: str, *, allow_dash: bool = False) -> str:
@@ -490,6 +513,7 @@ def _load_rows_in_chunks(
     destination: str,
     *,
     max_batch_rows: int,
+    expire: bool = False,
 ) -> None:
     """Bound each load request while preserving one logical truncate-then-append batch."""
     for offset in range(0, len(rows), max_batch_rows):
@@ -503,6 +527,24 @@ def _load_rows_in_chunks(
             destination,
             job_config=_load_config(disposition),
         ).result()
+        if offset == 0 and expire:
+            client.query(_expire_staging_sql(destination)).result()
+
+
+def _expire_staging_sql(staging_id: str) -> str:
+    return (
+        f"ALTER TABLE `{staging_id}` SET OPTIONS "
+        "(expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 1 DAY))"
+    )
+
+
+def _replace_from_staging_sql(
+    target_id: str,
+    staging_id: str,
+    columns: Sequence[str],
+) -> str:
+    selected = _quoted_columns(columns)
+    return f"CREATE OR REPLACE TABLE `{target_id}` AS SELECT {selected} FROM `{staging_id}`"
 
 
 def _quoted_columns(columns: Sequence[str], *, alias: str | None = None) -> str:

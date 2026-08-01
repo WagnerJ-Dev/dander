@@ -63,6 +63,8 @@ class WritePattern(ABC):
     """Loads a batch of records into a BigQuery target using one ``WriteMode``."""
 
     mode: WriteMode
+    supports_batched_writes = False
+    accepts_streaming_input = False
 
     @abstractmethod
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
