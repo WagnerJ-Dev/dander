@@ -21,7 +21,7 @@ from dander.writer import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from google.cloud import bigquery
 
@@ -99,10 +99,11 @@ def test_scd1_deduplicates_last_record_and_builds_explicit_merge() -> None:
         {"id": "one", "label": "new"},
         {"id": "two", "label": "other"},
     ]
-    assert client.queries[0].startswith(
+    assert client.queries[0].startswith(f"ALTER TABLE `{client.destination}` SET OPTIONS")
+    assert client.queries[1].startswith(
         "CREATE TABLE IF NOT EXISTS `unit-project.raw.example_widgets`"
     )
-    merge = client.queries[1]
+    merge = client.queries[2]
     assert "ON target.`id` = source.`id`" in merge
     assert "target.`label` = source.`label`" in merge
     assert "SELECT *" not in merge
@@ -129,17 +130,21 @@ def test_staging_table_is_cleaned_after_load_failure() -> None:
     assert client.deleted == [client.destination]
 
 
-def test_replace_writer_uses_direct_truncate_load_without_queries() -> None:
+def test_replace_writer_stages_then_atomically_replaces_target() -> None:
     client = _Client()
     writer = BigQueryReplaceWriter(project="unit-project", client=client)
 
     affected = writer.write([{"id": "one"}, {"id": "two"}], _target())
 
     assert affected == 2
-    assert client.destination == "unit-project.raw.example_widgets"
+    assert client.destination.startswith("unit-project.raw._dander_stage_example_widgets_")
     assert client.write_disposition == "WRITE_TRUNCATE"
-    assert client.queries == []
-    assert client.deleted == []
+    assert client.queries[0].startswith(f"ALTER TABLE `{client.destination}` SET OPTIONS")
+    assert client.queries[1] == (
+        "CREATE OR REPLACE TABLE `unit-project.raw.example_widgets` AS "
+        f"SELECT `id` FROM `{client.destination}`"
+    )
+    assert client.deleted == [client.destination]
 
 
 def test_replace_writer_deletes_stale_table_for_empty_snapshot() -> None:
@@ -168,6 +173,65 @@ def test_replace_writer_bounds_load_requests_and_appends_after_first_chunk() -> 
     assert affected == 5
     assert [len(batch) for batch in client.loaded_batches] == [2, 2, 1]
     assert client.write_dispositions == ["WRITE_TRUNCATE", "WRITE_APPEND", "WRITE_APPEND"]
+    assert client.queries[-1].startswith("CREATE OR REPLACE TABLE")
+    assert client.deleted == [client.destination]
+
+
+def test_replace_writer_starts_loading_before_input_is_exhausted() -> None:
+    observed_at_load: list[int] = []
+    yielded = 0
+
+    class _ObservingClient(_Client):
+        def load_table_from_json(
+            self,
+            json_rows: Sequence[Mapping[str, Any]],
+            destination: str,
+            *,
+            job_config: bigquery.LoadJobConfig,
+        ) -> _Job:
+            observed_at_load.append(yielded)
+            return super().load_table_from_json(
+                json_rows,
+                destination,
+                job_config=job_config,
+            )
+
+    def records() -> Iterable[Mapping[str, Any]]:
+        nonlocal yielded
+        for index in range(5):
+            yielded += 1
+            yield {"id": str(index)}
+
+    client = _ObservingClient()
+    writer = BigQueryReplaceWriter(
+        project="unit-project",
+        client=client,
+        max_batch_rows=2,
+    )
+
+    assert writer.write(records(), _target()) == 5
+    assert observed_at_load == [2, 4, 5]
+
+
+def test_replace_writer_does_not_publish_partial_stage_after_source_failure() -> None:
+    client = _Client()
+    writer = BigQueryReplaceWriter(
+        project="unit-project",
+        client=client,
+        max_batch_rows=2,
+    )
+
+    def records() -> Iterable[Mapping[str, Any]]:
+        yield {"id": "one"}
+        yield {"id": "two"}
+        raise RuntimeError("synthetic extraction failure")
+
+    with pytest.raises(RuntimeError, match="synthetic extraction failure"):
+        writer.write(records(), _target())
+
+    assert len(client.loaded_batches) == 1
+    assert all(not query.startswith("CREATE OR REPLACE TABLE") for query in client.queries)
+    assert client.deleted == [client.destination]
 
 
 def test_writer_rejects_invalid_batch_bound() -> None:
@@ -195,14 +259,14 @@ def test_additive_schema_evolution_adds_only_declared_scalar_columns() -> None:
 
     writer.write([{"id": "one", "label": "new"}], target)
 
-    evolution = client.queries[1]
+    evolution = client.queries[2]
     assert evolution == (
         "ALTER TABLE `unit-project.raw.example_widgets` "
         "ADD COLUMN IF NOT EXISTS `id` STRING;\n"
         "ALTER TABLE `unit-project.raw.example_widgets` "
         "ADD COLUMN IF NOT EXISTS `label` STRING"
     )
-    assert client.queries[2].startswith("MERGE")
+    assert client.queries[3].startswith("MERGE")
 
 
 def test_additive_schema_rejects_unsupported_type_before_load() -> None:
@@ -241,7 +305,7 @@ def test_incremental_writer_requires_cursor_and_reuses_idempotent_merge() -> Non
 
     assert writer.mode is WriteMode.INCREMENTAL
     assert affected == 2
-    assert client.queries[1].startswith("MERGE")
+    assert client.queries[2].startswith("MERGE")
 
     with pytest.raises(BigQueryWriteError, match="Cursor column"):
         writer.write([{"id": "two"}], _target())

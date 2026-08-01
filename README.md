@@ -283,9 +283,10 @@ platform:
     require_guarded_free_tier: true
 ```
 
-These repository-owned values configure every hosted job. `batch_rows` bounds each BigQuery writer
-request; extraction still materializes one endpoint batch in memory. When guarded free tier is
-required, initialization rejects a disabled cost guard and hosted jobs receive
+These repository-owned values configure every hosted job. `batch_rows` bounds both hosted SCD1
+extraction batches and BigQuery writer requests. Sandbox replacement also consumes the endpoint
+as bounded batches through a run-scoped staging table. When guarded free tier is required,
+initialization rejects a disabled cost guard and hosted jobs receive
 `--guarded-free-tier`. The `--region`, `--bigquery-location`, `--runtime-*`, and guarded-free-tier
 override flags take precedence only when explicitly supplied.
 
@@ -423,9 +424,10 @@ Knowledge Catalog API calls free but charges for stored aspect metadata, so clou
 implicit. See [Knowledge Catalog pricing](https://cloud.google.com/products/knowledge-catalog/pricing)
 and [Dataplex aspect management](https://docs.cloud.google.com/dataplex/docs/enrich-entries-metadata).
 
-Current v0 limits are explicit: the writer package executes SCD1, cursor-validated incremental,
-partitioned snapshot, SCD2 history, and sandbox replacement, but whole endpoint batches are held in
-memory. Schema evolution is intentionally limited to declared nullable scalar additions, and the
+Current v0 limits are explicit: hosted SCD1 and sandbox replacement consume bounded endpoint
+batches, while direct SCD2, snapshot, incremental-writer, and Storage Write orchestration retain
+their existing logical-batch behavior. Schema evolution is intentionally limited to declared
+nullable scalar additions, and the
 Storage Write transport supports an explicitly bounded scalar subset. Public Job Board extraction
 is a full refresh and does not delete jobs that disappear from a board. The CLI bootstrap can plan
 Secret Manager, IAM/WIF, the complete scheduled public pipeline, and a simulation-first cost guard,

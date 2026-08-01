@@ -970,6 +970,7 @@ def run(
         project=resolved_project,
         dataset=resolved_dataset,
         resume_from_watermark=not sandbox,
+        batch_rows=batch_rows,
     )
     try:
         result = PipelineExecutor(

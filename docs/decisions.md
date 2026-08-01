@@ -1,5 +1,14 @@
 # Engineering Decisions
 
+## 2026-08-01 — Focused bounded-memory ingestion
+
+- The normal hosted SCD1 path consumes `platform.runtime.batch_rows` batches and performs an
+  idempotent merge for each batch; the endpoint watermark advances only after all batches succeed.
+- Sandbox replace streams the endpoint into one expiring run-scoped staging table and publishes it
+  atomically after extraction. Handled failures remove staging; hard-crash staging expires.
+- SCD2, snapshot, incremental-writer, and Storage Write orchestration intentionally keep their
+  existing logical-batch behavior for v0.1 rather than inheriting a new session abstraction.
+
 ## 2026-08-01 — Manifest-owned production runtime configuration
 
 - `platform.runtime` is one typed, repository-owned contract shared by all hosted jobs: CPU,
