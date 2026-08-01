@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 import yaml
@@ -66,6 +67,34 @@ class GenericTestMetadata(BaseModel):
         return self
 
 
+class MetricAggregation(StrEnum):
+    """Supported governed metric calculations."""
+
+    COUNT = "count"
+    COUNT_DISTINCT = "count_distinct"
+    SUM = "sum"
+    AVERAGE = "average"
+    MINIMUM = "minimum"
+    MAXIMUM = "maximum"
+
+
+class MetricMetadata(BaseModel):
+    """A business metric definition projected through the metadata spine."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(pattern=_IDENTIFIER.pattern)
+    description: str = Field(min_length=1)
+    aggregation: MetricAggregation
+    field: str | None = Field(default=None, pattern=_IDENTIFIER.pattern)
+
+    @model_validator(mode="after")
+    def require_field_for_value_aggregation(self) -> MetricMetadata:
+        if self.aggregation is not MetricAggregation.COUNT and self.field is None:
+            raise ValueError("non-count metrics require a field")
+        return self
+
+
 class ModelMetadata(BaseModel):
     """Validated metadata spine for a SQL model."""
 
@@ -80,6 +109,7 @@ class ModelMetadata(BaseModel):
     sensitivity: str = Field(min_length=1)
     columns: list[ColumnMetadata] = Field(min_length=1)
     tests: list[GenericTestMetadata] = Field(default_factory=list)
+    metrics: list[MetricMetadata] = Field(default_factory=list)
     unique_key: list[str] = Field(default_factory=list)
     incremental_cursor: str | None = None
 
@@ -92,6 +122,15 @@ class ModelMetadata(BaseModel):
         declared = set(names)
         if unknown := sorted({test.column for test in self.tests} - declared):
             raise ValueError(f"tests reference undeclared columns: {', '.join(unknown)}")
+        metric_names = [metric.name for metric in self.metrics]
+        if len(metric_names) != len(set(metric_names)):
+            raise ValueError("metric names must be unique within a model")
+        if unknown_metric_fields := sorted(
+            {metric.field for metric in self.metrics if metric.field is not None} - declared
+        ):
+            raise ValueError(
+                "metrics reference undeclared columns: " + ", ".join(unknown_metric_fields)
+            )
         if self.materialization is Materialization.INCREMENTAL:
             if not self.unique_key:
                 raise ValueError("incremental models require unique_key")

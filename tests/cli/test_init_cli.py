@@ -119,3 +119,62 @@ def test_live_cost_guard_is_named_in_apply_confirmation(
     )
 
     assert "LIVE automatic billing detachment" in result.output
+
+
+def test_init_apply_bootstraps_state_identity_image_and_platform(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    captured: dict[str, object] = {}
+
+    def fake_bucket(self: object, **kwargs: object) -> bool:
+        events.append("state")
+        assert kwargs["bucket"] == "unit-project-dander-state"
+        return True
+
+    def fake_admin(self: object, **kwargs: object) -> Path:
+        events.append("admin")
+        assert kwargs["adopt_state_bucket"] is True
+        return tmp_path / "admin.tfplan"
+
+    def fake_publish(self: object, **kwargs: object) -> str:
+        events.append("image")
+        return "us-central1-docker.pkg.dev/unit-project/dander/dander@sha256:" + "a" * 64
+
+    def fake_platform(self: object, **kwargs: object) -> Path:
+        events.append("platform")
+        captured.update(kwargs)
+        return tmp_path / "platform.tfplan"
+
+    monkeypatch.setattr("dander.cli.main.StateBucketBootstrap.ensure", fake_bucket)
+    monkeypatch.setattr("dander.cli.main.AdministrativeBootstrap.execute", fake_admin)
+    monkeypatch.setattr("dander.cli.main.RuntimeImagePublisher.publish", fake_publish)
+    monkeypatch.setattr(
+        "dander.cli.main.active_admin_member",
+        lambda **_kwargs: "user:operator@example.invalid",
+    )
+    monkeypatch.setattr("dander.cli.main.TerraformBootstrap.execute", fake_platform)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "--project",
+            "unit-project",
+            "--billing-account",
+            "ABCDEF-123456-ABCDEF",
+            "--operator-artifact-dir",
+            str(tmp_path / "operator"),
+            "--apply",
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert events == ["state", "admin", "image", "platform"]
+    assert captured["enable_runtime"] is True
+    assert captured["enable_cost_guard"] is True
+    assert captured["bootstrap_service_account"] == (
+        "dander-bootstrap@unit-project.iam.gserviceaccount.com"
+    )

@@ -217,6 +217,10 @@ resource "google_cloud_run_v2_job" "ingestion" {
           value = var.dataset_id
         }
         env {
+          name  = "BQ_DATASET_METADATA"
+          value = "dander_meta"
+        }
+        env {
           name  = "DANDER_PRINCIPAL"
           value = google_service_account.runtime[each.key].email
         }

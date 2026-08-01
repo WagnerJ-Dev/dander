@@ -35,3 +35,9 @@ tests:
     unique: true
   - column: archived
     accepted_values: [true, false]
+
+metrics:
+  - name: proof_company_count
+    description: Number of distinct controlled HubSpot proof companies represented in the model.
+    aggregation: count_distinct
+    field: company_id

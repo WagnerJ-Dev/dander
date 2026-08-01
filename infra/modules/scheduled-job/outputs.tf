@@ -12,12 +12,12 @@ output "jobs" {
   description = "Hosted pipeline resource details keyed by pipeline id."
   value = {
     for id, pipeline in var.pipelines : id => {
-      job_name                       = google_cloud_run_v2_job.ingestion[id].name
-      runtime_service_account        = google_service_account.runtime[id].email
-      runtime_service_account_name   = google_service_account.runtime[id].name
-      scheduler_job_name             = google_cloud_scheduler_job.ingestion[id].name
-      scheduler_service_account      = google_service_account.scheduler[id].email
-      scheduler_service_account_name = google_service_account.scheduler[id].name
+      job_name                       = try(google_cloud_run_v2_job.ingestion[id].name, null)
+      runtime_service_account        = try(google_service_account.runtime[id].email, null)
+      runtime_service_account_name   = try(google_service_account.runtime[id].name, null)
+      scheduler_job_name             = try(google_cloud_scheduler_job.ingestion[id].name, null)
+      scheduler_service_account      = try(google_service_account.scheduler[id].email, null)
+      scheduler_service_account_name = try(google_service_account.scheduler[id].name, null)
     }
   }
 }

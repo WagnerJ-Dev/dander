@@ -8,7 +8,7 @@ import pytest
 
 from dander.ingestion.source import Endpoint, Source, SourceConfig
 from dander.runtime import PipelineRunner
-from dander.state import RunHistoryStore, RunStatus, WatermarkStore
+from dander.state import RunHistoryStore, RunStage, RunStatus, WatermarkStore
 from dander.writer import WriteMode, WritePattern, WriteTarget
 
 if TYPE_CHECKING:
@@ -89,7 +89,8 @@ class _History(RunHistoryStore):
         self.started: tuple[str, str] | None = None
         self.finished: tuple[str, RunStatus, int, int, int] | None = None
 
-    def start(self, run_id: str, source: str) -> None:
+    def start(self, run_id: str, source: str, *, pipeline_id: str | None = None) -> None:
+        assert pipeline_id is None
         self.started = (run_id, source)
 
     def finish(
@@ -100,7 +101,12 @@ class _History(RunHistoryStore):
         endpoints: int,
         extracted: int,
         affected: int,
+        models: int = 0,
+        assertions: int = 0,
+        assets: int = 0,
+        failure_stage: RunStage | None = None,
     ) -> None:
+        assert (models, assertions, assets, failure_stage) == (0, 0, 0, None)
         self.finished = (run_id, status, endpoints, extracted, affected)
 
 

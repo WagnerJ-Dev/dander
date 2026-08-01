@@ -1,0 +1,209 @@
+"""Project-level executor lifecycle tests."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import pytest
+
+from dander.catalog import MetadataSnapshot, MetadataStore
+from dander.executor import PipelineExecutor
+from dander.ingestion import Endpoint, SourceConfig
+from dander.runtime import EndpointRunResult, PipelineRunResult
+from dander.state import RunHistoryStore, RunStage, RunStatus
+from dander.transform import TransformRunResult
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+
+class _Ingestion:
+    def run(self, *, run_id: str | None = None) -> PipelineRunResult:
+        assert run_id is not None
+        return PipelineRunResult(
+            run_id=run_id,
+            source="example",
+            endpoints=(
+                EndpointRunResult(
+                    endpoint="widgets",
+                    extracted=3,
+                    affected=2,
+                    committed_cursor="2026-01-01T00:00:00Z",
+                ),
+            ),
+        )
+
+
+class _Transform:
+    def __init__(self, *, fail: bool = False) -> None:
+        self._fail = fail
+
+    def build(
+        self,
+        models_dir: Path,
+        *,
+        selected: Iterable[str] | None = None,
+    ) -> TransformRunResult:
+        assert models_dir.is_dir()
+        assert tuple(selected or ()) == ("stg_widgets",)
+        if self._fail:
+            raise RuntimeError("transform failed")
+        return TransformRunResult(models=("stg_widgets",), assertions=2)
+
+
+class _History(RunHistoryStore):
+    def __init__(self) -> None:
+        self.started: tuple[str, str, str] | None = None
+        self.checkpoints: list[RunStage] = []
+        self.finished: tuple[RunStatus, RunStage | None, int, int, int] | None = None
+
+    def start(self, run_id: str, source: str, *, pipeline_id: str | None = None) -> None:
+        assert pipeline_id is not None
+        self.started = (run_id, source, pipeline_id)
+
+    def checkpoint(
+        self,
+        run_id: str,
+        stage: RunStage,
+        **kwargs: int,
+    ) -> None:
+        assert self.started is not None and run_id == self.started[0]
+        self.checkpoints.append(stage)
+
+    def finish(
+        self,
+        run_id: str,
+        status: RunStatus,
+        *,
+        endpoints: int,
+        extracted: int,
+        affected: int,
+        models: int = 0,
+        assertions: int = 0,
+        assets: int = 0,
+        failure_stage: RunStage | None = None,
+    ) -> None:
+        assert self.started is not None and run_id == self.started[0]
+        self.finished = (status, failure_stage, models, assertions, assets)
+
+
+class _Metadata(MetadataStore):
+    def __init__(self) -> None:
+        self.manifest: dict[str, object] | None = None
+
+    def publish(
+        self,
+        *,
+        pipeline_id: str,
+        run_id: str,
+        manifest: dict[str, object],
+    ) -> None:
+        assert pipeline_id == "example_pipeline"
+        assert run_id
+        self.manifest = manifest
+
+    def snapshots(self, *, pipeline_id: str | None = None) -> tuple[MetadataSnapshot, ...]:
+        return ()
+
+
+def _models(models_dir: Path) -> None:
+    staging = models_dir / "staging"
+    staging.mkdir(parents=True)
+    (staging / "stg_widgets.sql").write_text(
+        "SELECT id FROM {{ ref('raw_example_widgets') }}",
+        encoding="utf-8",
+    )
+    (staging / "stg_widgets.yml").write_text(
+        """model: stg_widgets
+description: Governed widgets.
+owner: data-eng
+source_system: example
+sensitivity: internal
+columns:
+  - name: id
+    type: STRING
+    description: Widget identifier.
+tests:
+  - column: id
+    not_null: true
+    unique: true
+metrics:
+  - name: widget_count
+    description: Number of distinct widgets.
+    aggregation: count_distinct
+    field: id
+""",
+        encoding="utf-8",
+    )
+
+
+def _executor(
+    models_dir: Path,
+    *,
+    history: _History,
+    metadata: _Metadata,
+    fail_transform: bool = False,
+) -> PipelineExecutor:
+    source = SourceConfig(
+        name="example",
+        base_url="https://example.test",
+        auth_strategy="none",
+        endpoints=[
+            Endpoint(
+                name="widgets",
+                path="/widgets",
+                primary_key=["id"],
+                incremental_cursor="updated_at",
+            )
+        ],
+    )
+    return PipelineExecutor(
+        pipeline_id="example_pipeline",
+        source_config=source,
+        ingestion=_Ingestion(),  # type: ignore[arg-type]
+        history=history,
+        project="valid-project-123",
+        models_dir=models_dir,
+        selected_models=("stg_widgets",),
+        build_models=True,
+        transform_runner=_Transform(fail=fail_transform),
+        metadata_store=metadata,
+    )
+
+
+def test_executor_records_one_truthful_complete_lifecycle(tmp_path: Path) -> None:
+    _models(tmp_path)
+    history = _History()
+    metadata = _Metadata()
+
+    result = _executor(tmp_path, history=history, metadata=metadata).execute()
+
+    assert history.started is not None
+    assert history.checkpoints == [RunStage.TRANSFORM, RunStage.METADATA]
+    assert history.finished == (RunStatus.SUCCEEDED, None, 1, 2, 1)
+    assert result.ingestion.run_id == result.run_id
+    assert result.assets == 1
+    assert metadata.manifest is not None
+    assert metadata.manifest["pipeline_id"] == "example_pipeline"
+    assets = metadata.manifest["assets"]
+    assert isinstance(assets, list)
+    assert assets[0]["metrics"][0]["calculation"] == "COUNT(DISTINCT `id`)"
+
+
+def test_executor_marks_transform_failure_without_claiming_ingestion_only_success(
+    tmp_path: Path,
+) -> None:
+    _models(tmp_path)
+    history = _History()
+
+    with pytest.raises(RuntimeError, match="transform failed"):
+        _executor(
+            tmp_path,
+            history=history,
+            metadata=_Metadata(),
+            fail_transform=True,
+        ).execute()
+
+    assert history.checkpoints == [RunStage.TRANSFORM]
+    assert history.finished == (RunStatus.FAILED, RunStage.TRANSFORM, 0, 0, 0)

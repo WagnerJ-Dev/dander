@@ -3,6 +3,8 @@
 from dander.transform.config import (
     ColumnMetadata,
     GenericTestMetadata,
+    MetricAggregation,
+    MetricMetadata,
     ModelMetadata,
     RelationshipMetadata,
     TransformConfigError,
@@ -19,6 +21,8 @@ __all__ = [
     "BigQueryTransformRunner",
     "ColumnMetadata",
     "GenericTestMetadata",
+    "MetricAggregation",
+    "MetricMetadata",
     "ModelMetadata",
     "RelationshipMetadata",
     "TransformConfigError",

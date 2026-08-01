@@ -42,3 +42,9 @@ tests:
     unique: true
   - column: title
     not_null: true
+
+metrics:
+  - name: published_job_count
+    description: Number of distinct public Greenhouse jobs represented in the model.
+    aggregation: count_distinct
+    field: job_id

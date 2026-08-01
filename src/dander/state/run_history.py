@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -22,12 +23,56 @@ class RunStatus(StrEnum):
     FAILED = "failed"
 
 
+class RunStage(StrEnum):
+    """Current lifecycle stage for one project-defined pipeline run."""
+
+    INGEST = "ingest"
+    TRANSFORM = "transform"
+    METADATA = "metadata"
+    COMPLETE = "complete"
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    """Non-sensitive persisted pipeline lifecycle record."""
+
+    run_id: str
+    pipeline_id: str
+    source: str
+    status: RunStatus
+    stage: RunStage
+    started_at: str
+    finished_at: str | None
+    endpoints: int
+    extracted: int
+    affected: int
+    models: int
+    assertions: int
+    assets: int
+    failure_stage: RunStage | None
+
+
 class RunHistoryStore(ABC):
     """Persist lifecycle summaries without row values, cursors, or error messages."""
 
     @abstractmethod
-    def start(self, run_id: str, source: str) -> None:
+    def start(self, run_id: str, source: str, *, pipeline_id: str | None = None) -> None:
         """Record that a run started."""
+
+    def checkpoint(
+        self,
+        run_id: str,
+        stage: RunStage,
+        *,
+        endpoints: int = 0,
+        extracted: int = 0,
+        affected: int = 0,
+        models: int = 0,
+        assertions: int = 0,
+        assets: int = 0,
+    ) -> None:
+        """Persist a non-terminal lifecycle checkpoint when supported."""
+        return None
 
     @abstractmethod
     def finish(
@@ -38,8 +83,21 @@ class RunHistoryStore(ABC):
         endpoints: int,
         extracted: int,
         affected: int,
+        models: int = 0,
+        assertions: int = 0,
+        assets: int = 0,
+        failure_stage: RunStage | None = None,
     ) -> None:
         """Record a terminal aggregate for a run."""
+
+    def recent(
+        self,
+        *,
+        limit: int = 20,
+        pipeline_id: str | None = None,
+    ) -> tuple[RunRecord, ...]:
+        """Return recent records when the backing store supports reads."""
+        return ()
 
 
 class _Job(Protocol):
@@ -57,6 +115,11 @@ class _Client(Protocol):
         """Run a parameterized statement."""
 
 
+class _Row(Protocol):
+    def __getitem__(self, key: str) -> object:
+        """Return a projected field by name."""
+
+
 class BigQueryRunHistoryStore(RunHistoryStore):
     """Persist run lifecycle summaries in a clustered BigQuery control table."""
 
@@ -69,21 +132,48 @@ class BigQueryRunHistoryStore(RunHistoryStore):
         self._client = client or cast("_Client", bigquery.Client(project=project))
         self._ready = False
 
-    def start(self, run_id: str, source: str) -> None:
+    def start(self, run_id: str, source: str, *, pipeline_id: str | None = None) -> None:
         self._ensure_table()
         config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ScalarQueryParameter("run_id", "STRING", run_id),
                 bigquery.ScalarQueryParameter("source", "STRING", source),
+                bigquery.ScalarQueryParameter("pipeline_id", "STRING", pipeline_id or source),
             ]
         )
         self._client.query(
             f"INSERT INTO `{self._table}` "
-            "(run_id, source_name, status, started_at, finished_at, "
-            "endpoints, extracted, affected) "
-            "VALUES (@run_id, @source, 'running', CURRENT_TIMESTAMP(), NULL, 0, 0, 0)",
+            "(run_id, pipeline_id, source_name, status, stage, started_at, finished_at, "
+            "endpoints, extracted, affected, models, assertions, assets, failure_stage) "
+            "VALUES (@run_id, @pipeline_id, @source, 'running', 'ingest', "
+            "CURRENT_TIMESTAMP(), NULL, 0, 0, 0, 0, 0, 0, NULL)",
             job_config=config,
         ).result()
+
+    def checkpoint(
+        self,
+        run_id: str,
+        stage: RunStage,
+        *,
+        endpoints: int = 0,
+        extracted: int = 0,
+        affected: int = 0,
+        models: int = 0,
+        assertions: int = 0,
+        assets: int = 0,
+    ) -> None:
+        self._update(
+            run_id,
+            status=None,
+            stage=stage,
+            endpoints=endpoints,
+            extracted=extracted,
+            affected=affected,
+            models=models,
+            assertions=assertions,
+            assets=assets,
+            failure_stage=None,
+        )
 
     def finish(
         self,
@@ -93,20 +183,65 @@ class BigQueryRunHistoryStore(RunHistoryStore):
         endpoints: int,
         extracted: int,
         affected: int,
+        models: int = 0,
+        assertions: int = 0,
+        assets: int = 0,
+        failure_stage: RunStage | None = None,
+    ) -> None:
+        self._update(
+            run_id,
+            status=status,
+            stage=RunStage.COMPLETE if status is RunStatus.SUCCEEDED else failure_stage,
+            endpoints=endpoints,
+            extracted=extracted,
+            affected=affected,
+            models=models,
+            assertions=assertions,
+            assets=assets,
+            failure_stage=failure_stage,
+        )
+
+    def _update(
+        self,
+        run_id: str,
+        *,
+        status: RunStatus | None,
+        stage: RunStage | None,
+        endpoints: int,
+        extracted: int,
+        affected: int,
+        models: int,
+        assertions: int,
+        assets: int,
+        failure_stage: RunStage | None,
     ) -> None:
         self._ensure_table()
         config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ScalarQueryParameter("run_id", "STRING", run_id),
-                bigquery.ScalarQueryParameter("status", "STRING", status.value),
+                bigquery.ScalarQueryParameter(
+                    "status", "STRING", status.value if status is not None else "running"
+                ),
+                bigquery.ScalarQueryParameter("stage", "STRING", (stage or RunStage.INGEST).value),
                 bigquery.ScalarQueryParameter("endpoints", "INT64", endpoints),
                 bigquery.ScalarQueryParameter("extracted", "INT64", extracted),
                 bigquery.ScalarQueryParameter("affected", "INT64", affected),
+                bigquery.ScalarQueryParameter("models", "INT64", models),
+                bigquery.ScalarQueryParameter("assertions", "INT64", assertions),
+                bigquery.ScalarQueryParameter("assets", "INT64", assets),
+                bigquery.ScalarQueryParameter(
+                    "failure_stage",
+                    "STRING",
+                    failure_stage.value if failure_stage is not None else None,
+                ),
             ]
         )
+        finished_at = "CURRENT_TIMESTAMP()" if status is not None else "finished_at"
         self._client.query(
-            f"UPDATE `{self._table}` SET status = @status, finished_at = CURRENT_TIMESTAMP(), "
-            "endpoints = @endpoints, extracted = @extracted, affected = @affected "
+            f"UPDATE `{self._table}` SET status = @status, stage = @stage, "
+            f"finished_at = {finished_at}, endpoints = @endpoints, extracted = @extracted, "
+            "affected = @affected, models = @models, assertions = @assertions, "
+            "assets = @assets, failure_stage = @failure_stage "
             "WHERE run_id = @run_id",
             job_config=config,
         ).result()
@@ -116,12 +251,50 @@ class BigQueryRunHistoryStore(RunHistoryStore):
             return
         self._client.query(
             f"CREATE TABLE IF NOT EXISTS `{self._table}` ("
-            "run_id STRING NOT NULL, source_name STRING NOT NULL, status STRING NOT NULL, "
-            "started_at TIMESTAMP NOT NULL, finished_at TIMESTAMP, endpoints INT64 NOT NULL, "
-            "extracted INT64 NOT NULL, affected INT64 NOT NULL) "
-            "CLUSTER BY source_name, status"
+            "run_id STRING NOT NULL, pipeline_id STRING, source_name STRING NOT NULL, "
+            "status STRING NOT NULL, stage STRING, started_at TIMESTAMP NOT NULL, "
+            "finished_at TIMESTAMP, endpoints INT64 NOT NULL, extracted INT64 NOT NULL, "
+            "affected INT64 NOT NULL, models INT64, assertions INT64, assets INT64, "
+            "failure_stage STRING) CLUSTER BY pipeline_id, status"
         ).result()
+        for column, data_type in (
+            ("pipeline_id", "STRING"),
+            ("stage", "STRING"),
+            ("models", "INT64"),
+            ("assertions", "INT64"),
+            ("assets", "INT64"),
+            ("failure_stage", "STRING"),
+        ):
+            self._client.query(
+                f"ALTER TABLE `{self._table}` ADD COLUMN IF NOT EXISTS {column} {data_type}"
+            ).result()
         self._ready = True
+
+    def recent(
+        self,
+        *,
+        limit: int = 20,
+        pipeline_id: str | None = None,
+    ) -> tuple[RunRecord, ...]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        self._ensure_table()
+        parameters = [bigquery.ScalarQueryParameter("limit", "INT64", limit)]
+        where = ""
+        if pipeline_id is not None:
+            where = " WHERE COALESCE(pipeline_id, source_name) = @pipeline_id"
+            parameters.append(bigquery.ScalarQueryParameter("pipeline_id", "STRING", pipeline_id))
+        rows = self._client.query(
+            f"SELECT run_id, COALESCE(pipeline_id, source_name) AS pipeline_id, "
+            "source_name, status, COALESCE(stage, IF(status = 'succeeded', "
+            "'complete', 'ingest')) AS stage, started_at, finished_at, endpoints, "
+            "extracted, affected, COALESCE(models, 0) AS models, "
+            "COALESCE(assertions, 0) AS assertions, COALESCE(assets, 0) AS assets, "
+            f"failure_stage FROM `{self._table}`{where} "
+            "ORDER BY started_at DESC LIMIT @limit",
+            job_config=bigquery.QueryJobConfig(query_parameters=parameters),
+        ).result()
+        return tuple(_bigquery_run_record(cast("_Row", row)) for row in rows)
 
 
 class SqliteRunHistoryStore(RunHistoryStore):
@@ -136,14 +309,58 @@ class SqliteRunHistoryStore(RunHistoryStore):
                 "run_id TEXT PRIMARY KEY, source TEXT NOT NULL, status TEXT NOT NULL, "
                 "started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, finished_at TEXT, "
                 "endpoints INTEGER NOT NULL DEFAULT 0, extracted INTEGER NOT NULL DEFAULT 0, "
-                "affected INTEGER NOT NULL DEFAULT 0)"
+                "affected INTEGER NOT NULL DEFAULT 0, pipeline_id TEXT, stage TEXT, "
+                "models INTEGER NOT NULL DEFAULT 0, assertions INTEGER NOT NULL DEFAULT 0, "
+                "assets INTEGER NOT NULL DEFAULT 0, failure_stage TEXT)"
             )
+            existing = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(runs)").fetchall()
+            }
+            for column, declaration in (
+                ("pipeline_id", "TEXT"),
+                ("stage", "TEXT"),
+                ("models", "INTEGER NOT NULL DEFAULT 0"),
+                ("assertions", "INTEGER NOT NULL DEFAULT 0"),
+                ("assets", "INTEGER NOT NULL DEFAULT 0"),
+                ("failure_stage", "TEXT"),
+            ):
+                if column not in existing:
+                    connection.execute(f"ALTER TABLE runs ADD COLUMN {column} {declaration}")
 
-    def start(self, run_id: str, source: str) -> None:
+    def start(self, run_id: str, source: str, *, pipeline_id: str | None = None) -> None:
         with sqlite3.connect(self._path) as connection:
             connection.execute(
-                "INSERT INTO runs (run_id, source, status) VALUES (?, ?, 'running')",
-                (run_id, source),
+                "INSERT INTO runs (run_id, source, pipeline_id, status, stage) "
+                "VALUES (?, ?, ?, 'running', 'ingest')",
+                (run_id, source, pipeline_id or source),
+            )
+
+    def checkpoint(
+        self,
+        run_id: str,
+        stage: RunStage,
+        *,
+        endpoints: int = 0,
+        extracted: int = 0,
+        affected: int = 0,
+        models: int = 0,
+        assertions: int = 0,
+        assets: int = 0,
+    ) -> None:
+        with sqlite3.connect(self._path) as connection:
+            connection.execute(
+                "UPDATE runs SET stage = ?, endpoints = ?, extracted = ?, affected = ?, "
+                "models = ?, assertions = ?, assets = ? WHERE run_id = ?",
+                (
+                    stage.value,
+                    endpoints,
+                    extracted,
+                    affected,
+                    models,
+                    assertions,
+                    assets,
+                    run_id,
+                ),
             )
 
     def finish(
@@ -154,10 +371,92 @@ class SqliteRunHistoryStore(RunHistoryStore):
         endpoints: int,
         extracted: int,
         affected: int,
+        models: int = 0,
+        assertions: int = 0,
+        assets: int = 0,
+        failure_stage: RunStage | None = None,
     ) -> None:
+        stage = RunStage.COMPLETE if status is RunStatus.SUCCEEDED else failure_stage
         with sqlite3.connect(self._path) as connection:
             connection.execute(
-                "UPDATE runs SET status = ?, finished_at = CURRENT_TIMESTAMP, "
-                "endpoints = ?, extracted = ?, affected = ? WHERE run_id = ?",
-                (status.value, endpoints, extracted, affected, run_id),
+                "UPDATE runs SET status = ?, stage = ?, finished_at = CURRENT_TIMESTAMP, "
+                "endpoints = ?, extracted = ?, affected = ?, models = ?, assertions = ?, "
+                "assets = ?, failure_stage = ? WHERE run_id = ?",
+                (
+                    status.value,
+                    (stage or RunStage.INGEST).value,
+                    endpoints,
+                    extracted,
+                    affected,
+                    models,
+                    assertions,
+                    assets,
+                    failure_stage.value if failure_stage is not None else None,
+                    run_id,
+                ),
             )
+
+    def recent(
+        self,
+        *,
+        limit: int = 20,
+        pipeline_id: str | None = None,
+    ) -> tuple[RunRecord, ...]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        query = (
+            "SELECT run_id, COALESCE(pipeline_id, source), source, status, "
+            "COALESCE(stage, CASE WHEN status = 'succeeded' THEN 'complete' ELSE 'ingest' END), "
+            "started_at, finished_at, endpoints, extracted, affected, "
+            "COALESCE(models, 0), COALESCE(assertions, 0), COALESCE(assets, 0), failure_stage "
+            "FROM runs"
+        )
+        parameters: tuple[object, ...] = ()
+        if pipeline_id is not None:
+            query += " WHERE COALESCE(pipeline_id, source) = ?"
+            parameters = (pipeline_id,)
+        query += " ORDER BY started_at DESC LIMIT ?"
+        parameters = (*parameters, limit)
+        with sqlite3.connect(self._path) as connection:
+            rows = connection.execute(query, parameters).fetchall()
+        return tuple(_sqlite_run_record(row) for row in rows)
+
+
+def _sqlite_run_record(row: tuple[object, ...]) -> RunRecord:
+    return RunRecord(
+        run_id=str(row[0]),
+        pipeline_id=str(row[1]),
+        source=str(row[2]),
+        status=RunStatus(str(row[3])),
+        stage=RunStage(str(row[4])),
+        started_at=str(row[5]),
+        finished_at=str(row[6]) if row[6] is not None else None,
+        endpoints=int(cast("int", row[7])),
+        extracted=int(cast("int", row[8])),
+        affected=int(cast("int", row[9])),
+        models=int(cast("int", row[10])),
+        assertions=int(cast("int", row[11])),
+        assets=int(cast("int", row[12])),
+        failure_stage=RunStage(str(row[13])) if row[13] is not None else None,
+    )
+
+
+def _bigquery_run_record(row: _Row) -> RunRecord:
+    failure_stage = row["failure_stage"]
+    finished_at = row["finished_at"]
+    return RunRecord(
+        run_id=str(row["run_id"]),
+        pipeline_id=str(row["pipeline_id"]),
+        source=str(row["source_name"]),
+        status=RunStatus(str(row["status"])),
+        stage=RunStage(str(row["stage"])),
+        started_at=str(row["started_at"]),
+        finished_at=str(finished_at) if finished_at is not None else None,
+        endpoints=int(cast("int", row["endpoints"])),
+        extracted=int(cast("int", row["extracted"])),
+        affected=int(cast("int", row["affected"])),
+        models=int(cast("int", row["models"])),
+        assertions=int(cast("int", row["assertions"])),
+        assets=int(cast("int", row["assets"])),
+        failure_stage=RunStage(str(failure_stage)) if failure_stage is not None else None,
+    )

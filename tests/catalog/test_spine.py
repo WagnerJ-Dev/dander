@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from dander.catalog import MetadataSpine, SemanticRegistryPublisher
+from dander.ingestion import load_source_config
 from dander.transform import TransformProject
 
 _MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
@@ -27,6 +28,8 @@ def test_spine_projects_relation_lineage_columns_and_test_contract() -> None:
         ("job_id", "unique"),
         ("title", "not_null"),
     ]
+    assert asset.metrics[0].name == "published_job_count"
+    assert asset.metrics[0].calculation == "COUNT(DISTINCT `job_id`)"
 
 
 def test_manifest_is_versioned_sorted_and_has_no_volatile_timestamp() -> None:
@@ -41,6 +44,34 @@ def test_manifest_is_versioned_sorted_and_has_no_volatile_timestamp() -> None:
     assert first["schema_version"] == 1
     assert first["projects"] == ["valid-project-123"]
     assert "generated_at" not in first
+
+
+def test_pipeline_manifest_projects_source_models_lineage_tests_and_metrics() -> None:
+    project = TransformProject.load(_MODELS_DIR, project_id="valid-project-123")
+    source = load_source_config(_MODELS_DIR.parent / "connectors" / "greenhouse_job_board.yaml")
+    spine = MetadataSpine()
+
+    manifest = spine.pipeline_manifest(
+        pipeline_id="greenhouse_jobs",
+        source=source,
+        assets=spine.compile(project, selected=["stg_greenhouse__jobs"]),
+    )
+
+    assert manifest["schema_version"] == 2
+    assert manifest["pipeline_id"] == "greenhouse_jobs"
+    source_manifest = manifest["source"]
+    assert isinstance(source_manifest, dict)
+    endpoints = source_manifest["endpoints"]
+    assert isinstance(endpoints, list) and isinstance(endpoints[0], dict)
+    assert str(endpoints[0]["relation"]).endswith(".raw.greenhouse_job_board_jobs")
+    assets_manifest = manifest["assets"]
+    assert isinstance(assets_manifest, list) and isinstance(assets_manifest[0], dict)
+    asset = assets_manifest[0]
+    assert asset["upstream_relations"]
+    assert asset["tests"]
+    metrics = asset["metrics"]
+    assert isinstance(metrics, list) and isinstance(metrics[0], dict)
+    assert metrics[0]["name"] == "published_job_count"
 
 
 def test_registry_write_is_atomic_and_byte_stable(tmp_path: Path) -> None:

@@ -128,7 +128,7 @@ class DeploymentVerifier:
     def verify(
         self,
         *,
-        datasets: tuple[str, ...] = ("raw", "staging", "marts"),
+        datasets: tuple[str, ...] = ("raw", "staging", "marts", "dander_meta"),
         state_bucket: str | None = None,
         state_prefix: str | None = None,
         runtime_job: str | None = None,

@@ -3,6 +3,8 @@
 from dander.state.run_history import (
     BigQueryRunHistoryStore,
     RunHistoryStore,
+    RunRecord,
+    RunStage,
     RunStatus,
     SqliteRunHistoryStore,
 )
@@ -12,6 +14,8 @@ __all__ = [
     "BigQueryRunHistoryStore",
     "BigQueryWatermarkStore",
     "RunHistoryStore",
+    "RunRecord",
+    "RunStage",
     "RunStatus",
     "SqliteRunHistoryStore",
     "SqliteWatermarkStore",

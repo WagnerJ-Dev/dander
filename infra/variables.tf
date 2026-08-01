@@ -28,7 +28,7 @@ variable "bigquery_location" {
 variable "datasets" {
   type        = list(string)
   description = "BigQuery datasets created for the first runtime slice."
-  default     = ["raw", "staging", "marts"]
+  default     = ["raw", "staging", "marts", "dander_meta"]
 }
 
 variable "enable_scheduled_job" {

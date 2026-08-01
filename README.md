@@ -45,7 +45,7 @@ Python 3.12 (app + CLI) · BigQuery SQL (transforms) · Terraform/HCL (infra) ·
 ## Repo map
 
 ```
-src/dander/     core · security · ingestion · writer · transform · catalog · state · cli
+src/dander/     core · security · ingestion · writer · executor · transform · catalog · state · cli
 infra/          Terraform modules (secret-manager, iam, compute-run, bigquery)
 connectors/     per-source YAML configs
 models/         SQL transform models + YAML sidecars
@@ -89,6 +89,7 @@ uv run mypy                # strict type-check
 uv run pytest              # run the test suite
 uv run dander --help       # the CLI (init / run)
 uv run dander validate     # validate dander.yaml and every pipeline reference
+uv run dander metadata list --project my-gcp-project
 ```
 
 **Green baseline** = `ruff check`, `ruff format --check`, `mypy`, and `pytest` all pass. Keep it
@@ -263,44 +264,42 @@ New users may instead use the [$300/90-day Free Trial](https://docs.cloud.google
 While the account remains a Free Trial account, Google says usage is not charged to the payment
 method; manually upgrading makes overages beyond remaining credit and free allowances billable.
 
-The bootstrap uses a two-stage identity boundary. Stage zero creates the remote GCS state bucket,
-the `dander-bootstrap` service account, provisioning roles, and the approved caller's impersonation
-binding. Stage one always runs Terraform through that service account:
+`dander init` owns the complete two-stage bootstrap. It creates a hardened/versioned state bucket,
+adopts it into Terraform, creates the administrative identity and Artifact Registry, builds and
+pushes the current runtime, then applies datasets, per-pipeline IAM/jobs/schedules/secrets, and the
+simulation-first budget guard from `dander.yaml`:
 
 ```bash
-uv run dander init-admin-plan \
+uv run dander init \
   --project my-gcp-project \
-  --state-bucket my-existing-tfstate-bucket \
-  --admin-member user:operator@example.invalid \
-  --operator-artifact-dir "$HOME/Library/Application Support/Dander/terraform/bootstrap-admin/my-gcp-project"
-uv run dander init-admin-apply \
-  --project my-gcp-project \
-  --state-bucket my-existing-tfstate-bucket \
-  --admin-member user:operator@example.invalid \
-  --operator-artifact-dir "$HOME/Library/Application Support/Dander/terraform/bootstrap-admin/my-gcp-project"
-uv run dander init-platform-plan \
-  --project my-gcp-project \
-  --state-bucket my-existing-tfstate-bucket \
-  --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com
-uv run dander init-platform-apply \
-  --project my-gcp-project \
-  --state-bucket my-existing-tfstate-bucket \
-  --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com
+  --billing-account ABCDEF-123456-ABCDEF \
+  --github-repository owner/repository \
+  --apply
 ```
 
-Optional flags can include the complete hosted slice in the same reviewed plan:
+The state bucket defaults to `<project>-dander-state`; the active `gcloud` user becomes the
+approved administrator; operator-only stage-zero artifacts default to `~/.dander/<project>` and
+remain outside the repository. Terraform never receives secret values. Add each named value after
+bootstrap with `gcloud secrets versions add`, then execute a paused pipeline manually before
+enabling its schedule. Plan-only mode remains available for established environments but requires
+an existing backend, bootstrap identity, and immutable `--container-image`.
+
+The granular `init-admin-*` and `init-platform-*` commands remain available for operators who need
+to review/apply each identity boundary separately. The normal path is the single command above.
+The approved administrative identity is deliberately separate from runtime identities; only it
+can provision project resources and delegate each runtime's read-only billing visibility.
+
+For an established environment, the equivalent explicit plan is:
 
 ```bash
 uv run dander init \
   --project my-gcp-project \
   --state-bucket my-existing-tfstate-bucket \
   --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com \
-  --enable-runtime \
   --billing-account ABCDEF-123456-ABCDEF \
   --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DIGEST \
   --config dander.yaml \
-  --github-repository owner/repository \
-  --enable-cost-guard
+  --github-repository owner/repository
 ```
 
 The image must use an immutable SHA-256 digest. `dander.yaml` declares every additive pipeline,
@@ -328,24 +327,11 @@ uv run dander run greenhouse_jobs --dry-run --project my-gcp-project
 uv run dander run hubspot_companies --dry-run --project my-gcp-project
 ```
 
-Build for Cloud Run, push the image, and use its immutable digest in a local tfvars file:
+Provision or reconcile both pipelines from the manifest:
 
 ```bash
-PROJECT_ID=my-gcp-project
-REGION=us-central1
-IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/dander/dander"
-
-docker build --platform linux/amd64 -t "$IMAGE:dander-25" .
-gcloud auth configure-docker "$REGION-docker.pkg.dev"
-docker push "$IMAGE:dander-25"
-docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:dander-25"
-
-cp infra/sandbox.auto.tfvars.example infra/sandbox.auto.tfvars
-# Fill in the billing account and image digest; keep each new pipeline paused for its first apply.
-terraform -chdir=infra plan -out=scheduled.tfplan
-terraform -chdir=infra apply scheduled.tfplan
-gcloud run jobs execute dander-greenhouse-public --region="$REGION" --wait
-gcloud run jobs execute dander-hubspot-companies --region="$REGION" --wait
+uv run dander init --project "$PROJECT_ID" --billing-account "$BILLING_ACCOUNT_ID" --apply
+gcloud run jobs execute dander-hubspot-companies --region=us-central1 --wait
 ```
 
 After a new pipeline's manual ingestion, transform tests, and registry compilation succeed, set its
@@ -381,9 +367,22 @@ missing/invalid sidecars, non-query SQL, and unsupported incremental materializa
 the first BigQuery query. Generic tests currently support not-null, unique, accepted-values, and
 relationships.
 
-### Compile the metadata spine
+### Inspect the metadata spine
 
-The same model sidecar also projects into a deterministic semantic registry and Dataplex Knowledge
+Every named `dander run` atomically replaces its pipeline snapshot in
+`dander_meta._dander_catalog` after transforms and tests pass. The snapshot contains source
+endpoints, models, columns, lineage, tests, and governed metric calculations; the same run writes
+its complete lifecycle outcome to `dander_meta._dander_runs`.
+
+```bash
+uv run dander metadata list --project "$PROJECT_ID"
+uv run dander metadata show published_job_count --project "$PROJECT_ID"
+uv run dander metadata lineage stg_greenhouse__jobs --project "$PROJECT_ID"
+uv run dander metadata metrics --project "$PROJECT_ID"
+uv run dander metadata runs --project "$PROJECT_ID"
+```
+
+The same model sidecar can also project into a deterministic file and optional Dataplex Knowledge
 Catalog aspects:
 
 ```bash

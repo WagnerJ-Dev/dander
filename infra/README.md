@@ -8,7 +8,7 @@ call sites (mirrors the `SecretStoreProvider` / `ComputeProvider` abstractions i
 
 | Module | Provisions |
 |---|---|
-| `modules/bigquery` | `raw` / `staging` / `marts` datasets. **Implemented.** |
+| `modules/bigquery` | `raw` / `staging` / `marts` plus durable `dander_meta` control/catalog dataset. **Implemented.** |
 | `modules/scheduled-job` | Existing stage-zero Artifact Registry repository plus independent least-privilege Cloud Run/Scheduler resources for every `dander.yaml` pipeline. **Implemented.** |
 | `modules/secret-manager` | Named secret containers and per-secret runtime access; never secret values. **Implemented.** |
 | `modules/github-wif` | Repository/ref-scoped GitHub OIDC and a keyless deployment identity. **Implemented.** |
@@ -18,7 +18,20 @@ The main root always calls `modules/bigquery` and can opt into the remaining wor
 one-time `infra/bootstrap-admin` root creates the remote-state bucket, the Artifact Registry
 repository, the separate `dander-bootstrap` service account, its provisioning roles, and the
 approved caller's impersonation binding. The main root never creates those preconditions and
-requires an impersonated service account.
+requires an impersonated service account. The normal batteries-included path performs both stages,
+builds/pushes the runtime image, and applies the manifest:
+
+```bash
+uv run dander init \
+  --project my-gcp-project \
+  --billing-account ABCDEF-123456-ABCDEF \
+  --apply
+```
+
+The state bucket defaults to `<project>-dander-state`. Because Terraform cannot store the state
+that creates its own backend, the CLI creates only that hardened/versioned bucket imperatively and
+immediately imports it into permanent stage-zero Terraform state. Secret values remain an explicit
+post-bootstrap operator action.
 
 Run stage zero first:
 
@@ -48,8 +61,7 @@ uv run dander init-platform-apply \
   --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com
 ```
 
-The legacy `dander init` command remains available for the full option set, but it also requires
-`--bootstrap-service-account` and uses the same GCS backend and impersonation boundary.
+The granular commands remain available when separate plan approvals are required.
 
 To plan the complete hosted runtime, first push an image and resolve its immutable digest:
 

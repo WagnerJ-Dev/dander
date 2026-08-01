@@ -12,5 +12,5 @@ variable "location" {
 variable "datasets" {
   type        = list(string)
   description = "Dataset ids to create."
-  default     = ["raw", "staging", "marts"]
+  default     = ["raw", "staging", "marts", "dander_meta"]
 }
