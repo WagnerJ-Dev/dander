@@ -6,9 +6,10 @@ Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and
 ## Git state
 
 - Repository: `/Users/harrison/Documents/dander`.
-- Working branch: `main`; local and `origin/main` are synchronized at merge commit `b1a1bf1`.
+- Working branch: `main`; local and `origin/main` are synchronized.
 - PR #10 merged the tracked HubSpot schedule and operator-private Cloud Monitoring failure
-  delivery. Its feature branch was removed locally and from GitHub.
+  delivery; PR #11 finalized this handoff. Their feature branches were removed locally and from
+  GitHub.
 
 ## Live project
 
