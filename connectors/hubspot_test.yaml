@@ -28,3 +28,27 @@ endpoints:
       properties: name,domain,createdate,lastmodifieddate
     data_selector: results
     primary_key: [id]
+    raw_schema:
+      - name: id
+        type: INT64
+      - name: properties
+        type: RECORD
+        fields:
+          - name: name
+            type: STRING
+          - name: hs_object_id
+            type: INT64
+          - name: hs_lastmodifieddate
+            type: TIMESTAMP
+          - name: domain
+            type: STRING
+          - name: createdate
+            type: TIMESTAMP
+      - name: createdAt
+        type: TIMESTAMP
+      - name: updatedAt
+        type: TIMESTAMP
+      - name: archived
+        type: BOOL
+      - name: url
+        type: STRING

@@ -42,10 +42,12 @@ class WriteTransport(StrEnum):
 
 @dataclass(frozen=True)
 class WriteField:
-    """One declared target column used for controlled schema evolution."""
+    """One declared target column, including nested and repeated BigQuery fields."""
 
     name: str
     data_type: str
+    mode: str = "NULLABLE"
+    fields: tuple[WriteField, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

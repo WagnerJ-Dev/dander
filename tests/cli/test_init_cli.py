@@ -205,7 +205,20 @@ def test_init_uses_manifest_platform_and_only_explicit_cli_overrides(
     models_dir = tmp_path / "models"
     connector_dir.mkdir()
     models_dir.mkdir()
-    (connector_dir / "source.yaml").write_text("name: source\n", encoding="utf-8")
+    (connector_dir / "source.yaml").write_text(
+        """
+name: source
+base_url: https://example.test
+auth_strategy: none
+endpoints:
+  - name: records
+    path: /records
+    raw_schema:
+      - name: id
+        type: STRING
+""".strip(),
+        encoding="utf-8",
+    )
     (models_dir / "model.sql").write_text("SELECT 1\n", encoding="utf-8")
     config = tmp_path / "dander.yaml"
     config.write_text(

@@ -8,6 +8,20 @@ import pytest
 
 from dander.project import ProjectConfigError, load_project_config
 
+_VALID_CONNECTOR = """
+name: source
+base_url: https://example.test
+auth_strategy: none
+endpoints:
+  - name: records
+    path: /records
+    primary_key: [id]
+    raw_schema:
+      - name: id
+        type: STRING
+        mode: REQUIRED
+""".strip()
+
 
 def test_repository_manifest_defines_additive_greenhouse_and_hubspot() -> None:
     project = load_project_config(Path("dander.yaml"))
@@ -39,7 +53,7 @@ def test_generated_resource_names_are_stable_and_bounded(tmp_path: Path) -> None
     model_dir = tmp_path / "models"
     connector_dir.mkdir()
     model_dir.mkdir()
-    (connector_dir / "source.yaml").write_text("name: source\n", encoding="utf-8")
+    (connector_dir / "source.yaml").write_text(_VALID_CONNECTOR, encoding="utf-8")
     (model_dir / "model.sql").write_text("SELECT 1\n", encoding="utf-8")
     config.write_text(
         """
@@ -63,7 +77,10 @@ pipelines:
 def test_missing_model_is_reported_by_pipeline_structure_only(tmp_path: Path) -> None:
     (tmp_path / "connectors").mkdir()
     (tmp_path / "models").mkdir()
-    (tmp_path / "connectors" / "source.yaml").write_text("name: source\n", encoding="utf-8")
+    (tmp_path / "connectors" / "source.yaml").write_text(
+        _VALID_CONNECTOR,
+        encoding="utf-8",
+    )
     config = tmp_path / "dander.yaml"
     config.write_text(
         "version: 1\npipelines:\n  example:\n    source: source\n    models: [missing]\n",
@@ -72,6 +89,33 @@ def test_missing_model_is_reported_by_pipeline_structure_only(tmp_path: Path) ->
 
     project = load_project_config(config)
     with pytest.raises(ProjectConfigError, match="Pipeline 'example'.*missing model 'missing'"):
+        project.validate_references(tmp_path)
+
+
+def test_hosted_pipeline_requires_raw_schema_for_every_endpoint(tmp_path: Path) -> None:
+    (tmp_path / "connectors").mkdir()
+    (tmp_path / "models").mkdir()
+    (tmp_path / "connectors" / "source.yaml").write_text(
+        """
+name: source
+base_url: https://example.test
+auth_strategy: none
+endpoints:
+  - name: records
+    path: /records
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "models" / "model.sql").write_text("SELECT 1\n", encoding="utf-8")
+    config = tmp_path / "dander.yaml"
+    config.write_text(
+        "version: 1\npipelines:\n  example:\n    source: source\n    models: [model]\n",
+        encoding="utf-8",
+    )
+
+    project = load_project_config(config)
+
+    with pytest.raises(ProjectConfigError, match="endpoint 'records'.*declare raw_schema"):
         project.validate_references(tmp_path)
 
 

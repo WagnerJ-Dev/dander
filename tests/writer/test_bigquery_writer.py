@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from google.api_core.exceptions import NotFound
+from google.cloud import bigquery
 
 from dander.writer import (
     BigQueryIncrementalWriter,
@@ -23,8 +25,6 @@ from dander.writer import (
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from google.cloud import bigquery
-
 
 class _Job:
     def __init__(self, *, affected: int | None = None, error: Exception | None = None) -> None:
@@ -38,7 +38,12 @@ class _Job:
 
 
 class _Client:
-    def __init__(self, *, load_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        load_error: Exception | None = None,
+        deployed_schema: Sequence[bigquery.SchemaField] | None = None,
+    ) -> None:
         self.load_error = load_error
         self.loaded_rows: list[dict[str, Any]] = []
         self.loaded_batches: list[list[dict[str, Any]]] = []
@@ -47,6 +52,47 @@ class _Client:
         self.deleted: list[str] = []
         self.write_disposition: str | None = None
         self.write_dispositions: list[str] = []
+        self.loaded_schemas: list[list[bigquery.SchemaField]] = []
+        self.created: list[str] = []
+        self.updated: list[tuple[str, list[str]]] = []
+        self.copies: list[tuple[str, str, str]] = []
+        self.tables: dict[str, bigquery.Table] = {}
+        if deployed_schema is not None:
+            table = bigquery.Table(
+                "unit-project.raw.example_widgets",
+                schema=deployed_schema,
+            )
+            self.tables[str(table.reference)] = table
+
+    def create_table(
+        self,
+        table: bigquery.Table,
+        *,
+        exists_ok: bool = False,
+    ) -> bigquery.Table:
+        table_id = str(table.reference)
+        if table_id in self.tables:
+            assert exists_ok
+            return self.tables[table_id]
+        self.tables[table_id] = table
+        self.created.append(table_id)
+        return table
+
+    def get_table(self, table: str) -> bigquery.Table:
+        try:
+            return self.tables[table]
+        except KeyError as error:
+            raise NotFound("synthetic missing table") from error  # type: ignore[no-untyped-call]
+
+    def update_table(
+        self,
+        table: bigquery.Table,
+        fields: Sequence[str],
+    ) -> bigquery.Table:
+        table_id = str(table.reference)
+        self.tables[table_id] = table
+        self.updated.append((table_id, list(fields)))
+        return table
 
     def load_table_from_json(
         self,
@@ -55,13 +101,31 @@ class _Client:
         *,
         job_config: bigquery.LoadJobConfig,
     ) -> _Job:
-        assert job_config.autodetect
+        if job_config.schema:
+            assert not job_config.autodetect
+            self.loaded_schemas.append(list(job_config.schema))
+            self.tables[destination] = bigquery.Table(destination, schema=job_config.schema)
+        else:
+            assert job_config.autodetect
         self.write_disposition = job_config.write_disposition
         self.write_dispositions.append(job_config.write_disposition)
         self.loaded_rows = [dict(row) for row in json_rows]
         self.loaded_batches.append(self.loaded_rows)
         self.destination = destination
         return _Job(error=self.load_error)
+
+    def copy_table(
+        self,
+        sources: str,
+        destination: str,
+        *,
+        job_config: bigquery.CopyJobConfig,
+    ) -> _Job:
+        self.copies.append((sources, destination, job_config.write_disposition))
+        source = self.tables.get(sources)
+        if source is not None:
+            self.tables[destination] = bigquery.Table(destination, schema=source.schema)
+        return _Job()
 
     def query(self, query: str) -> _Job:
         self.queries.append(query)
@@ -70,6 +134,7 @@ class _Client:
     def delete_table(self, table: str, *, not_found_ok: bool = False) -> None:
         assert not_found_ok
         self.deleted.append(table)
+        self.tables.pop(table, None)
 
 
 def _target() -> WriteTarget:
@@ -140,10 +205,13 @@ def test_replace_writer_stages_then_atomically_replaces_target() -> None:
     assert client.destination.startswith("unit-project.raw._dander_stage_example_widgets_")
     assert client.write_disposition == "WRITE_TRUNCATE"
     assert client.queries[0].startswith(f"ALTER TABLE `{client.destination}` SET OPTIONS")
-    assert client.queries[1] == (
-        "CREATE OR REPLACE TABLE `unit-project.raw.example_widgets` AS "
-        f"SELECT `id` FROM `{client.destination}`"
-    )
+    assert client.copies == [
+        (
+            client.destination,
+            "unit-project.raw.example_widgets",
+            "WRITE_TRUNCATE",
+        )
+    ]
     assert client.deleted == [client.destination]
 
 
@@ -155,6 +223,25 @@ def test_replace_writer_deletes_stale_table_for_empty_snapshot() -> None:
 
     assert client.deleted == ["unit-project.raw.example_widgets"]
     assert client.queries == []
+
+
+def test_replace_writer_bootstraps_declared_schema_for_empty_snapshot() -> None:
+    client = _Client()
+    writer = BigQueryReplaceWriter(project="unit-project", client=client)
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        schema=(WriteField(name="id", data_type="INT64", mode="REQUIRED"),),
+    )
+
+    assert writer.write([], target) == 0
+
+    assert len(client.created) == 1
+    assert client.created[0].startswith("unit-project.raw._dander_stage_example_widgets_")
+    assert client.tables["unit-project.raw.example_widgets"].schema == [
+        bigquery.SchemaField("id", "INT64", mode="REQUIRED")
+    ]
 
 
 def test_replace_writer_bounds_load_requests_and_appends_after_first_chunk() -> None:
@@ -173,7 +260,13 @@ def test_replace_writer_bounds_load_requests_and_appends_after_first_chunk() -> 
     assert affected == 5
     assert [len(batch) for batch in client.loaded_batches] == [2, 2, 1]
     assert client.write_dispositions == ["WRITE_TRUNCATE", "WRITE_APPEND", "WRITE_APPEND"]
-    assert client.queries[-1].startswith("CREATE OR REPLACE TABLE")
+    assert client.copies == [
+        (
+            client.destination,
+            "unit-project.raw.example_widgets",
+            "WRITE_TRUNCATE",
+        )
+    ]
     assert client.deleted == [client.destination]
 
 
@@ -230,7 +323,7 @@ def test_replace_writer_does_not_publish_partial_stage_after_source_failure() ->
         writer.write(records(), _target())
 
     assert len(client.loaded_batches) == 1
-    assert all(not query.startswith("CREATE OR REPLACE TABLE") for query in client.queries)
+    assert client.copies == []
     assert client.deleted == [client.destination]
 
 
@@ -240,7 +333,7 @@ def test_writer_rejects_invalid_batch_bound() -> None:
 
 
 def test_additive_schema_evolution_adds_only_declared_scalar_columns() -> None:
-    client = _Client()
+    client = _Client(deployed_schema=[bigquery.SchemaField("id", "STRING")])
     writer = BigQueryScd1Writer(
         project="unit-project",
         client=client,
@@ -259,14 +352,12 @@ def test_additive_schema_evolution_adds_only_declared_scalar_columns() -> None:
 
     writer.write([{"id": "one", "label": "new"}], target)
 
-    evolution = client.queries[2]
-    assert evolution == (
-        "ALTER TABLE `unit-project.raw.example_widgets` "
-        "ADD COLUMN IF NOT EXISTS `id` STRING;\n"
-        "ALTER TABLE `unit-project.raw.example_widgets` "
-        "ADD COLUMN IF NOT EXISTS `label` STRING"
-    )
-    assert client.queries[3].startswith("MERGE")
+    assert client.updated == [("unit-project.raw.example_widgets", ["schema"])]
+    assert [field.name for field in client.tables["unit-project.raw.example_widgets"].schema] == [
+        "id",
+        "label",
+    ]
+    assert client.queries[-1].startswith("MERGE")
 
 
 def test_additive_schema_rejects_unsupported_type_before_load() -> None:
@@ -284,10 +375,214 @@ def test_additive_schema_rejects_unsupported_type_before_load() -> None:
         schema=(WriteField(name="id", data_type="STRUCT<value STRING>"),),
     )
 
-    with pytest.raises(BigQueryWriteError, match="Unsupported additive schema type"):
+    with pytest.raises(BigQueryWriteError, match="Unsupported declared schema type"):
         writer.write([{"id": "one"}], target)
 
     assert client.loaded_batches == []
+
+
+def test_declared_schema_rejects_batch_drift_before_target_mutation() -> None:
+    client = _Client()
+    writer = BigQueryScd1Writer(
+        project="unit-project",
+        client=client,
+        schema_evolution=SchemaEvolution.ADDITIVE,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(WriteField(name="id", data_type="STRING"),),
+    )
+
+    with pytest.raises(BigQueryWriteError, match="Batch column 'label' is undeclared"):
+        writer.write([{"id": "one", "label": "unexpected"}], target)
+
+    assert client.created == []
+    assert client.updated == []
+    assert client.loaded_batches == []
+
+
+def test_scd1_bootstraps_empty_target_from_nested_declaration() -> None:
+    client = _Client()
+    writer = BigQueryScd1Writer(
+        project="unit-project",
+        client=client,
+        schema_evolution=SchemaEvolution.ADDITIVE,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(
+            WriteField(name="id", data_type="INT64", mode="REQUIRED"),
+            WriteField(
+                name="properties",
+                data_type="RECORD",
+                fields=(
+                    WriteField(name="name", data_type="STRING"),
+                    WriteField(name="tags", data_type="STRING", mode="REPEATED"),
+                ),
+            ),
+        ),
+    )
+
+    assert writer.write([], target) == 0
+
+    created = client.tables["unit-project.raw.example_widgets"]
+    assert created.schema[0].mode == "REQUIRED"
+    assert created.schema[1].field_type == "RECORD"
+    assert created.schema[1].fields[1].mode == "REPEATED"
+    assert client.loaded_batches == []
+
+
+@pytest.mark.parametrize(
+    ("deployed_schema", "match"),
+    [
+        ([bigquery.SchemaField("id", "STRING")], "type mismatch at id"),
+        ([bigquery.SchemaField("id", "INT64")], "mode mismatch at id"),
+        (
+            [
+                bigquery.SchemaField("id", "INT64", mode="REQUIRED"),
+                bigquery.SchemaField(
+                    "properties",
+                    "RECORD",
+                    fields=(bigquery.SchemaField("unexpected", "STRING"),),
+                ),
+            ],
+            "Nested schema change is not supported at properties",
+        ),
+        (
+            [
+                bigquery.SchemaField("id", "INT64", mode="REQUIRED"),
+                bigquery.SchemaField("legacy", "STRING"),
+            ],
+            "Undeclared deployed field: legacy",
+        ),
+    ],
+)
+def test_scd1_rejects_deployed_schema_drift_before_loading(
+    deployed_schema: Sequence[bigquery.SchemaField],
+    match: str,
+) -> None:
+    client = _Client(deployed_schema=deployed_schema)
+    writer = BigQueryScd1Writer(
+        project="unit-project",
+        client=client,
+        schema_evolution=SchemaEvolution.ADDITIVE,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(
+            WriteField(name="id", data_type="INT64", mode="REQUIRED"),
+            WriteField(
+                name="properties",
+                data_type="RECORD",
+                fields=(WriteField(name="name", data_type="STRING"),),
+            ),
+        ),
+    )
+
+    with pytest.raises(BigQueryWriteError, match=match):
+        writer.write([], target)
+
+    assert client.loaded_batches == []
+
+
+def test_scd1_additive_rejects_missing_non_nullable_top_level_field() -> None:
+    client = _Client(deployed_schema=[bigquery.SchemaField("id", "INT64", mode="REQUIRED")])
+    writer = BigQueryScd1Writer(
+        project="unit-project",
+        client=client,
+        schema_evolution=SchemaEvolution.ADDITIVE,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(
+            WriteField(name="id", data_type="INT64", mode="REQUIRED"),
+            WriteField(name="tags", data_type="STRING", mode="REPEATED"),
+        ),
+    )
+
+    with pytest.raises(BigQueryWriteError, match="top-level NULLABLE: tags"):
+        writer.write([], target)
+
+    assert client.updated == []
+
+
+def test_scd1_additive_rejects_new_nested_field() -> None:
+    client = _Client(
+        deployed_schema=[
+            bigquery.SchemaField("id", "INT64"),
+            bigquery.SchemaField(
+                "properties",
+                "RECORD",
+                fields=(bigquery.SchemaField("name", "STRING"),),
+            ),
+        ]
+    )
+    writer = BigQueryScd1Writer(
+        project="unit-project",
+        client=client,
+        schema_evolution=SchemaEvolution.ADDITIVE,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(
+            WriteField(name="id", data_type="INT64"),
+            WriteField(
+                name="properties",
+                data_type="RECORD",
+                fields=(
+                    WriteField(name="name", data_type="STRING"),
+                    WriteField(name="active", data_type="BOOL"),
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        BigQueryWriteError,
+        match="Nested schema change is not supported at properties",
+    ):
+        writer.write([], target)
+
+    assert client.updated == []
+
+
+def test_scd1_strict_rejects_missing_declared_top_level_field() -> None:
+    client = _Client(deployed_schema=[bigquery.SchemaField("id", "INT64")])
+    writer = BigQueryScd1Writer(
+        project="unit-project",
+        client=client,
+        schema_evolution=SchemaEvolution.STRICT,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(
+            WriteField(name="id", data_type="INT64"),
+            WriteField(name="label", data_type="STRING"),
+        ),
+    )
+
+    with pytest.raises(BigQueryWriteError, match="missing declared field: label"):
+        writer.write([], target)
+
+    assert client.updated == []
 
 
 def test_incremental_writer_requires_cursor_and_reuses_idempotent_merge() -> None:

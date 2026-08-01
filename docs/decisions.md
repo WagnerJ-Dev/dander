@@ -287,3 +287,14 @@
   failures because public providers must not be manipulated to produce test failures.
 - Candidate/contact-shaped tests use invented records in an owned test account. Public profiles are
   not treated as a substitute candidate dataset.
+
+## 2026-08-01 — Declared raw schemas own hosted ingestion shape
+
+- `Endpoint.raw_schema` is the complete recursive raw-table contract for project-defined hosted
+  pipelines. Runtime normalization supplies missing nullable/repeated values and rejects
+  undeclared, structurally invalid, or scalar-invalid fields without including values in errors.
+- Empty targets are created from the declaration. Existing hosted SCD1 targets may gain only
+  missing top-level `NULLABLE` fields; nested changes, type/mode changes, removals, and
+  deployed-only fields fail before loading.
+- Direct connector execution without a declaration remains temporarily compatible and emits a
+  deprecation warning. Raw schema declarations do not project into the metadata spine in v0.1.

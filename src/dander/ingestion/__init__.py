@@ -19,7 +19,7 @@ from dander.ingestion.pagination import (
     PaginationKind,
     PaginationStrategy,
 )
-from dander.ingestion.source import Endpoint, IngestionEngine, Source, SourceConfig
+from dander.ingestion.source import Endpoint, IngestionEngine, RawField, Source, SourceConfig
 
 __all__ = [
     "CursorPagination",
@@ -36,6 +36,7 @@ __all__ = [
     "PageNumberPagination",
     "PaginationKind",
     "PaginationStrategy",
+    "RawField",
     "Source",
     "SourceConfig",
     "WorkdayRaasSource",

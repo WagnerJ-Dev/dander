@@ -7,19 +7,16 @@ from itertools import islice
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import uuid4
 
+from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
-from dander.writer.base import SchemaEvolution, WriteMode, WritePattern, WriteTarget
+from dander.schema import BIGQUERY_FIELD_MODES, BIGQUERY_FIELD_TYPES, normalize_bigquery_type
+from dander.writer.base import SchemaEvolution, WriteField, WriteMode, WritePattern, WriteTarget
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_SCALAR_TYPE = re.compile(
-    r"^(?:BOOL|BOOLEAN|BYTES|DATE|DATETIME|FLOAT64|GEOGRAPHY|INT64|INTEGER|JSON|"
-    r"NUMERIC|BIGNUMERIC|STRING|TIME|TIMESTAMP)$",
-    re.IGNORECASE,
-)
 
 
 class BigQueryWriteError(ValueError):
@@ -34,6 +31,19 @@ class _Job(Protocol):
 
 
 class _BigQueryClient(Protocol):
+    def create_table(self, table: bigquery.Table, *, exists_ok: bool = False) -> bigquery.Table:
+        """Create a table from an explicit schema."""
+
+    def get_table(self, table: str) -> bigquery.Table:
+        """Read a deployed table schema."""
+
+    def update_table(
+        self,
+        table: bigquery.Table,
+        fields: Sequence[str],
+    ) -> bigquery.Table:
+        """Update selected table metadata fields."""
+
     def load_table_from_json(
         self,
         json_rows: Sequence[Mapping[str, Any]],
@@ -42,6 +52,15 @@ class _BigQueryClient(Protocol):
         job_config: bigquery.LoadJobConfig,
     ) -> _Job:
         """Load JSON-compatible rows."""
+
+    def copy_table(
+        self,
+        sources: str,
+        destination: str,
+        *,
+        job_config: bigquery.CopyJobConfig,
+    ) -> _Job:
+        """Atomically copy one staging table over a target."""
 
     def query(self, query: str) -> _Job:
         """Run a SQL query."""
@@ -84,12 +103,21 @@ class BigQueryScd1Writer(WritePattern):
             raise BigQueryWriteError("SCD1 writes require at least one business-key column")
 
         rows = [dict(record) for record in records]
+        declared = _validate_declared_schema(target, None)
+        _require_declared_columns(declared, target.business_key, label="business-key")
         if not rows:
+            _reconcile_declared_target(
+                self._client,
+                target_id,
+                declared,
+                self._schema_evolution,
+            )
             return 0
 
         columns = tuple(rows[0])
         if not columns:
             raise BigQueryWriteError("Cannot write records with no columns")
+        _require_batch_matches_declared(declared, columns)
         for column in columns:
             _validated_identifier(column, "column")
         for key in target.business_key:
@@ -115,7 +143,12 @@ class BigQueryScd1Writer(WritePattern):
                 ) from error
 
         staged_rows = list(deduplicated.values())
-        _validate_declared_schema(target, self._schema_evolution)
+        _reconcile_declared_target(
+            self._client,
+            target_id,
+            declared,
+            self._schema_evolution,
+        )
         staging_id = f"{target.project}.{target.dataset}._dander_stage_{target.table}_{uuid4().hex}"
         try:
             _load_rows_in_chunks(
@@ -124,14 +157,9 @@ class BigQueryScd1Writer(WritePattern):
                 staging_id,
                 max_batch_rows=self._max_batch_rows,
                 expire=True,
+                schema=declared,
             )
             self._client.query(_create_target_sql(target_id, staging_id, columns)).result()
-            _apply_schema_evolution(
-                self._client,
-                target_id,
-                target,
-                self._schema_evolution,
-            )
             merge_job = self._client.query(
                 _merge_sql(target_id, staging_id, columns, target.business_key)
             )
@@ -342,14 +370,29 @@ class BigQueryReplaceWriter(WritePattern):
             )
 
         record_iterator = iter(records)
+        declared = _validate_declared_schema(target, None)
         first_batch = [dict(record) for record in islice(record_iterator, self._max_batch_rows)]
         if not first_batch:
-            self._client.delete_table(target_id, not_found_ok=True)
+            if not declared:
+                self._client.delete_table(target_id, not_found_ok=True)
+                return 0
+            staging_id = _staging_id(target)
+            try:
+                _create_declared_target(self._client, staging_id, declared)
+                self._client.query(_expire_staging_sql(staging_id)).result()
+                self._client.copy_table(
+                    staging_id,
+                    target_id,
+                    job_config=_copy_config(),
+                ).result()
+            finally:
+                self._client.delete_table(staging_id, not_found_ok=True)
             return 0
 
         columns = tuple(first_batch[0])
         if not columns:
             raise BigQueryWriteError("Cannot write records with no columns")
+        _require_batch_matches_declared(declared, columns)
         for column in columns:
             _validated_identifier(column, "column")
         expected_columns = set(columns)
@@ -372,14 +415,18 @@ class BigQueryReplaceWriter(WritePattern):
                 self._client.load_table_from_json(
                     batch,
                     staging_id,
-                    job_config=_load_config(disposition),
+                    job_config=_load_config(disposition, declared),
                 ).result()
                 if first:
                     self._client.query(_expire_staging_sql(staging_id)).result()
                     first = False
                 written += len(batch)
                 batch = [dict(record) for record in islice(record_iterator, self._max_batch_rows)]
-            self._client.query(_replace_from_staging_sql(target_id, staging_id, columns)).result()
+            self._client.copy_table(
+                staging_id,
+                target_id,
+                job_config=_copy_config(),
+            ).result()
             return written
         finally:
             self._client.delete_table(staging_id, not_found_ok=True)
@@ -404,38 +451,188 @@ def _apply_schema_evolution(
     target: WriteTarget,
     mode: SchemaEvolution,
 ) -> None:
-    """Add only declared scalar columns; never mutate or remove existing columns."""
+    """Retain additive behavior for non-CLI writer modes without nested evolution."""
+    if mode is SchemaEvolution.STRICT:
+        return
     fields = _validate_declared_schema(target, mode)
     if not fields:
         return
     statements: list[str] = []
-    for name, data_type in fields:
+    for field in fields:
+        if field.mode != "NULLABLE":
+            raise BigQueryWriteError("Additive schema fields must be top-level NULLABLE fields")
         statements.append(
-            f"ALTER TABLE `{target_id}` ADD COLUMN IF NOT EXISTS `{name}` {data_type}"
+            f"ALTER TABLE `{target_id}` ADD COLUMN IF NOT EXISTS "
+            f"`{field.name}` {_field_type_sql(field)}"
         )
     client.query(";\n".join(statements)).result()
 
 
 def _validate_declared_schema(
     target: WriteTarget,
-    mode: SchemaEvolution,
-) -> tuple[tuple[str, str], ...]:
-    if mode is SchemaEvolution.STRICT:
-        return ()
+    mode: SchemaEvolution | None,
+) -> tuple[WriteField, ...]:
     if not target.schema:
-        raise BigQueryWriteError("Additive schema evolution requires a declared target schema")
+        if mode is SchemaEvolution.ADDITIVE:
+            raise BigQueryWriteError("Additive schema evolution requires a declared target schema")
+        return ()
+    return _validate_fields(target.schema, path="schema")
+
+
+def _validate_fields(fields: Sequence[WriteField], *, path: str) -> tuple[WriteField, ...]:
     seen: set[str] = set()
-    fields: list[tuple[str, str]] = []
-    for field in target.schema:
-        name = _validated_identifier(field.name, "schema column")
-        data_type = field.data_type.upper()
-        if not _SCALAR_TYPE.fullmatch(data_type):
-            raise BigQueryWriteError(f"Unsupported additive schema type: {field.data_type!r}")
+    validated: list[WriteField] = []
+    for field in fields:
+        name = _validated_identifier(field.name, f"{path} column")
         if name in seen:
             raise BigQueryWriteError(f"Duplicate declared schema column: {name!r}")
         seen.add(name)
-        fields.append((name, data_type))
-    return tuple(fields)
+        data_type = normalize_bigquery_type(field.data_type)
+        if data_type not in BIGQUERY_FIELD_TYPES:
+            raise BigQueryWriteError(f"Unsupported declared schema type: {field.data_type!r}")
+        mode = field.mode.upper()
+        if mode not in BIGQUERY_FIELD_MODES:
+            raise BigQueryWriteError(f"Unsupported declared schema mode: {field.mode!r}")
+        children = _validate_fields(field.fields, path=f"{path}.{name}")
+        if data_type == "RECORD" and not children:
+            raise BigQueryWriteError(f"RECORD schema column {name!r} requires nested fields")
+        if data_type != "RECORD" and children:
+            raise BigQueryWriteError(
+                f"Only RECORD schema columns can declare nested fields: {name!r}"
+            )
+        validated.append(WriteField(name=name, data_type=data_type, mode=mode, fields=children))
+    return tuple(validated)
+
+
+def _require_declared_columns(
+    schema: Sequence[WriteField],
+    columns: Sequence[str],
+    *,
+    label: str,
+) -> None:
+    if not schema:
+        return
+    declared = {field.name for field in schema}
+    for column in columns:
+        if column not in declared:
+            raise BigQueryWriteError(f"Declared schema is missing {label} column {column!r}")
+
+
+def _require_batch_matches_declared(
+    schema: Sequence[WriteField],
+    columns: Sequence[str],
+) -> None:
+    if not schema:
+        return
+    declared = {field.name for field in schema}
+    incoming = set(columns)
+    if unknown := sorted(incoming - declared):
+        raise BigQueryWriteError(f"Batch column {unknown[0]!r} is undeclared")
+    if missing := sorted(declared - incoming):
+        raise BigQueryWriteError(f"Batch is missing declared column {missing[0]!r}")
+
+
+def _reconcile_declared_target(
+    client: _BigQueryClient,
+    target_id: str,
+    declared: Sequence[WriteField],
+    mode: SchemaEvolution,
+) -> None:
+    if not declared:
+        return
+    try:
+        deployed = client.get_table(target_id)
+    except NotFound:
+        _create_declared_target(client, target_id, declared)
+        return
+
+    deployed_by_name = {field.name: field for field in deployed.schema}
+    declared_by_name = {field.name: field for field in declared}
+    if extra := sorted(set(deployed_by_name) - set(declared_by_name)):
+        raise BigQueryWriteError(f"Undeclared deployed field: {extra[0]}")
+
+    additions: list[WriteField] = []
+    for name, field in declared_by_name.items():
+        actual = deployed_by_name.get(name)
+        if actual is None:
+            additions.append(field)
+        else:
+            _assert_deployed_field(field, actual, path=name)
+    if not additions:
+        return
+    if mode is SchemaEvolution.STRICT:
+        raise BigQueryWriteError(f"Deployed schema is missing declared field: {additions[0].name}")
+    for field in additions:
+        if field.mode != "NULLABLE":
+            raise BigQueryWriteError(f"Additive field must be top-level NULLABLE: {field.name}")
+    deployed.schema = [*deployed.schema, *_bigquery_schema(additions)]
+    updated = client.update_table(deployed, ["schema"])
+    _assert_deployed_schema(declared, updated.schema)
+
+
+def _assert_deployed_field(
+    declared: WriteField,
+    deployed: bigquery.SchemaField,
+    *,
+    path: str,
+) -> None:
+    if normalize_bigquery_type(deployed.field_type) != declared.data_type:
+        raise BigQueryWriteError(f"Deployed schema type mismatch at {path}")
+    if deployed.mode.upper() != declared.mode:
+        raise BigQueryWriteError(f"Deployed schema mode mismatch at {path}")
+    deployed_children = {field.name: field for field in deployed.fields}
+    declared_children = {field.name: field for field in declared.fields}
+    if set(deployed_children) != set(declared_children):
+        raise BigQueryWriteError(f"Nested schema change is not supported at {path}")
+    for name, child in declared_children.items():
+        _assert_deployed_field(child, deployed_children[name], path=f"{path}.{name}")
+
+
+def _create_declared_target(
+    client: _BigQueryClient,
+    target_id: str,
+    schema: Sequence[WriteField],
+) -> None:
+    if not schema:
+        return
+    table = bigquery.Table(target_id, schema=_bigquery_schema(schema))
+    created = client.create_table(table, exists_ok=True)
+    _assert_deployed_schema(schema, created.schema)
+
+
+def _assert_deployed_schema(
+    declared: Sequence[WriteField],
+    deployed: Sequence[bigquery.SchemaField],
+) -> None:
+    deployed_by_name = {field.name: field for field in deployed}
+    declared_by_name = {field.name: field for field in declared}
+    if extra := sorted(set(deployed_by_name) - set(declared_by_name)):
+        raise BigQueryWriteError(f"Undeclared deployed field: {extra[0]}")
+    if missing := sorted(set(declared_by_name) - set(deployed_by_name)):
+        raise BigQueryWriteError(f"Deployed schema is missing declared field: {missing[0]}")
+    for name, field in declared_by_name.items():
+        _assert_deployed_field(field, deployed_by_name[name], path=name)
+
+
+def _bigquery_schema(fields: Sequence[WriteField]) -> list[bigquery.SchemaField]:
+    return [
+        bigquery.SchemaField(
+            field.name,
+            field.data_type,
+            mode=field.mode,
+            fields=_bigquery_schema(field.fields),
+        )
+        for field in fields
+    ]
+
+
+def _field_type_sql(field: WriteField) -> str:
+    if field.data_type == "RECORD":
+        nested = ", ".join(f"`{child.name}` {_field_type_sql(child)}" for child in field.fields)
+        data_type = f"STRUCT<{nested}>"
+    else:
+        data_type = field.data_type
+    return f"ARRAY<{data_type}>" if field.mode == "REPEATED" else data_type
 
 
 def _target_id(target: WriteTarget) -> str:
@@ -499,11 +696,23 @@ def _deduplicate_keyed(
     return list(deduplicated.values())
 
 
-def _load_config(write_disposition: str) -> bigquery.LoadJobConfig:
-    return bigquery.LoadJobConfig(
-        autodetect=True,
+def _load_config(
+    write_disposition: str,
+    schema: Sequence[WriteField] = (),
+) -> bigquery.LoadJobConfig:
+    config = bigquery.LoadJobConfig(
+        autodetect=not schema,
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         write_disposition=write_disposition,
+    )
+    if schema:
+        config.schema = _bigquery_schema(schema)
+    return config
+
+
+def _copy_config() -> bigquery.CopyJobConfig:
+    return bigquery.CopyJobConfig(
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
     )
 
 
@@ -514,6 +723,7 @@ def _load_rows_in_chunks(
     *,
     max_batch_rows: int,
     expire: bool = False,
+    schema: Sequence[WriteField] = (),
 ) -> None:
     """Bound each load request while preserving one logical truncate-then-append batch."""
     for offset in range(0, len(rows), max_batch_rows):
@@ -525,7 +735,7 @@ def _load_rows_in_chunks(
         client.load_table_from_json(
             rows[offset : offset + max_batch_rows],
             destination,
-            job_config=_load_config(disposition),
+            job_config=_load_config(disposition, schema),
         ).result()
         if offset == 0 and expire:
             client.query(_expire_staging_sql(destination)).result()
@@ -536,15 +746,6 @@ def _expire_staging_sql(staging_id: str) -> str:
         f"ALTER TABLE `{staging_id}` SET OPTIONS "
         "(expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 1 DAY))"
     )
-
-
-def _replace_from_staging_sql(
-    target_id: str,
-    staging_id: str,
-    columns: Sequence[str],
-) -> str:
-    selected = _quoted_columns(columns)
-    return f"CREATE OR REPLACE TABLE `{target_id}` AS SELECT {selected} FROM `{staging_id}`"
 
 
 def _quoted_columns(columns: Sequence[str], *, alias: str | None = None) -> str:
