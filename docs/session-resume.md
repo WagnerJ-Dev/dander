@@ -6,9 +6,9 @@ Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and
 ## Git state
 
 - Repository: `/Users/harrison/Documents/dander`.
-- Working branch: `codex/hubspot-live-alerting`; base `main`/`origin/main` is `5e2dc13`.
-- This branch enables the tracked HubSpot schedule and adds operator-private Cloud Monitoring
-  failure delivery. It has not yet been committed or published.
+- Working branch: `main`; local and `origin/main` are synchronized at merge commit `b1a1bf1`.
+- PR #10 merged the tracked HubSpot schedule and operator-private Cloud Monitoring failure
+  delivery. Its feature branch was removed locally and from GitHub.
 
 ## Live project
 
