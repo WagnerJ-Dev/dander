@@ -9,6 +9,7 @@ from json import dumps
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
 _PROJECT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
@@ -52,13 +53,7 @@ class TerraformBootstrap:
         enable_runtime: bool = False,
         billing_account_id: str = "",
         container_image: str = "",
-        scheduler_paused: bool = True,
-        runtime_publish_dataplex: bool = False,
-        runtime_source: str = "greenhouse_job_board",
-        runtime_model: str = "stg_greenhouse__jobs",
-        runtime_build_models: bool = True,
-        runtime_secret_id: str = "",
-        runtime_secret_env: str = "HUBSPOT_PRIVATE_APP_TOKEN",
+        pipelines: Mapping[str, Mapping[str, object]] | None = None,
         secret_ids: tuple[str, ...] = (),
         github_repository: str = "",
         github_ref: str = "refs/heads/main",
@@ -80,13 +75,7 @@ class TerraformBootstrap:
             enable_runtime: Whether to provision the scheduled Cloud Run slice.
             billing_account_id: Billing account used by the runtime safety check.
             container_image: Immutable runtime image reference including a sha256 digest.
-            scheduler_paused: Whether the scheduler remains paused after provisioning.
-            runtime_publish_dataplex: Whether hosted runs publish potentially billable aspects.
-            runtime_source: Connector source name passed to the hosted job.
-            runtime_model: Transform model selected by the hosted job.
-            runtime_build_models: Whether hosted runs build transforms after ingestion.
-            runtime_secret_id: Optional Secret Manager container exposed to the connector.
-            runtime_secret_env: Environment variable carrying the Secret Manager reference.
+            pipelines: Expanded additive hosted-pipeline definitions from ``dander.yaml``.
             secret_ids: Secret Manager container ids to create without values.
             github_repository: Optional GitHub owner/repository allowed to deploy.
             github_ref: Exact Git branch or tag ref allowed to deploy.
@@ -117,6 +106,7 @@ class TerraformBootstrap:
                 "service-account email"
             )
 
+        expanded_pipelines = dict(pipelines or {})
         if enable_runtime:
             if not _BILLING_ACCOUNT.fullmatch(billing_account_id):
                 raise TerraformBootstrapError(
@@ -126,16 +116,15 @@ class TerraformBootstrap:
                 raise TerraformBootstrapError(
                     "Runtime enablement requires an immutable --container-image with @sha256 digest"
                 )
+            if not expanded_pipelines:
+                raise TerraformBootstrapError(
+                    "Runtime enablement requires at least one pipeline from dander.yaml"
+                )
         elif container_image:
             raise TerraformBootstrapError("--container-image requires --enable-runtime")
-        if runtime_publish_dataplex and not enable_runtime:
-            raise TerraformBootstrapError("--runtime-publish-dataplex requires --enable-runtime")
-        if not _IDENTIFIER.fullmatch(runtime_source) or not _IDENTIFIER.fullmatch(runtime_model):
-            raise TerraformBootstrapError("Runtime source and model must be valid identifiers")
-        if runtime_secret_id and not _SECRET_ID.fullmatch(runtime_secret_id):
-            raise TerraformBootstrapError("Invalid runtime secret id")
-        if not _ENV_NAME.fullmatch(runtime_secret_env):
-            raise TerraformBootstrapError("Runtime secret environment name must be uppercase")
+        elif expanded_pipelines:
+            raise TerraformBootstrapError("Pipeline definitions require --enable-runtime")
+        _validate_pipelines(expanded_pipelines)
         if billing_account_id and not (enable_runtime or enable_cost_guard):
             raise TerraformBootstrapError(
                 "--billing-account requires --enable-runtime or --enable-cost-guard"
@@ -193,13 +182,7 @@ class TerraformBootstrap:
             f"-var=enable_scheduled_job={str(enable_runtime).lower()}",
             f"-var=billing_account_id={billing_account_id}",
             f"-var=runtime_container_image={container_image}",
-            f"-var=scheduler_paused={str(scheduler_paused).lower()}",
-            f"-var=runtime_publish_dataplex={str(runtime_publish_dataplex).lower()}",
-            f"-var=runtime_source={runtime_source}",
-            f"-var=runtime_model={runtime_model}",
-            f"-var=runtime_build_models={str(runtime_build_models).lower()}",
-            f"-var=runtime_secret_id={runtime_secret_id}",
-            f"-var=runtime_secret_env={runtime_secret_env}",
+            f"-var=pipelines={dumps(expanded_pipelines, sort_keys=True, separators=(',', ':'))}",
             f"-var=secret_ids={dumps(sorted(set(secret_ids)), separators=(',', ':'))}",
             f"-var=github_repository={github_repository}",
             f"-var=github_ref={github_ref}",
@@ -260,3 +243,46 @@ class TerraformBootstrap:
             raise TerraformBootstrapError(
                 f"{command} failed with exit code {error.returncode}"
             ) from error
+
+
+def _validate_pipelines(pipelines: Mapping[str, Mapping[str, object]]) -> None:
+    """Defensively validate the expanded project manifest before invoking Terraform."""
+    required = {
+        "job_name",
+        "runtime_service_account_id",
+        "scheduler_service_account_id",
+        "source",
+        "models",
+        "build_models",
+        "publish_dataplex",
+        "schedule",
+        "time_zone",
+        "paused",
+        "secret_env",
+    }
+    for pipeline_id, pipeline in pipelines.items():
+        if not re.fullmatch(r"^[a-z][a-z0-9_]{1,62}$", pipeline_id):
+            raise TerraformBootstrapError("Invalid pipeline id")
+        if set(pipeline) != required:
+            raise TerraformBootstrapError(f"Pipeline {pipeline_id!r} has an invalid shape")
+        source = pipeline["source"]
+        models = pipeline["models"]
+        secret_env = pipeline["secret_env"]
+        if not isinstance(source, str) or not _IDENTIFIER.fullmatch(source):
+            raise TerraformBootstrapError(f"Pipeline {pipeline_id!r} has an invalid source")
+        if (
+            not isinstance(models, list)
+            or not models
+            or any(
+                not isinstance(model, str) or not _IDENTIFIER.fullmatch(model) for model in models
+            )
+        ):
+            raise TerraformBootstrapError(f"Pipeline {pipeline_id!r} has invalid models")
+        if not isinstance(secret_env, dict) or any(
+            not isinstance(env_name, str)
+            or not _ENV_NAME.fullmatch(env_name)
+            or not isinstance(secret_id, str)
+            or not _SECRET_ID.fullmatch(secret_id)
+            for env_name, secret_id in secret_env.items()
+        ):
+            raise TerraformBootstrapError(f"Pipeline {pipeline_id!r} has invalid secret bindings")

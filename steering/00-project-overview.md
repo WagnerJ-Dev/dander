@@ -64,6 +64,11 @@ material, credentials, or non-public data is introduced.
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-07-31 — **Hosted orchestration is additive and project-defined** — versioned
+  `dander.yaml` pipeline definitions drive both local execution and Terraform expansion; each
+  pipeline owns its job, schedule, identities, and secret bindings while sharing the runtime image,
+  datasets, and metadata spine. Adding a connector must not repurpose or replace another pipeline.
+
 - 2026-07-29 — **The metadata spine is deterministic and local-first** — one validated model YAML
   projects to transforms/tests, stable semantic JSON, and reusable Dataplex system aspects;
   catalog mutation requires an explicit flag because stored aspect metadata is billable.

@@ -1,7 +1,81 @@
 locals {
-  runtime_account   = "dander-runtime"
-  scheduler_account = "dander-scheduler"
-  job_name          = "dander-greenhouse-public"
+  any_pipeline_publishes_dataplex = anytrue([
+    for pipeline in values(var.pipelines) : pipeline.publish_dataplex
+  ])
+  transform_bindings = {
+    for binding in flatten([
+      for pipeline_id, pipeline in var.pipelines : [
+        for dataset_id in var.transform_dataset_ids : {
+          key         = "${pipeline_id}|${dataset_id}"
+          pipeline_id = pipeline_id
+          dataset_id  = dataset_id
+        }
+      ]
+    ]) : binding.key => binding
+  }
+}
+
+# Preserve the original Greenhouse resources while the module evolves from one hard-coded job to
+# an additive map. New pipelines receive independent resources; the live Greenhouse addresses move
+# in state without replacement.
+moved {
+  from = google_service_account.runtime
+  to   = google_service_account.runtime["greenhouse_jobs"]
+}
+
+moved {
+  from = google_service_account.scheduler
+  to   = google_service_account.scheduler["greenhouse_jobs"]
+}
+
+moved {
+  from = google_project_iam_member.runtime_job_user
+  to   = google_project_iam_member.runtime_job_user["greenhouse_jobs"]
+}
+
+moved {
+  from = google_project_iam_member.runtime_pubsub_viewer
+  to   = google_project_iam_member.runtime_pubsub_viewer["greenhouse_jobs"]
+}
+
+moved {
+  from = google_bigquery_dataset_iam_member.runtime_writer
+  to   = google_bigquery_dataset_iam_member.runtime_writer["greenhouse_jobs"]
+}
+
+moved {
+  from = google_bigquery_dataset_iam_member.runtime_transform_writer["staging"]
+  to   = google_bigquery_dataset_iam_member.runtime_transform_writer["greenhouse_jobs|staging"]
+}
+
+moved {
+  from = google_bigquery_dataset_iam_member.runtime_transform_writer["marts"]
+  to   = google_bigquery_dataset_iam_member.runtime_transform_writer["greenhouse_jobs|marts"]
+}
+
+moved {
+  from = google_project_iam_member.runtime_catalog_editor[0]
+  to   = google_project_iam_member.runtime_catalog_editor["greenhouse_jobs"]
+}
+
+moved {
+  from = google_billing_account_iam_member.runtime_budget_viewer
+  to   = google_billing_account_iam_member.runtime_budget_viewer["greenhouse_jobs"]
+}
+
+moved {
+  from = google_cloud_run_v2_job.ingestion
+  to   = google_cloud_run_v2_job.ingestion["greenhouse_jobs"]
+}
+
+moved {
+  from = google_cloud_run_v2_job_iam_member.scheduler_invoker
+  to   = google_cloud_run_v2_job_iam_member.scheduler_invoker["greenhouse_jobs"]
+}
+
+moved {
+  from = google_cloud_scheduler_job.ingestion
+  to   = google_cloud_scheduler_job.ingestion["greenhouse_jobs"]
 }
 
 resource "google_project_service" "required" {
@@ -9,7 +83,7 @@ resource "google_project_service" "required" {
     "artifactregistry.googleapis.com",
     "cloudscheduler.googleapis.com",
     "run.googleapis.com",
-  ], var.publish_dataplex ? ["dataplex.googleapis.com"] : []))
+  ], local.any_pipeline_publishes_dataplex ? ["dataplex.googleapis.com"] : []))
 
   project            = var.project_id
   service            = each.value
@@ -24,67 +98,84 @@ data "google_artifact_registry_repository" "images" {
 }
 
 resource "google_service_account" "runtime" {
+  for_each = var.pipelines
+
   project      = var.project_id
-  account_id   = local.runtime_account
-  display_name = "Dander ingestion runtime"
+  account_id   = each.value.runtime_service_account_id
+  display_name = "Dander runtime: ${each.key}"
 }
 
 resource "google_service_account" "scheduler" {
+  for_each = var.pipelines
+
   project      = var.project_id
-  account_id   = local.scheduler_account
-  display_name = "Dander Cloud Scheduler invoker"
+  account_id   = each.value.scheduler_service_account_id
+  display_name = "Dander scheduler: ${each.key}"
 }
 
 resource "google_project_iam_member" "runtime_job_user" {
+  for_each = var.pipelines
+
   project = var.project_id
   role    = "roles/bigquery.jobUser"
-  member  = "serviceAccount:${google_service_account.runtime.email}"
+  member  = "serviceAccount:${google_service_account.runtime[each.key].email}"
 }
 
 resource "google_project_iam_member" "runtime_pubsub_viewer" {
+  for_each = var.pipelines
+
   project = var.project_id
   role    = "roles/pubsub.viewer"
-  member  = "serviceAccount:${google_service_account.runtime.email}"
+  member  = "serviceAccount:${google_service_account.runtime[each.key].email}"
 }
 
 resource "google_bigquery_dataset_iam_member" "runtime_writer" {
+  for_each = var.pipelines
+
   project    = var.project_id
   dataset_id = var.dataset_id
   role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.runtime.email}"
+  member     = "serviceAccount:${google_service_account.runtime[each.key].email}"
 }
 
 resource "google_bigquery_dataset_iam_member" "runtime_transform_writer" {
-  for_each = var.transform_dataset_ids
+  for_each = local.transform_bindings
 
   project    = var.project_id
-  dataset_id = each.value
+  dataset_id = each.value.dataset_id
   role       = "roles/bigquery.dataEditor"
-  member     = "serviceAccount:${google_service_account.runtime.email}"
+  member     = "serviceAccount:${google_service_account.runtime[each.value.pipeline_id].email}"
 }
 
 resource "google_project_iam_member" "runtime_catalog_editor" {
-  count = var.publish_dataplex ? 1 : 0
+  for_each = {
+    for id, pipeline in var.pipelines : id => pipeline if pipeline.publish_dataplex
+  }
 
   project = var.project_id
   role    = "roles/dataplex.catalogEditor"
-  member  = "serviceAccount:${google_service_account.runtime.email}"
+  member  = "serviceAccount:${google_service_account.runtime[each.key].email}"
 }
 
 resource "google_billing_account_iam_member" "runtime_budget_viewer" {
+  for_each = var.pipelines
+
   billing_account_id = var.billing_account_id
   role               = "roles/billing.viewer"
-  member             = "serviceAccount:${google_service_account.runtime.email}"
+  member             = "serviceAccount:${google_service_account.runtime[each.key].email}"
 }
 
 resource "google_cloud_run_v2_job" "ingestion" {
+  for_each = var.pipelines
+
   project             = var.project_id
-  name                = local.job_name
+  name                = each.value.job_name
   location            = var.region
   deletion_protection = false
   labels = {
-    module = "scheduled-job"
-    owner  = "dander"
+    module   = "scheduled-job"
+    owner    = "dander"
+    pipeline = replace(each.key, "_", "-")
   }
 
   template {
@@ -92,24 +183,22 @@ resource "google_cloud_run_v2_job" "ingestion" {
     parallelism = 1
 
     template {
-      service_account = google_service_account.runtime.email
+      service_account = google_service_account.runtime[each.key].email
       timeout         = "300s"
       max_retries     = 1
 
       containers {
         image = var.container_image
         args = concat(
-          ["run", var.runtime_source, "--guarded-free-tier"],
-          var.runtime_build_models ? [
-            "--build-models",
-            "--models-dir",
-            "/app/models",
-            "--select-model",
-            var.runtime_model,
-            "--catalog-output",
-            "/tmp/dander-catalog.json",
-          ] : [],
-          var.publish_dataplex ? ["--publish-dataplex"] : [],
+          ["run", each.key, "--config", "/app/dander.yaml", "--guarded-free-tier"],
+          each.value.build_models ? concat(
+            ["--build-models", "--models-dir", "/app/models"],
+            flatten([
+              for model in each.value.models : ["--select-model", model]
+            ]),
+            ["--catalog-output", "/tmp/dander-catalog.json"],
+          ) : [],
+          each.value.publish_dataplex ? ["--publish-dataplex"] : [],
         )
 
         resources {
@@ -129,12 +218,12 @@ resource "google_cloud_run_v2_job" "ingestion" {
         }
         env {
           name  = "DANDER_PRINCIPAL"
-          value = google_service_account.runtime.email
+          value = google_service_account.runtime[each.key].email
         }
         dynamic "env" {
-          for_each = var.runtime_secret_id == "" ? [] : [var.runtime_secret_id]
+          for_each = each.value.secret_env
           content {
-            name  = var.runtime_secret_env
+            name  = env.key
             value = "projects/${var.project_id}/secrets/${env.value}/versions/latest"
           }
         }
@@ -154,21 +243,25 @@ resource "google_cloud_run_v2_job" "ingestion" {
 }
 
 resource "google_cloud_run_v2_job_iam_member" "scheduler_invoker" {
+  for_each = var.pipelines
+
   project  = var.project_id
-  location = google_cloud_run_v2_job.ingestion.location
-  name     = google_cloud_run_v2_job.ingestion.name
+  location = google_cloud_run_v2_job.ingestion[each.key].location
+  name     = google_cloud_run_v2_job.ingestion[each.key].name
   role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.scheduler.email}"
+  member   = "serviceAccount:${google_service_account.scheduler[each.key].email}"
 }
 
 resource "google_cloud_scheduler_job" "ingestion" {
+  for_each = var.pipelines
+
   project          = var.project_id
   region           = var.region
-  name             = "${local.job_name}-daily"
-  description      = "Run the public Greenhouse ingestion once daily"
-  schedule         = var.schedule
-  time_zone        = var.time_zone
-  paused           = var.scheduler_paused
+  name             = "${each.value.job_name}-daily"
+  description      = "Run Dander pipeline ${each.key}"
+  schedule         = each.value.schedule
+  time_zone        = each.value.time_zone
+  paused           = each.value.paused
   attempt_deadline = "180s"
 
   retry_config {
@@ -180,14 +273,14 @@ resource "google_cloud_scheduler_job" "ingestion" {
 
   http_target {
     http_method = "POST"
-    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.ingestion.name}:run"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.ingestion[each.key].name}:run"
     body        = base64encode("{}")
     headers = {
       "Content-Type" = "application/json"
     }
 
     oauth_token {
-      service_account_email = google_service_account.scheduler.email
+      service_account_email = google_service_account.scheduler[each.key].email
     }
   }
 

@@ -23,11 +23,15 @@ resource "google_secret_manager_secret" "this" {
 
 locals {
   accessor_bindings = {
-    for pair in setproduct(var.secret_ids, var.accessor_members) :
-    "${pair[0]}|${pair[1]}" => {
-      secret = pair[0]
-      member = pair[1]
-    }
+    for binding in flatten([
+      for secret_id, members in var.accessors_by_secret : [
+        for member in members : {
+          key    = "${secret_id}|${member}"
+          secret = secret_id
+          member = member
+        }
+      ]
+    ]) : binding.key => binding
   }
 }
 

@@ -39,8 +39,6 @@ def test_init_passes_optional_runtime_inputs(
             "ABCDEF-123456-ABCDEF",
             "--container-image",
             f"example.invalid/project/repository/image@sha256:{'a' * 64}",
-            "--scheduler-enabled",
-            "--runtime-publish-dataplex",
             "--secret-id",
             "api-token",
             "--github-repository",
@@ -53,9 +51,11 @@ def test_init_passes_optional_runtime_inputs(
 
     assert result.exit_code == 0, result.output
     assert captured["enable_runtime"] is True
-    assert captured["scheduler_paused"] is False
-    assert captured["runtime_publish_dataplex"] is True
-    assert captured["runtime_build_models"] is True
+    pipelines = captured["pipelines"]
+    assert isinstance(pipelines, dict)
+    assert set(pipelines) == {"greenhouse_jobs", "hubspot_companies"}
+    assert pipelines["greenhouse_jobs"]["paused"] is False
+    assert pipelines["hubspot_companies"]["paused"] is True
     assert captured["secret_ids"] == ("api-token",)
     assert captured["github_repository"] == "WagnerJ-Dev/dander"
     assert captured["enable_cost_guard"] is True

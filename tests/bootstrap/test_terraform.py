@@ -13,6 +13,26 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def _pipelines(
+    *, paused: bool = True, publish_dataplex: bool = False
+) -> dict[str, dict[str, object]]:
+    return {
+        "greenhouse_jobs": {
+            "job_name": "dander-greenhouse-public",
+            "runtime_service_account_id": "dander-runtime",
+            "scheduler_service_account_id": "dander-scheduler",
+            "source": "greenhouse_job_board",
+            "models": ["stg_greenhouse__jobs"],
+            "build_models": True,
+            "publish_dataplex": publish_dataplex,
+            "schedule": "0 9 * * *",
+            "time_zone": "America/New_York",
+            "paused": paused,
+            "secret_env": {},
+        }
+    }
+
+
 def test_bootstrap_plans_without_applying(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -75,8 +95,7 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         enable_runtime=True,
         billing_account_id="ABCDEF-123456-ABCDEF",
         container_image=f"us-east1-docker.pkg.dev/unit-project/dander/dander@sha256:{digest}",
-        scheduler_paused=False,
-        runtime_publish_dataplex=True,
+        pipelines=_pipelines(paused=False, publish_dataplex=True),
         secret_ids=("greenhouse-client-secret", "greenhouse-client-id"),
         github_repository="WagnerJ-Dev/dander",
         github_ref="refs/heads/main",
@@ -88,9 +107,12 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         in plan
     )
     assert "-var=enable_scheduled_job=true" in plan
-    assert "-var=scheduler_paused=false" in plan
-    assert "-var=runtime_publish_dataplex=true" in plan
-    assert "-var=runtime_build_models=true" in plan
+    pipeline_argument = next(
+        argument for argument in plan if argument.startswith("-var=pipelines=")
+    )
+    assert '"greenhouse_jobs"' in pipeline_argument
+    assert '"paused":false' in pipeline_argument
+    assert '"publish_dataplex":true' in pipeline_argument
     assert '-var=secret_ids=["greenhouse-client-id","greenhouse-client-secret"]' in plan
     assert "-var=github_repository=WagnerJ-Dev/dander" in plan
     assert "-var=enable_cost_guard=false" in plan
@@ -182,7 +204,7 @@ def test_apply_saved_plan_does_not_replan(
         ({"secret_ids": ("bad secret",)}, "secret id"),
         ({"github_repository": "not-a-repository"}, "GitHub repository"),
         ({"github_repository": "WagnerJ-Dev/dander"}, "enable-runtime"),
-        ({"runtime_publish_dataplex": True}, "enable-runtime"),
+        ({"pipelines": _pipelines()}, "enable-runtime"),
         ({"github_ref": "main"}, "GitHub ref"),
         ({"enable_cost_guard": True}, "billing-account"),
         ({"live_cost_guard": True}, "enable-cost-guard"),

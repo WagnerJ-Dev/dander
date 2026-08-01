@@ -15,6 +15,7 @@ RUN uv sync --frozen --no-dev --no-editable
 
 COPY connectors ./connectors
 COPY models ./models
+COPY dander.yaml ./dander.yaml
 
 USER 65532:65532
 

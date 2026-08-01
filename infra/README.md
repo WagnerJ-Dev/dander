@@ -9,7 +9,7 @@ call sites (mirrors the `SecretStoreProvider` / `ComputeProvider` abstractions i
 | Module | Provisions |
 |---|---|
 | `modules/bigquery` | `raw` / `staging` / `marts` datasets. **Implemented.** |
-| `modules/scheduled-job` | Existing stage-zero Artifact Registry repository, least-privilege identities, public-ingestion Cloud Run Job, and daily Scheduler job. **Implemented.** |
+| `modules/scheduled-job` | Existing stage-zero Artifact Registry repository plus independent least-privilege Cloud Run/Scheduler resources for every `dander.yaml` pipeline. **Implemented.** |
 | `modules/secret-manager` | Named secret containers and per-secret runtime access; never secret values. **Implemented.** |
 | `modules/github-wif` | Repository/ref-scoped GitHub OIDC and a keyless deployment identity. **Implemented.** |
 | `modules/cost-guard` | Project budget, Pub/Sub, and simulation-first Gen 2 billing kill switch. **Implemented.** |
@@ -61,7 +61,7 @@ uv run dander init \
   --enable-runtime \
   --billing-account ABCDEF-123456-ABCDEF \
   --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DIGEST \
-  --secret-id greenhouse-client-secret \
+  --config dander.yaml \
   --github-repository owner/repository \
   --enable-cost-guard
 ```
@@ -77,14 +77,13 @@ services and delete resources, while delayed billing reports can still exceed th
 amount. Deploying the Gen 2 function uses billable Cloud Build, Cloud Run, Storage, and Artifact
 Registry components; a plan never asserts that the result will cost exactly zero.
 
-For the scheduled slice, copy `sandbox.auto.tfvars.example` to ignored
-`sandbox.auto.tfvars`, supply an immutable Artifact Registry digest, and leave
-`scheduler_paused = true` for the first apply. Run the Cloud Run Job manually, verify its guarded
-write, selected transform tests, and registry compilation, then change only that value to `false`
-and apply a reviewed saved plan. The runtime identity can create BigQuery jobs, edit `raw`,
-`staging`, and `marts`, inspect Pub/Sub guard wiring, and read billing budget metadata. Optional
-Dataplex publication is disabled by default and adds catalog IAM only when enabled. The scheduler
-identity can invoke only the named Cloud Run Job.
+For hosted pipelines, copy `sandbox.auto.tfvars.example` to ignored `sandbox.auto.tfvars`, supply an
+immutable Artifact Registry digest, and keep every new pipeline paused for its first apply. Run
+each Cloud Run Job manually, verify its guarded write, selected transform tests, and registry
+compilation, then enable only the proven schedule in a reviewed plan. Each runtime identity can
+create BigQuery jobs, edit the shared Dander datasets, inspect Pub/Sub guard wiring, read billing
+budget metadata, and access only its declared secrets. Each scheduler identity can invoke only its
+pipeline's named Cloud Run Job.
 
 ## Rules (see `steering/01-security.md` and `steering/languages/terraform.md`)
 

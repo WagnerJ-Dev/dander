@@ -25,81 +25,50 @@ variable "container_image" {
 
 variable "dataset_id" {
   type        = string
-  description = "BigQuery dataset the runtime may edit."
+  description = "BigQuery dataset every runtime may edit for ingestion and control state."
   default     = "raw"
 }
 
 variable "transform_dataset_ids" {
   type        = set(string)
-  description = "Additional datasets the hosted transform tail may edit."
+  description = "Additional datasets hosted transforms may edit."
   default     = ["staging", "marts"]
 }
 
-variable "publish_dataplex" {
-  type        = bool
-  description = "Publish metadata aspects after hosted transforms; stored metadata may be billable."
-  default     = false
-}
-
-variable "schedule" {
-  type        = string
-  description = "Cron schedule for public ingestion."
-  default     = "0 9 * * *"
-}
-
-variable "time_zone" {
-  type        = string
-  description = "IANA time zone used to interpret the cron schedule."
-  default     = "America/New_York"
-}
-
-variable "scheduler_paused" {
-  type        = bool
-  description = "Keep the schedule paused until a manual execution has succeeded."
-  default     = true
-}
-
-variable "runtime_source" {
-  type        = string
-  description = "Connector source name passed to the hosted Dander job."
-  default     = "greenhouse_job_board"
+variable "pipelines" {
+  description = "Expanded hosted pipeline definitions keyed by stable Dander pipeline id."
+  type = map(object({
+    job_name                     = string
+    runtime_service_account_id   = string
+    scheduler_service_account_id = string
+    source                       = string
+    models                       = list(string)
+    build_models                 = bool
+    publish_dataplex             = bool
+    schedule                     = string
+    time_zone                    = string
+    paused                       = bool
+    secret_env                   = map(string)
+  }))
 
   validation {
-    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", var.runtime_source))
-    error_message = "runtime_source must be a valid Dander connector name."
-  }
-}
-
-variable "runtime_model" {
-  type        = string
-  description = "Transform model selected by the hosted Dander job."
-  default     = "stg_greenhouse__jobs"
-
-  validation {
-    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", var.runtime_model))
-    error_message = "runtime_model must be a valid Dander model name."
-  }
-}
-
-variable "runtime_build_models" {
-  type        = bool
-  description = "Run hosted transform builds/tests after ingestion."
-  default     = true
-}
-
-variable "runtime_secret_id" {
-  type        = string
-  description = "Optional Secret Manager container exposed to the connector."
-  default     = ""
-}
-
-variable "runtime_secret_env" {
-  type        = string
-  description = "Environment variable containing the Secret Manager resource reference."
-  default     = "HUBSPOT_PRIVATE_APP_TOKEN"
-
-  validation {
-    condition     = can(regex("^[A-Z][A-Z0-9_]*$", var.runtime_secret_env))
-    error_message = "runtime_secret_env must be an uppercase environment variable name."
+    condition = alltrue([
+      for id, pipeline in var.pipelines :
+      can(regex("^[a-z][a-z0-9_-]{1,62}$", id)) &&
+      can(regex("^[a-z][a-z0-9-]{0,61}[a-z0-9]$", pipeline.job_name)) &&
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", pipeline.runtime_service_account_id)) &&
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", pipeline.scheduler_service_account_id)) &&
+      can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", pipeline.source)) &&
+      length(pipeline.models) > 0 &&
+      alltrue([for model in pipeline.models : can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", model))]) &&
+      length(trimspace(pipeline.schedule)) > 0 &&
+      length(trimspace(pipeline.time_zone)) > 0 &&
+      alltrue([
+        for env_name, secret_id in pipeline.secret_env :
+        can(regex("^[A-Z][A-Z0-9_]*$", env_name)) &&
+        can(regex("^[A-Za-z][A-Za-z0-9_-]{0,254}$", secret_id))
+      ])
+    ])
+    error_message = "Every pipeline must use safe ids, a non-empty model selection and schedule, and valid secret bindings."
   }
 }

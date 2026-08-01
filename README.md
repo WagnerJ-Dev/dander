@@ -88,6 +88,7 @@ uv run ruff format .       # auto-format
 uv run mypy                # strict type-check
 uv run pytest              # run the test suite
 uv run dander --help       # the CLI (init / run)
+uv run dander validate     # validate dander.yaml and every pipeline reference
 ```
 
 **Green baseline** = `ruff check`, `ruff format --check`, `mypy`, and `pytest` all pass. Keep it
@@ -297,29 +298,35 @@ uv run dander init \
   --enable-runtime \
   --billing-account ABCDEF-123456-ABCDEF \
   --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DIGEST \
-  --secret-id greenhouse-client-secret \
+  --config dander.yaml \
   --github-repository owner/repository \
   --enable-cost-guard
 ```
 
-The image must use an immutable SHA-256 digest. Secret Manager containers and narrowly scoped
-runtime access can be managed by Terraform, but secret values never enter Terraform state.
+The image must use an immutable SHA-256 digest. `dander.yaml` declares every additive pipeline,
+including connector, transform roots, schedule, and secret references. Secret Manager containers
+and per-pipeline runtime access are managed by Terraform, but secret values never enter the
+manifest or Terraform state.
 GitHub Actions authenticates through repository/ref-constrained OIDC rather than a downloaded key.
-Add `--runtime-publish-dataplex` only when you explicitly want hosted runs to store catalog
-aspects; it enables the API and IAM required for that potentially billable operation.
+Set `publish_dataplex: true` only on pipelines that should store catalog aspects; it enables the
+API and IAM required for that potentially billable operation.
 The integrated cost guard creates the project budget, Pub/Sub wiring, and Gen 2 function in
 simulation mode. Live billing detachment requires the additional `--live-cost-guard` flag and is
 called out in the apply confirmation. Function deployment uses billable Cloud Build, Cloud Run,
 Storage, and Artifact Registry services; free allowances do not make this a hard $0 guarantee.
 
-### Scheduled public pipeline
+### Additive hosted pipelines
 
-The hosted slice runs the credential-free Greenhouse Job Board connector as a Cloud Run Job, builds
-and tests `stg_greenhouse__jobs`, then compiles its semantic registry. Terraform creates separate
-runtime and scheduler service accounts, grants the runtime write access only to `raw`, `staging`,
-and `marts`, and invokes the job daily at 09:00 in `America/New_York`. Dataplex publication remains
-off unless explicitly enabled. The schedule defaults to paused so a complete manual execution can
-be verified before enabling it.
+The tracked `dander.yaml` runs Greenhouse and HubSpot as separate pipelines. Each pipeline receives
+its own Cloud Run Job, Scheduler trigger, runtime identity, scheduler identity, secret bindings,
+model selection, and pause policy. They share the immutable image and BigQuery datasets. Adding a
+pipeline never repurposes another pipeline's job.
+
+```bash
+uv run dander validate
+uv run dander run greenhouse_jobs --dry-run --project my-gcp-project
+uv run dander run hubspot_companies --dry-run --project my-gcp-project
+```
 
 Build for Cloud Run, push the image, and use its immutable digest in a local tfvars file:
 
@@ -334,18 +341,19 @@ docker push "$IMAGE:dander-25"
 docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:dander-25"
 
 cp infra/sandbox.auto.tfvars.example infra/sandbox.auto.tfvars
-# Fill in the billing account and image digest; keep scheduler_paused = true.
+# Fill in the billing account and image digest; keep each new pipeline paused for its first apply.
 terraform -chdir=infra plan -out=scheduled.tfplan
 terraform -chdir=infra apply scheduled.tfplan
 gcloud run jobs execute dander-greenhouse-public --region="$REGION" --wait
+gcloud run jobs execute dander-hubspot-companies --region="$REGION" --wait
 ```
 
-After the manual ingestion, transform tests, and local registry compilation succeed, set
-`scheduler_paused = false`, review a fresh saved plan, and apply that exact plan. The image
+After a new pipeline's manual ingestion, transform tests, and registry compilation succeed, set its
+`paused` field to `false`, review a fresh saved plan, and apply that exact plan. The image
 repository deletes untagged images after one day and retains the three most recent versions. A
-single Scheduler job is within Google's current three-job monthly free allowance, and small Cloud
-Run executions may fit its free compute allowance, but neither is a hard spending cap. The guarded
-CLI preflight and budget kill switch remain required.
+small number of Scheduler jobs and Cloud Run executions may fit current free allowances, but those
+allowances are not a hard spending cap. The guarded CLI preflight and budget kill switch remain
+required.
 
 ### Build and test SQL models
 

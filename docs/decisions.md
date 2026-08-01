@@ -1,5 +1,16 @@
 # Engineering Decisions
 
+## 2026-07-31 — Additive project manifest and hosted pipelines
+
+- `dander.yaml` is the repository-owned source of truth for named pipelines. A pipeline binds one
+  connector to selected transform roots, schedule policy, secret references, and stable resource
+  names; secret values remain outside the manifest and Terraform.
+- Hosted pipelines share the immutable runtime image and warehouse datasets but receive distinct
+  Cloud Run jobs, Scheduler jobs, runtime identities, and scheduler identities. Secret Manager IAM
+  is computed per secret and pipeline rather than granting every runtime every connector secret.
+- The original Greenhouse resources migrate to the `greenhouse_jobs` map key through Terraform
+  state moves. Adding HubSpot must create new resources without replacing Greenhouse.
+
 ## 2026-07-31 — Fork-owned CI and evidence surface
 
 - The admin-owned `harrisonoconnorhover/dander` fork is the execution surface for CI, protected

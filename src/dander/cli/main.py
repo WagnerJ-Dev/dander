@@ -38,6 +38,7 @@ from dander.ingestion import (
     WorkdayRaasSource,
     load_source_config,
 )
+from dander.project import ProjectConfigError, load_project_config
 from dander.runtime import PipelineRunner
 from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafetyError
 from dander.security import (
@@ -82,6 +83,29 @@ _DEFAULT_INFRA_DIR = Path("infra")
 _DEFAULT_MODELS_DIR = Path("models")
 _DEFAULT_CATALOG_PATH = Path(".dander/catalog.json")
 _DEFAULT_BOOTSTRAP_ADMIN_DIR = Path("infra/bootstrap-admin")
+_DEFAULT_PROJECT_CONFIG = Path("dander.yaml")
+
+
+@app.command("validate")
+def validate_project(
+    project_config: Path = typer.Option(_DEFAULT_PROJECT_CONFIG, "--config"),  # noqa: B008
+    connectors_dir: Path = typer.Option(  # noqa: B008
+        _DEFAULT_CONNECTORS_DIR, "--connectors-dir"
+    ),
+    models_dir: Path = typer.Option(_DEFAULT_MODELS_DIR, "--models-dir"),  # noqa: B008
+) -> None:
+    """Validate the project manifest and all configured connector/model references."""
+    try:
+        manifest = load_project_config(project_config)
+        manifest.validate_references(
+            project_config.resolve().parent,
+            connectors_dir=connectors_dir,
+            models_dir=models_dir,
+        )
+    except ProjectConfigError as error:
+        raise ClickException(str(error)) from error
+    summary = f"Validated {len(manifest.pipelines)} additive pipeline(s) from {project_config}."
+    console.print(f"[green]{summary}[/green]")
 
 
 @app.command()
@@ -117,40 +141,10 @@ def init(
         "--container-image",
         help="Immutable Artifact Registry image reference ending in @sha256 digest.",
     ),
-    scheduler_paused: bool = typer.Option(
-        True,
-        "--scheduler-paused/--scheduler-enabled",
-        help="Keep the daily scheduler paused until a manual run succeeds.",
-    ),
-    runtime_publish_dataplex: bool = typer.Option(
-        False,
-        "--runtime-publish-dataplex",
-        help="Publish catalog aspects from hosted runs; stored metadata may be billable.",
-    ),
-    runtime_source: str = typer.Option(
-        "greenhouse_job_board",
-        "--runtime-source",
-        help="Connector source name passed to the hosted Cloud Run Job.",
-    ),
-    runtime_model: str = typer.Option(
-        "stg_greenhouse__jobs",
-        "--runtime-model",
-        help="Transform model selected by the hosted Cloud Run Job.",
-    ),
-    runtime_build_models: bool = typer.Option(
-        True,
-        "--runtime-build-models/--runtime-no-build-models",
-        help="Run hosted transform builds/tests after ingestion.",
-    ),
-    runtime_secret_id: str = typer.Option(
-        "",
-        "--runtime-secret-id",
-        help="Secret Manager container exposed to the hosted connector.",
-    ),
-    runtime_secret_env: str = typer.Option(
-        "HUBSPOT_PRIVATE_APP_TOKEN",
-        "--runtime-secret-env",
-        help="Environment variable carrying the hosted Secret Manager reference.",
+    config: Path = typer.Option(  # noqa: B008
+        _DEFAULT_PROJECT_CONFIG,
+        "--config",
+        help="Versioned Dander project manifest containing additive pipeline definitions.",
     ),
     secret_ids: list[str] | None = typer.Option(  # noqa: B008
         None,
@@ -195,6 +189,14 @@ def init(
     infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
 ) -> None:
     """Plan the GCP bootstrap; apply only with explicit confirmation."""
+    pipelines: dict[str, dict[str, object]] = {}
+    if enable_runtime:
+        try:
+            manifest = load_project_config(config)
+            manifest.validate_references(config.resolve().parent)
+            pipelines = manifest.terraform_pipelines()
+        except ProjectConfigError as error:
+            raise ClickException(str(error)) from error
     confirmation = f"Apply the Dander bootstrap to GCP project {project!r}?"
     if live_cost_guard:
         confirmation = f"{confirmation[:-1]} with LIVE automatic billing detachment enabled?"
@@ -214,13 +216,7 @@ def init(
         enable_runtime=enable_runtime,
         billing_account_id=billing_account_id,
         container_image=container_image,
-        scheduler_paused=scheduler_paused,
-        runtime_publish_dataplex=runtime_publish_dataplex,
-        runtime_source=runtime_source,
-        runtime_model=runtime_model,
-        runtime_build_models=runtime_build_models,
-        runtime_secret_id=runtime_secret_id,
-        runtime_secret_env=runtime_secret_env,
+        pipelines=pipelines,
         secret_ids=tuple(secret_ids or ()),
         github_repository=github_repository,
         github_ref=github_ref,
@@ -247,13 +243,7 @@ def _execute_platform_bootstrap(
     enable_runtime: bool,
     billing_account_id: str,
     container_image: str,
-    scheduler_paused: bool,
-    runtime_publish_dataplex: bool,
-    runtime_source: str,
-    runtime_model: str,
-    runtime_build_models: bool,
-    runtime_secret_id: str,
-    runtime_secret_env: str,
+    pipelines: dict[str, dict[str, object]],
     secret_ids: tuple[str, ...],
     github_repository: str,
     github_ref: str,
@@ -275,13 +265,7 @@ def _execute_platform_bootstrap(
             enable_runtime=enable_runtime,
             billing_account_id=billing_account_id,
             container_image=container_image,
-            scheduler_paused=scheduler_paused,
-            runtime_publish_dataplex=runtime_publish_dataplex,
-            runtime_source=runtime_source,
-            runtime_model=runtime_model,
-            runtime_build_models=runtime_build_models,
-            runtime_secret_id=runtime_secret_id,
-            runtime_secret_env=runtime_secret_env,
+            pipelines=pipelines,
             secret_ids=tuple(secret_ids or ()),
             github_repository=github_repository,
             github_ref=github_ref,
@@ -402,13 +386,7 @@ def init_platform_plan(
         enable_runtime=False,
         billing_account_id="",
         container_image="",
-        scheduler_paused=True,
-        runtime_publish_dataplex=False,
-        runtime_source="greenhouse_job_board",
-        runtime_model="stg_greenhouse__jobs",
-        runtime_build_models=True,
-        runtime_secret_id="",
-        runtime_secret_env="HUBSPOT_PRIVATE_APP_TOKEN",
+        pipelines={},
         secret_ids=(),
         github_repository="",
         github_ref="refs/heads/main",
@@ -603,12 +581,15 @@ def _write_bootstrap_evidence(summary: DeploymentSummary, evidence_dir: Path) ->
 
 @app.command()
 def run(
-    source: str = typer.Argument(..., help="Source name from connectors/."),
+    pipeline_or_source: str = typer.Argument(
+        ..., help="Pipeline name from dander.yaml (or a legacy source name from connectors/)."
+    ),
     project: str | None = typer.Option(None, "--project", help="Override GCP_PROJECT_ID."),
     dataset: str | None = typer.Option(None, "--dataset", help="Override BQ_DATASET_RAW."),
     connectors_dir: Path = typer.Option(  # noqa: B008
         _DEFAULT_CONNECTORS_DIR, "--connectors-dir"
     ),
+    project_config: Path = typer.Option(_DEFAULT_PROJECT_CONFIG, "--config"),  # noqa: B008
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -650,6 +631,24 @@ def run(
     dataplex_location: str = typer.Option("us", "--dataplex-location"),
 ) -> None:
     """Run ingestion, then optionally build transforms and publish the metadata spine."""
+    source = pipeline_or_source
+    if project_config.is_file():
+        try:
+            manifest = load_project_config(project_config)
+            pipeline = manifest.pipelines.get(pipeline_or_source)
+            if pipeline is not None:
+                manifest.validate_references(
+                    project_config.resolve().parent,
+                    connectors_dir=connectors_dir,
+                    models_dir=models_dir,
+                )
+                source = pipeline.source
+                if selected_models is None:
+                    selected_models = list(pipeline.models)
+                build_models = build_models or pipeline.build_models
+                publish_dataplex = publish_dataplex or pipeline.publish_dataplex
+        except ProjectConfigError as error:
+            raise ClickException(str(error)) from error
     if not _SOURCE_NAME.fullmatch(source):
         raise typer.BadParameter("Source names may contain only letters, numbers, '_' and '-'")
 

@@ -1,30 +1,32 @@
-# Scheduled public pipeline
+# Additive scheduled pipelines
 
-Packages the credential-free Greenhouse Job Board path as a daily Cloud Run Job. Each run ingests
-public jobs, builds and tests only `stg_greenhouse__jobs`, then compiles a local semantic registry.
-Stage zero creates the shared Artifact Registry repository before this module is applied. The
-module then uses that repository, plus distinct runtime and scheduler service accounts,
-least-privilege IAM, the job, and an OAuth-authenticated Cloud Scheduler trigger.
+This module turns the expanded `dander.yaml` pipeline map into independent Cloud Run Jobs and
+Cloud Scheduler triggers. Pipelines share the immutable container image and BigQuery datasets, but
+each receives separate runtime and scheduler service accounts. Secret bindings are supplied to the
+root Secret Manager module so a runtime can access only the credentials named by its pipeline.
 
-The schedule is paused by default. Apply it in that state, execute the Cloud Run Job manually, and
-enable the schedule only after the guarded BigQuery write succeeds. `container_image` must use an
-immutable `@sha256:` digest.
+The original singleton Greenhouse resources move in state to the `greenhouse_jobs` key. This keeps
+the live job, scheduler, identities, and IAM bindings intact while new pipelines are added with
+`for_each`.
 
 ```hcl
-module "scheduled_job" {
-  source = "./modules/scheduled-job"
-
-  project_id         = "my-project"
-  region             = "us-central1"
-  billing_account_id = "000000-000000-000000"
-  container_image    = "us-central1-docker.pkg.dev/my-project/dander/dander@sha256:..."
-  scheduler_paused   = true
-  publish_dataplex   = false
-  runtime_build_models = true
+pipelines = {
+  greenhouse_jobs = {
+    job_name                     = "dander-greenhouse-public"
+    runtime_service_account_id   = "dander-runtime"
+    scheduler_service_account_id = "dander-scheduler"
+    source                       = "greenhouse_job_board"
+    models                       = ["stg_greenhouse__jobs"]
+    build_models                 = true
+    publish_dataplex             = false
+    schedule                     = "0 9 * * *"
+    time_zone                    = "America/New_York"
+    paused                       = false
+    secret_env                   = {}
+  }
 }
 ```
 
-Outputs expose the repository name, Cloud Run Job name, runtime identity, and Scheduler job name.
-The module stores no source-system credentials because this connector reads public jobs only.
-Dataplex publication is disabled by default because stored aspects may be billable; enabling it
-also enables the API and grants the runtime catalog-editor access.
+Every hosted job executes `dander run <pipeline> --config /app/dander.yaml`, so local and cloud
+execution resolve the same connector, model selection, and metadata policy. New schedules remain
+paused until their manual proof succeeds.

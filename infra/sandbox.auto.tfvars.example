@@ -1,5 +1,35 @@
-enable_scheduled_job   = true
-billing_account_id     = "BILLING_ACCOUNT_ID"
+enable_scheduled_job    = true
+billing_account_id      = "BILLING_ACCOUNT_ID"
 runtime_container_image = "REGION-docker.pkg.dev/PROJECT/dander/dander@sha256:IMAGE_DIGEST"
-scheduler_paused       = true
-runtime_publish_dataplex = false
+secret_ids              = ["hubspot-private-app-token"]
+
+pipelines = {
+  greenhouse_jobs = {
+    job_name                     = "dander-greenhouse-public"
+    runtime_service_account_id   = "dander-runtime"
+    scheduler_service_account_id = "dander-scheduler"
+    source                       = "greenhouse_job_board"
+    models                       = ["stg_greenhouse__jobs"]
+    build_models                 = true
+    publish_dataplex             = false
+    schedule                     = "0 9 * * *"
+    time_zone                    = "America/New_York"
+    paused                       = false
+    secret_env                   = {}
+  }
+  hubspot_companies = {
+    job_name                     = "dander-hubspot-companies"
+    runtime_service_account_id   = "dander-runtime-hubspot"
+    scheduler_service_account_id = "dander-scheduler-hubspot"
+    source                       = "hubspot_test"
+    models                       = ["stg_hubspot__companies"]
+    build_models                 = true
+    publish_dataplex             = false
+    schedule                     = "0 10 * * *"
+    time_zone                    = "America/New_York"
+    paused                       = true
+    secret_env = {
+      HUBSPOT_PRIVATE_APP_TOKEN = "hubspot-private-app-token"
+    }
+  }
+}
