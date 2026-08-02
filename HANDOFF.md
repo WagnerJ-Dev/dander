@@ -2,45 +2,38 @@
 
 ## Finished
 
-- Reused `require_guarded_free_tier` and the existing cost-guard CLI flags so the resolved safety
-  setting controls the default without adding another installation mode or manifest field.
-- Made unguarded hosted initialization accept no billing-account ID and omit billing-account IAM,
-  cost-guard resources, guard-specific Pub/Sub access, runtime billing viewer, and runtime preflight.
-- Preserved the guarded path and conditioned only Cloud Functions/Pub/Sub bootstrap permissions that
-  exist for the managed guard.
-- Changed generated projects to default unguarded and updated the hosted quickstart with the billing
-  and spending warning; the retained repository manifest remains explicitly guarded.
-- Added focused regression coverage for CLI resolution, stage zero, Terraform rendering, scaffold
-  output, ordinary hosted resources, and guarded compatibility.
+- Prepared `0.1.1rc1` from the merged optional-cost-guard fix with no `src/dander` change.
+- Updated only package version assertions, the lockfile, release notes, and this handoff.
+- Built and inspected the candidate wheel and source distribution.
+- Installed both artifacts outside the checkout and generated valid source-free projects.
 
 ## Try It
 
-- Run `uv run dander new /tmp/dander-optional` and inspect its `dander.yaml`.
-- Run `uv run pytest tests/cli/test_init_cli.py tests/bootstrap/test_terraform.py tests/infra`.
+- Run `uv run dander --version`; it should report `dander 0.1.1rc1`.
+- Run `uv build` and `uv run python scripts/check_distribution.py dist/*0.1.1rc1*`.
 
 ## Checks
 
-- Focused suite: 67 passed. Full suite: 597 passed.
-- Ruff lint/format, strict mypy, dependency audit, Terraform format, and diff checks pass.
-- Repository, generated-source, wheel, and sdist Terraform roots initialize with backends disabled
-  and validate; wheel/sdist inspection, external installation, scaffolding, and container startup pass.
-- Retained stage-zero and platform Terraform plans each report exactly `No changes.`
+- Full suite: 597 passed; Ruff lint/format, strict mypy, and lock validation pass.
+- Dependency audit found no known vulnerabilities; Terraform formatting and both roots validate.
+- Wheel and sdist inspection, external installation, source-free scaffolding, generated Terraform
+  validation, and container startup pass.
 
 ## Decisions
 
-- Generated manifests explicitly default to unguarded while the model default remains guarded for
-  compatibility with existing manifests that omit the safety field.
-- Billing input is passed to stage zero and platform Terraform only when the managed guard is enabled.
-- Runtime billing and Pub/Sub visibility follows the guarded-runtime setting, not general ingestion.
+- Treat the merged unguarded installation path as a `0.1.x` defect fix, not a new capability.
+- Prove the candidate in a fresh billing-linked project using an operator identity with no
+  billing-account IAM role.
+- Promote the accepted candidate unchanged; any runtime fix requires another candidate.
 
 ## Remaining
 
-- Review the focused pull request; do not merge it without separate approval.
-- Treat any deliberate change from guarded to unguarded on an existing install as a normal reviewed
-  Terraform removal plan.
+- Merge the candidate PR through protected `main`, then tag and publish `v0.1.1rc1`.
+- Complete one source-free unguarded Greenhouse installation and require a clean final plan.
+- Promote the unchanged candidate to `0.1.1` and continue operator-soak issue #26.
 
 ## Review First
 
-- `src/dander/cli/main.py`
-- `infra/bootstrap-admin/main.tf`
-- `infra/modules/scheduled-job/main.tf`
+- `CHANGELOG.md`
+- `pyproject.toml`
+- `.github/workflows/ci.yml`
