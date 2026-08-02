@@ -63,7 +63,7 @@ The Python distribution is named `dander-platform` because the `dander` name on 
 different project. The import package and command remain `dander`:
 
 ```bash
-uv tool install dander-platform==0.1.0rc3
+uv tool install dander-platform==0.1.0rc4
 dander --version
 dander new my-data-platform
 cd my-data-platform

@@ -34,3 +34,20 @@ def test_budget_resource_passes_the_bare_billing_account_id() -> None:
 
     assert "billing_account = var.billing_account_id" in budget
     assert 'billing_account = "billingAccounts/${var.billing_account_id}"' not in budget
+
+
+def test_cost_guard_waits_for_first_run_function_identities() -> None:
+    cost_guard = (ROOT / "infra/modules/cost-guard/main.tf").read_text()
+    wait = cost_guard.split('resource "time_sleep" "function_identity_propagation"', maxsplit=1)[
+        1
+    ].split('resource "google_cloudfunctions2_function"', maxsplit=1)[0]
+    function = cost_guard.split(
+        'resource "google_cloudfunctions2_function" "stop_billing"', maxsplit=1
+    )[1].split('resource "google_billing_budget"', maxsplit=1)[0]
+
+    assert 'create_duration = "120s"' in wait
+    assert "google_service_account.builder" in wait
+    assert "google_service_account.function" in wait
+    assert "google_project_iam_member.builder" in wait
+    assert "google_project_service.required" in wait
+    assert "time_sleep.function_identity_propagation" in function

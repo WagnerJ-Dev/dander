@@ -103,6 +103,24 @@ resource "google_storage_bucket_object" "source" {
   source = data.archive_file.source.output_path
 }
 
+# New projects need time to expose their service identities and fresh IAM grants to Cloud Build.
+# Starting the first function build before that propagation finishes fails even though Terraform
+# has already committed every required resource and binding.
+resource "time_sleep" "function_identity_propagation" {
+  create_duration = "120s"
+
+  depends_on = [
+    google_billing_account_iam_member.billing_viewer,
+    google_project_iam_member.builder,
+    google_project_iam_member.billing_project_manager,
+    google_project_iam_member.log_writer,
+    google_project_service.required,
+    google_service_account.builder,
+    google_service_account.function,
+    google_storage_bucket_iam_member.builder_source_reader,
+  ]
+}
+
 resource "google_cloudfunctions2_function" "stop_billing" {
   project     = var.project_id
   location    = var.region
@@ -143,12 +161,7 @@ resource "google_cloudfunctions2_function" "stop_billing" {
   }
 
   depends_on = [
-    google_billing_account_iam_member.billing_viewer,
-    google_project_iam_member.builder,
-    google_project_iam_member.billing_project_manager,
-    google_project_iam_member.log_writer,
-    google_project_service.required,
-    google_storage_bucket_iam_member.builder_source_reader,
+    time_sleep.function_identity_propagation,
   ]
 }
 
