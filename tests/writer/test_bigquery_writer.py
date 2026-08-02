@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from google.api_core.exceptions import NotFound
+from google.api_core.exceptions import BadRequest, NotFound
 from google.cloud import bigquery
 
 from dander.concurrency import FencingToken
@@ -44,6 +44,7 @@ class _Client:
         *,
         load_error: Exception | None = None,
         deployed_schema: Sequence[bigquery.SchemaField] | None = None,
+        fenced_errors: Sequence[Exception] = (),
     ) -> None:
         self.load_error = load_error
         self.loaded_rows: list[dict[str, Any]] = []
@@ -59,6 +60,7 @@ class _Client:
         self.updated: list[tuple[str, list[str]]] = []
         self.copies: list[tuple[str, str, str]] = []
         self.tables: dict[str, bigquery.Table] = {}
+        self.fenced_errors = list(fenced_errors)
         if deployed_schema is not None:
             table = bigquery.Table(
                 "unit-project.raw.example_widgets",
@@ -137,6 +139,8 @@ class _Client:
     ) -> _Job:
         self.queries.append(query)
         self.query_configs.append(job_config)
+        if query.startswith("BEGIN TRANSACTION") and self.fenced_errors:
+            return _Job(error=self.fenced_errors.pop(0))
         return _Job(affected=2 if query.startswith("MERGE") else None)
 
     def delete_table(self, table: str, *, not_found_ok: bool = False) -> None:
@@ -235,6 +239,27 @@ def test_scd1_finalizer_dml_touches_matching_lease_inside_transaction() -> None:
         "dander_run_id": "run-one",
         "dander_fencing_token": 11,
     }
+
+
+def test_scd1_fenced_finalizer_retries_bigquery_concurrent_update(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _Client(
+        fenced_errors=[
+            BadRequest(
+                "Transaction is aborted due to concurrent update against table "
+                "unit-project.meta._dander_leases"
+            )
+        ]
+    )
+    monkeypatch.setattr("dander._bigquery_retry.sleep", lambda _delay: None)
+    writer = BigQueryScd1Writer(project="unit-project", client=client)
+
+    writer.write([{"id": "one", "label": "active"}], _fenced_target())
+
+    fenced_scripts = [query for query in client.queries if query.startswith("BEGIN TRANSACTION")]
+    assert len(fenced_scripts) == 2
+    assert fenced_scripts[0] == fenced_scripts[1]
 
 
 def test_writer_rejects_inconsistent_shape_before_network() -> None:

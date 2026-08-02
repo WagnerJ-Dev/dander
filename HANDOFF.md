@@ -2,44 +2,45 @@
 
 ## Finished
 
-- Completed retained-project `0.1.0rc2` Greenhouse, HubSpot, replay, overlap, cleanup, scheduler,
-  alert, and no-drift acceptance.
-- Published `0.1.0rc4`; its bounded IAM-propagation gate recovered the fresh-project cost guard.
-- Completed the public-package, source-free clean-room Greenhouse installation: 21 rows, one model,
-  three tests, one catalog asset, enabled schedule, and clean Terraform plan.
-- Prepared `0.1.0rc5` to replace a plan-only `dander init` traceback with a normal usage error.
+- Published `0.1.0rc5` and deployed its source-free image with both retained schedules paused.
+- Reproduced the retained overlap failure: different pipelines concurrently touching the shared
+  BigQuery lease table could abort fenced finalization transactions.
+- Prepared `0.1.0rc6` with bounded, exact-error retries around BigQuery control mutations and
+  transactionally fenced finalizers.
+- Added regression coverage proving retry, unrelated-error pass-through, exhaustion, and the
+  hosted SCD1 finalizer path.
+- Preserved the completed fresh-project source-free Greenhouse proof from public rc4.
 
 ## Try It
 
-- Run `uv run dander --version` and `uv run pytest`.
-- Install the built wheel or sdist outside the checkout, then run `dander new`, `dander validate`,
-  and Terraform validation in the generated source-free project.
+- Run `uv run pytest` and `uv run dander --version`.
+- Build with `uv build`, install the wheel outside the checkout, then run `dander new`,
+  `dander validate`, and `terraform -chdir=infra validate`.
 
 ## Checks
 
-- Ruff lint/format, strict mypy, dependency audit, and all 588 tests pass locally.
-- Root, stage-zero, and generated-project Terraform init/validate pass.
-- Fresh `0.1.0rc4` wheel and sdist pass archive checks, install outside the checkout, and generate
-  a valid source-free project.
-- Fresh-project hosted Greenhouse execution and final Terraform no-drift plan pass on public rc4.
-- Fresh `0.1.0rc5` wheel and sdist pass archive checks, external installation, source-free project
-  generation, and generated Terraform validation.
+- All 592 tests, Ruff lint/format, strict mypy, dependency audit, and lock validation pass.
+- Root, stage-zero, and generated-project Terraform formatting and validation pass.
+- Fresh rc6 wheel and sdist pass archive checks; the wheel installs outside the checkout and
+  generates a validated source-free project with the rc6 Docker pin and no `src/` directory.
 
 ## Decisions
 
-- The documented clean-room path passes on rc4; the surfaced plan-only traceback is still a narrow
-  user-facing CLI defect and receives one final candidate fix.
-- Candidate acceptance remains source-free and package-backed; repository source is not copied into
-  either proof project.
+- Retry only the exact BigQuery concurrent-update transaction abort; fencing, stale-cursor,
+  permission, schema, and unrelated BigQuery errors still fail immediately.
+- Retry the entire aborted transaction at most five submissions, preserving atomic publication and
+  cursor semantics.
+- Keep both retained schedulers paused until rc6 acceptance finishes.
 
 ## Remaining
 
-- Validate, merge, and publish `0.1.0rc5` through the protected paths.
-- Run retained Greenhouse/HubSpot acceptance and final no-drift verification on rc5.
-- Publish and smoke final `0.1.0` when the replacement candidate passes.
+- Merge and publish `0.1.0rc6` through protected GitHub and PyPI environments.
+- Deploy the public source-free rc6 image and rerun the exact cross-pipeline overlap first.
+- Complete retained acceptance, restore schedules, and require a no-drift Terraform plan.
+- Publish and smoke final `0.1.0` when rc6 passes.
 
 ## Review First
 
-- `src/dander/cli/main.py`
-- `tests/cli/test_init_cli.py`
-- `CHANGELOG.md`
+- `src/dander/_bigquery_retry.py`
+- `src/dander/state/lease.py`
+- `src/dander/writer/bigquery.py`

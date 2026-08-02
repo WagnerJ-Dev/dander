@@ -10,6 +10,7 @@ from uuid import uuid4
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
+from dander._bigquery_retry import run_mutation_with_retry
 from dander.concurrency import fenced_dml, fencing_job_config, fencing_touch_sql
 from dander.schema import BIGQUERY_FIELD_MODES, BIGQUERY_FIELD_TYPES, normalize_bigquery_type
 from dander.writer.base import SchemaEvolution, WriteField, WriteMode, WritePattern, WriteTarget
@@ -169,15 +170,15 @@ class BigQueryScd1Writer(WritePattern):
             )
             self._client.query(_create_target_sql(target_id, staging_id, columns)).result()
             merge_sql = _merge_sql(target_id, staging_id, columns, target.business_key)
-            merge_job = (
-                self._client.query(
-                    fenced_dml(merge_sql, target.fence),
-                    job_config=fencing_job_config(target.fence),
+            if target.fence is not None:
+                merge_script = fenced_dml(merge_sql, target.fence)
+                merge_config = fencing_job_config(target.fence)
+                merge_job = run_mutation_with_retry(
+                    lambda: self._client.query(merge_script, job_config=merge_config)
                 )
-                if target.fence is not None
-                else self._client.query(merge_sql)
-            )
-            merge_job.result()
+            else:
+                merge_job = self._client.query(merge_sql)
+                merge_job.result()
             return (
                 merge_job.num_dml_affected_rows
                 if merge_job.num_dml_affected_rows is not None
@@ -277,15 +278,15 @@ class BigQuerySnapshotWriter(WritePattern):
                 self._schema_evolution,
             )
             insert_sql = _snapshot_insert_sql(target_id, staging_id, columns)
-            insert_job = (
-                self._client.query(
-                    fenced_dml(insert_sql, target.fence),
-                    job_config=fencing_job_config(target.fence),
+            if target.fence is not None:
+                insert_script = fenced_dml(insert_sql, target.fence)
+                insert_config = fencing_job_config(target.fence)
+                insert_job = run_mutation_with_retry(
+                    lambda: self._client.query(insert_script, job_config=insert_config)
                 )
-                if target.fence is not None
-                else self._client.query(insert_sql)
-            )
-            insert_job.result()
+            else:
+                insert_job = self._client.query(insert_sql)
+                insert_job.result()
             return (
                 insert_job.num_dml_affected_rows
                 if insert_job.num_dml_affected_rows is not None
@@ -360,15 +361,14 @@ class BigQueryScd2Writer(WritePattern):
                 target.business_key,
                 fence=target.fence,
             )
-            history_job = (
-                self._client.query(
-                    history_sql,
-                    job_config=fencing_job_config(target.fence),
+            if target.fence is not None:
+                history_config = fencing_job_config(target.fence)
+                history_job = run_mutation_with_retry(
+                    lambda: self._client.query(history_sql, job_config=history_config)
                 )
-                if target.fence is not None
-                else self._client.query(history_sql)
-            )
-            history_job.result()
+            else:
+                history_job = self._client.query(history_sql)
+                history_job.result()
             return (
                 history_job.num_dml_affected_rows
                 if history_job.num_dml_affected_rows is not None

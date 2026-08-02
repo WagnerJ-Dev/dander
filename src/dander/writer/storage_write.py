@@ -9,6 +9,7 @@ from google.cloud import bigquery, bigquery_storage_v1
 from google.cloud.bigquery_storage_v1 import types, writer
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
+from dander._bigquery_retry import run_mutation_with_retry
 from dander.concurrency import fenced_dml, fencing_job_config
 from dander.writer.base import SchemaEvolution, WriteMode, WritePattern, WriteTarget
 from dander.writer.bigquery import (
@@ -185,15 +186,15 @@ class BigQueryStorageScd1Writer(WritePattern):
                 self._schema_evolution,
             )
             merge_sql = _merge_sql(target_id, staging_id, columns, target.business_key)
-            merge = (
-                self._client.query(
-                    fenced_dml(merge_sql, target.fence),
-                    job_config=fencing_job_config(target.fence),
+            if target.fence is not None:
+                merge_script = fenced_dml(merge_sql, target.fence)
+                merge_config = fencing_job_config(target.fence)
+                merge = run_mutation_with_retry(
+                    lambda: self._client.query(merge_script, job_config=merge_config)
                 )
-                if target.fence is not None
-                else self._client.query(merge_sql)
-            )
-            merge.result()
+            else:
+                merge = self._client.query(merge_sql)
+                merge.result()
             return (
                 merge.num_dml_affected_rows
                 if merge.num_dml_affected_rows is not None
