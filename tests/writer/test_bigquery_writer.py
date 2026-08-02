@@ -249,7 +249,7 @@ def test_scd1_fenced_finalizer_retries_bigquery_concurrent_update(
             BadRequest(
                 "Transaction is aborted due to concurrent update against table "
                 "unit-project.meta._dander_leases"
-            )
+            )  # type: ignore[no-untyped-call]
         ]
     )
     monkeypatch.setattr("dander._bigquery_retry.sleep", lambda _delay: None)
