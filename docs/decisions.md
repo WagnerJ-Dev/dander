@@ -1,5 +1,16 @@
 # Engineering Decisions
 
+## 2026-08-01 — Alpha stabilization and latest-patch support
+
+- Dander `0.1.x` accepts only defects a user can encounter in installation, upgrades,
+  infrastructure reconciliation, ingestion correctness, cleanup, CLI output, security, or
+  blocking documentation. New connectors and capabilities wait for `0.2.0`.
+- The public product is explicitly alpha. Only the newest patch of the current `0.x` minor is
+  supported; a superseded patch or candidate receives no backports.
+- Candidate acceptance uses the public distribution from a source-free project. A packaged
+  runtime fix invalidates the candidate and restarts acceptance; documentation-only corrections
+  do not.
+
 ## 2026-08-01 — Installable distribution and complete starter project
 
 - PyPI distribution `dander-platform` avoids the occupied `dander` project name; the public Python
@@ -56,9 +67,10 @@
 - Stage zero enables Cloud Resource Manager before the platform cost guard reads project metadata.
   Budget Pub/Sub uses Google's singular `billing-budget-alert` publisher identity, and the
   Terraform budget resource receives the bare billing-account ID expected by provider v6.50.
-- Proof helpers always pass their requested GCP project to `gcloud`. The approved proof project is
-  retained with both schedulers paused, an empty HubSpot secret container, and a simulation-only
-  cost guard; inventory is evidence, not deletion authorization.
+- Proof helpers always pass their requested GCP project to `gcloud`. At clean-proof completion the
+  project had both schedulers paused and an empty HubSpot secret container; later reviewed changes
+  enabled the schedules and added the operator-owned secret version. The cost guard remains
+  simulation-only, and inventory is evidence rather than deletion authorization.
 
 ## 2026-07-31 — Approval-gated clean-project proof
 

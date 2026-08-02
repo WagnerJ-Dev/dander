@@ -6,7 +6,9 @@ Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and
 ## Git state
 
 - Repository: `/Users/harrison/Documents/dander`.
-- Working branch: `main`; local and `origin/main` are synchronized.
+- `v0.1.0rc1` was published from `f4affecaad5aa479e58153a55e43405c7ccd6551` through PyPI trusted
+  publishing. A clean public install, scaffold, Dander validation, and generated Terraform
+  validation passed.
 - PR #10 merged the tracked HubSpot schedule and operator-private Cloud Monitoring failure
   delivery; PR #11 finalized this handoff. Their feature branches were removed locally and from
   GitHub.
@@ -17,7 +19,9 @@ Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and
   `dander/state` and `dander/bootstrap-admin/state` in
   `dander-proof-harrison-20260801-dander-state`.
 - Greenhouse is enabled at 09:00 ET; HubSpot is enabled at 10:00 ET. Both jobs retain immutable
-  digest `sha256:538f1af2…9fbd4`; the simulation-only USD 5 cost guard is unchanged.
+  digest `sha256:538f1af2…9fbd4`, which predates the public candidate. Candidate acceptance must
+  deploy a source-free image built from PyPI before the 30-day operator trial. The simulation-only
+  USD 5 cost guard is unchanged.
 - Secret `hubspot-private-app-token` has enabled version 1 and is accessible only to
   `dander-runtime-hubspot`. The test app intentionally keeps company read/write scopes.
 - One synthetic company, `dander-integration-sandbox.invalid`, is retained so the current writer

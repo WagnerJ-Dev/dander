@@ -8,7 +8,7 @@ license = "Apache-2.0"
 authors = [{ name = "Harrison O'Connor-Hover" }]
 keywords = ["bigquery", "data-platform", "etl", "gcp", "terraform"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Intended Audience :: Information Technology",
@@ -37,8 +37,11 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/harrisonoconnorhover/dander"
+Documentation = "https://github.com/harrisonoconnorhover/dander/blob/main/docs/getting-started.md"
 Issues = "https://github.com/harrisonoconnorhover/dander/issues"
 Repository = "https://github.com/harrisonoconnorhover/dander.git"
+Changelog = "https://github.com/harrisonoconnorhover/dander/blob/main/CHANGELOG.md"
+Security = "https://github.com/harrisonoconnorhover/dander/security/policy"
 
 [project.scripts]
 dander = "dander.cli.main:app"
@@ -122,11 +125,17 @@ packages = ["src/dander"]
 [tool.hatch.build.targets.sdist]
 include = [
   ".dockerignore",
+  "CHANGELOG.md",
   "Dockerfile",
   "LICENSE",
   "README.md",
+  "SECURITY.md",
   "connectors",
   "dander.yaml",
+  "docs/getting-started.md",
+  "docs/known-limitations.md",
+  "docs/operator-soak.md",
+  "docs/upgrading.md",
   "infra",
   "models",
   "pyproject.toml",
