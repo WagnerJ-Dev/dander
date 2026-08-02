@@ -376,9 +376,10 @@ def init(
         except ProjectBootstrapError as error:
             raise ClickException(str(error)) from error
     if enable_runtime and not container_image:
-        raise ClickException(
-            "Plan-only runtime initialization requires --container-image; "
-            "use --apply to build and publish it automatically"
+        raise typer.BadParameter(
+            "plan-only runtime initialization requires an immutable image; "
+            "use --apply to build and publish it automatically",
+            param_hint="'--container-image'",
         )
     plan_path = _execute_platform_bootstrap(
         project=project,
