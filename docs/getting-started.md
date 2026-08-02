@@ -23,14 +23,15 @@ export DANDER_BILLING_ACCOUNT="000000-000000-000000"
 export DANDER_ALERT_EMAIL="operator@example.com"
 
 gcloud auth login
-gcloud auth application-default login
 gcloud config set project "$DANDER_PROJECT"
+gcloud auth application-default login
+gcloud auth application-default set-quota-project "$DANDER_PROJECT"
 ```
 
 ## Install and scaffold
 
 ```bash
-uv tool install dander-platform==0.1.0rc2
+uv tool install dander-platform==0.1.0rc3
 dander --version
 dander new my-dander-project
 cd my-dander-project

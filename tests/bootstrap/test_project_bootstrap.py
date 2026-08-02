@@ -5,7 +5,15 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
-from dander.bootstrap import RuntimeImagePublisher, StateBucketBootstrap, active_admin_member
+import pytest
+
+from dander.bootstrap import (
+    ProjectBootstrapError,
+    RuntimeImagePublisher,
+    StateBucketBootstrap,
+    active_admin_member,
+    wait_for_service_account_impersonation,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -119,3 +127,55 @@ def test_runtime_image_tag_ignores_local_state_but_tracks_infrastructure(tmp_pat
 
 def test_active_admin_member_uses_the_authenticated_gcloud_user(tmp_path: Path) -> None:
     assert active_admin_member(cwd=tmp_path, runner=_Runner()) == ("user:operator@example.invalid")
+
+
+def test_impersonation_readiness_retries_eventual_iam_propagation(tmp_path: Path) -> None:
+    return_codes = iter((1, 1, 0))
+    commands: list[tuple[str, ...]] = []
+    delays: list[float] = []
+
+    def runner(
+        args: tuple[str, ...],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        return subprocess.CompletedProcess(args, next(return_codes), stdout="")
+
+    wait_for_service_account_impersonation(
+        service_account="dander-bootstrap@unit-project.iam.gserviceaccount.com",
+        project="unit-project",
+        cwd=tmp_path,
+        runner=runner,
+        attempts=3,
+        delay_seconds=0.25,
+        sleep=delays.append,
+    )
+
+    assert len(commands) == 3
+    assert delays == [0.25, 0.25]
+    assert commands[0] == (
+        "gcloud",
+        "auth",
+        "print-access-token",
+        "--impersonate-service-account=dander-bootstrap@unit-project.iam.gserviceaccount.com",
+        "--project=unit-project",
+    )
+
+
+def test_impersonation_readiness_fails_after_bounded_wait(tmp_path: Path) -> None:
+    def runner(
+        args: tuple[str, ...],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 1, stdout="")
+
+    with pytest.raises(ProjectBootstrapError, match="did not become usable within 1 seconds"):
+        wait_for_service_account_impersonation(
+            service_account="dander-bootstrap@unit-project.iam.gserviceaccount.com",
+            project="unit-project",
+            cwd=tmp_path,
+            runner=runner,
+            attempts=2,
+            delay_seconds=0.5,
+            sleep=lambda _seconds: None,
+        )

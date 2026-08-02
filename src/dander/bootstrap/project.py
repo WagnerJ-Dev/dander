@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import re
 import subprocess
+import time
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 _PROJECT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
@@ -277,3 +279,49 @@ def active_admin_member(*, cwd: Path, runner: _Runner | None = None) -> str:
     if not _ACCOUNT.fullmatch(account):
         raise ProjectBootstrapError("No active gcloud user account was found")
     return f"user:{account}"
+
+
+def wait_for_service_account_impersonation(
+    *,
+    service_account: str,
+    project: str,
+    cwd: Path,
+    runner: _Runner | None = None,
+    attempts: int = 12,
+    delay_seconds: float = 5.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Wait for a new stage-zero token-creator grant to become usable."""
+    if not _PROJECT_ID.fullmatch(project) or not _ACCOUNT.fullmatch(service_account):
+        raise ProjectBootstrapError("Invalid bootstrap impersonation target")
+    if attempts < 1 or delay_seconds < 0:
+        raise ProjectBootstrapError("Invalid bootstrap impersonation retry policy")
+    command_runner = runner or _subprocess_runner
+    command = (
+        "gcloud",
+        "auth",
+        "print-access-token",
+        f"--impersonate-service-account={service_account}",
+        f"--project={project}",
+    )
+    try:
+        for attempt in range(attempts):
+            result = command_runner(
+                command,
+                cwd=cwd.resolve(),
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                return
+            if attempt + 1 < attempts:
+                sleep(delay_seconds)
+    except FileNotFoundError as error:
+        raise ProjectBootstrapError(
+            "gcloud is not installed or is not available on PATH"
+        ) from error
+    raise ProjectBootstrapError(
+        "The bootstrap service-account impersonation grant did not become usable within "
+        f"{attempts * delay_seconds:g} seconds; wait briefly and rerun dander init --apply"
+    )

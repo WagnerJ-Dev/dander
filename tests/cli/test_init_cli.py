@@ -153,6 +153,12 @@ def test_init_apply_bootstraps_state_identity_image_and_platform(
         events.append("image")
         return "us-central1-docker.pkg.dev/unit-project/dander/dander@sha256:" + "a" * 64
 
+    def fake_wait(**kwargs: object) -> None:
+        events.append("identity")
+        assert kwargs["service_account"] == (
+            "dander-bootstrap@unit-project.iam.gserviceaccount.com"
+        )
+
     def fake_platform(self: object, **kwargs: object) -> Path:
         events.append("platform")
         captured.update(kwargs)
@@ -161,6 +167,7 @@ def test_init_apply_bootstraps_state_identity_image_and_platform(
     monkeypatch.setattr("dander.cli.main.StateBucketBootstrap.ensure", fake_bucket)
     monkeypatch.setattr("dander.cli.main.AdministrativeBootstrap.execute", fake_admin)
     monkeypatch.setattr("dander.cli.main.RuntimeImagePublisher.publish", fake_publish)
+    monkeypatch.setattr("dander.cli.main.wait_for_service_account_impersonation", fake_wait)
     monkeypatch.setattr(
         "dander.cli.main.active_admin_member",
         lambda **_kwargs: "user:operator@example.invalid",
@@ -183,7 +190,7 @@ def test_init_apply_bootstraps_state_identity_image_and_platform(
     )
 
     assert result.exit_code == 0, result.output
-    assert events == ["state", "admin", "image", "platform"]
+    assert events == ["state", "admin", "identity", "image", "platform"]
     assert captured["enable_runtime"] is True
     assert captured["enable_cost_guard"] is True
     assert captured["bootstrap_service_account"] == (

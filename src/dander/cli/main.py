@@ -25,6 +25,7 @@ from dander.bootstrap import (
     TerraformBootstrap,
     TerraformBootstrapError,
     active_admin_member,
+    wait_for_service_account_impersonation,
     write_summary,
 )
 from dander.catalog import (
@@ -358,6 +359,11 @@ def init(
                 github_repository=github_repository,
                 github_ref=github_ref,
                 adopt_state_bucket=True,
+            )
+            wait_for_service_account_impersonation(
+                service_account=resolved_bootstrap_account,
+                project=project,
+                cwd=repository_dir,
             )
         except (AdministrativeBootstrapError, ProjectBootstrapError) as error:
             raise ClickException(str(error)) from error
