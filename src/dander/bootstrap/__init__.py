@@ -6,6 +6,7 @@ from dander.bootstrap.project import (
     RuntimeImagePublisher,
     StateBucketBootstrap,
     active_admin_member,
+    wait_for_service_account_impersonation,
 )
 from dander.bootstrap.terraform import TerraformBootstrap, TerraformBootstrapError
 from dander.bootstrap.verify import (
@@ -32,4 +33,5 @@ __all__ = [
     "VerificationStatus",
     "write_summary",
     "active_admin_member",
+    "wait_for_service_account_impersonation",
 ]

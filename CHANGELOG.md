@@ -27,6 +27,14 @@ Publication waits for bounded candidate acceptance in the retained project and o
 source-free Greenhouse installation in a fresh disposable GCP project. The post-release operator
 soak does not block this release.
 
+## 0.1.0rc3 — 2026-08-02
+
+### Fixed
+
+- Wait for a newly granted stage-zero service-account impersonation role to become usable before
+  starting platform Terraform, avoiding a first-run IAM propagation race.
+- Set the Application Default Credentials quota project explicitly in the hosted quickstart.
+
 ## 0.1.0rc2 — 2026-08-02
 
 ### Fixed

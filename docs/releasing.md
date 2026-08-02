@@ -10,7 +10,7 @@ package and CLI. Releases are immutable and come only from an exact `v<version>`
 2. Confirm `git status --short` is empty and the tag target is the tested `origin/main` commit.
 3. Confirm the GitHub `pypi` environment requires review and PyPI trusts this repository's
    `publish.yml` workflow for the `dander-platform` project.
-4. Create and push the exact tag, such as `v0.1.0rc2`, only after explicit publication approval.
+4. Create and push the exact tag, such as `v0.1.0rc3`, only after explicit publication approval.
 5. Dispatch **Publish Python distribution** from that tag and approve its `pypi` environment.
 6. Install the published candidate into a new environment outside a checkout and repeat
    `dander --version`, `dander new`, `dander validate`, and Terraform validation.

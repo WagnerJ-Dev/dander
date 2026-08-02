@@ -2,12 +2,11 @@
 
 ## Finished
 
-- Ran retained-project `0.1.0rc1` Greenhouse, HubSpot, replay, and overlap acceptance.
-- Verified one overlapping HubSpot execution skipped and one succeeded without duplicate rows or
-  lease/staging residue.
-- Fixed the two acceptance defects: active runs now render in metadata history, and HubSpot's
-  read-only full extraction cannot regress its committed watermark.
-- Prepared `0.1.0rc2` as the required replacement candidate with public install pins updated.
+- Completed retained-project `0.1.0rc2` Greenhouse, HubSpot, replay, overlap, cleanup, scheduler,
+  alert, and no-drift acceptance.
+- Confirmed public `rc2` installation and source-free project generation outside the checkout.
+- Reproduced a fresh-project first-run IAM propagation race during independent installation.
+- Added a bounded impersonation-readiness wait and prepared replacement candidate `0.1.0rc3`.
 
 ## Try It
 
@@ -19,23 +18,25 @@
 
 - Ruff lint/format, strict mypy, dependency audit, and all 584 tests pass locally.
 - Root, stage-zero, and generated-project Terraform init/validate pass.
-- Fresh `0.1.0rc2` wheel and sdist pass archive checks, install outside the checkout, and generate
-  valid source-free projects.
+- Ruff lint/format, strict mypy, dependency audit, and all 586 tests pass locally.
+- Root, stage-zero, and generated-project Terraform init/validate pass.
+- Fresh `0.1.0rc3` wheel and sdist pass archive checks, install outside the checkout, and generate
+  a valid source-free project.
 
 ## Decisions
 
-- `0.1.0rc1` cannot be promoted because retained acceptance exposed packaged runtime defects.
-- Monotonic retention is narrow to deliberate read-only/full-refresh cursor paths; normal filtered
-  extraction retains its existing compare-and-set behavior.
+- The clean-room failure is a packaged bootstrap defect, so `rc2` cannot be promoted.
+- Readiness probes the permission Dander actually needs and stops after a bounded 60-second wait.
 
 ## Remaining
 
-- Merge the protected-main candidate-fix PR and publish `0.1.0rc2` through trusted publishing.
-- Deploy the source-free `rc2` image and rerun the exposing scenarios plus the bounded smoke suite.
-- Complete the fresh-project source-free Greenhouse rehearsal, then publish and smoke `0.1.0`.
+- Complete the full local and protected-main checks for `rc3`, then publish it through trusted
+  publishing.
+- Resume the fresh-project installation and rerun the bounded retained-project smoke suite.
+- Publish and smoke final `0.1.0` after the replacement candidate passes.
 
 ## Review First
 
-- `src/dander/runtime.py`
-- `src/dander/state/run_history.py`
-- `tests/test_runtime.py`
+- `src/dander/bootstrap/project.py`
+- `src/dander/cli/main.py`
+- `tests/bootstrap/test_project_bootstrap.py`

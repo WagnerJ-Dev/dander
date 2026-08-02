@@ -18,7 +18,7 @@ def test_scaffold_creates_complete_paused_project(tmp_path: Path) -> None:
     manifest = load_project_config(project / "dander.yaml")
     manifest.validate_references(project)
     assert manifest.pipelines["greenhouse_jobs"].paused
-    assert "ARG DANDER_VERSION=0.1.0rc2" in (project / "Dockerfile").read_text(encoding="utf-8")
+    assert "ARG DANDER_VERSION=0.1.0rc3" in (project / "Dockerfile").read_text(encoding="utf-8")
     for relative in (
         ".dockerignore",
         ".gitignore",
