@@ -1,0 +1,252 @@
+openapi: 3.1.0
+info:
+  title: Dander Workday RaaS acceptance contract
+  version: 1.0.0
+  description: >-
+    The minimum read-only tenant contract for Dander's first Workday acceptance. The three
+    workday-contract operations model tenant behavior; the three simulator-control operations
+    exist only in the local synthetic service.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: wd2-impl-services1.workday.com
+paths:
+  /ccx/oauth2/{tenant}/token:
+    post:
+      operationId: issueAccessToken
+      tags: [workday-contract]
+      summary: Obtain a short-lived tenant access token.
+      security:
+        - clientCredentials: []
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type:
+                  type: string
+                  const: client_credentials
+      responses:
+        "200":
+          description: A usable bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/ExpiredCredentials"
+  /ccx/service/customreport2/{tenant}/{report_owner}/Dander_Workers:
+    get:
+      operationId: getWorkersReport
+      tags: [workday-contract]
+      summary: Read the Dander Workers custom report.
+      security:
+        - bearerToken: []
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/ReportOwner"
+        - $ref: "#/components/parameters/Format"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Count"
+        - $ref: "#/components/parameters/UpdatedAfter"
+      responses:
+        "200":
+          description: One page of worker report rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [Report_Entry]
+                properties:
+                  Report_Entry:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Worker"
+        "401":
+          $ref: "#/components/responses/ExpiredCredentials"
+        "429":
+          $ref: "#/components/responses/Throttled"
+  /ccx/service/customreport2/{tenant}/{report_owner}/Dander_Organizations:
+    get:
+      operationId: getOrganizationsReport
+      tags: [workday-contract]
+      summary: Read the Dander Organizations custom report.
+      security:
+        - bearerToken: []
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/ReportOwner"
+        - $ref: "#/components/parameters/Format"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Count"
+        - $ref: "#/components/parameters/UpdatedAfter"
+      responses:
+        "200":
+          description: One page of organization report rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [Report_Entry]
+                properties:
+                  Report_Entry:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Organization"
+        "401":
+          $ref: "#/components/responses/ExpiredCredentials"
+        "403":
+          $ref: "#/components/responses/MissingPermissions"
+  /_dander/scenario:
+    put:
+      operationId: setScenario
+      tags: [simulator-control]
+      summary: Select one deterministic failure scenario.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scenario]
+              properties:
+                scenario:
+                  $ref: "#/components/schemas/Scenario"
+      responses:
+        "200":
+          description: Scenario selected and request counters reset.
+  /_dander/advance:
+    post:
+      operationId: advanceDataset
+      tags: [simulator-control]
+      summary: Advance workers to the second fixture generation.
+      responses:
+        "200":
+          description: Fixture generation advanced.
+  /_dander/reset:
+    post:
+      operationId: resetSimulator
+      tags: [simulator-control]
+      summary: Restore normal behavior and the first fixture generation.
+      responses:
+        "200":
+          description: Simulator reset.
+components:
+  securitySchemes:
+    clientCredentials:
+      type: http
+      scheme: basic
+    bearerToken:
+      type: http
+      scheme: bearer
+  parameters:
+    Tenant:
+      name: tenant
+      in: path
+      required: true
+      schema:
+        type: string
+    ReportOwner:
+      name: report_owner
+      in: path
+      required: true
+      schema:
+        type: string
+    Format:
+      name: format
+      in: query
+      required: false
+      schema:
+        type: string
+        const: json
+        default: json
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Count:
+      name: count
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 100
+    UpdatedAfter:
+      name: updated_after
+      in: query
+      required: false
+      description: Tenant custom-report prompt alias used as the incremental lower bound.
+      schema:
+        type: string
+        format: date-time
+  schemas:
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          minimum: 1
+    Worker:
+      type: object
+      required:
+        - worker_id
+        - employee_number
+        - organization_id
+        - active
+        - updated_at
+      properties:
+        worker_id: {type: string}
+        employee_number: {type: string}
+        preferred_name: {type: string}
+        business_title: {type: string}
+        organization_id: {type: string}
+        active: {type: string, enum: ["true", "false"]}
+        base_pay: {type: string, pattern: "^-?[0-9]+(\\.[0-9]+)?$"}
+        hire_date: {type: string, format: date}
+        updated_at: {type: string, format: date-time}
+    Organization:
+      type: object
+      required: [organization_id, organization_name, active, updated_at]
+      properties:
+        organization_id: {type: string}
+        organization_name: {type: string}
+        organization_type: {type: string}
+        active: {type: string, enum: ["true", "false"]}
+        updated_at: {type: string, format: date-time}
+    Scenario:
+      type: string
+      enum:
+        - normal
+        - expired_credentials
+        - throttling
+        - missing_permissions
+        - malformed_record
+  responses:
+    ExpiredCredentials:
+      description: Credentials are invalid, expired, or rotated.
+    MissingPermissions:
+      description: The integration user cannot run the requested report.
+    Throttled:
+      description: Tenant load requires bounded retry with backoff.
+      headers:
+        Retry-After:
+          schema:
+            type: integer

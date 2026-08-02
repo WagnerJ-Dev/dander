@@ -15,6 +15,10 @@ Enterprise casts currently cover `BOOL`, `DATE`, `FLOAT64`, `INT64`, `NUMERIC`, 
 timezone-aware `TIMESTAMP`. Cast errors name only the endpoint/field/type contract, never values.
 Automatic nested-record schema evolution remains separate work.
 
+The stateful local acceptance service, its six-operation contract, named failure scenarios, and
+the boundary for a later tenant proof are documented in
+[`docs/workday-simulator.md`](../../../docs/workday-simulator.md).
+
 ## Synthetic vendor proof
 
 Run `uv run dander-synthetic-api` to start an entirely local, credential-free SaaS facsimile on
