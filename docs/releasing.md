@@ -23,3 +23,25 @@ candidate is published, stop the proof, bump and publish the next candidate thro
 and restart the complete live proof against that candidate. Tests, workflows, evidence tooling,
 and documentation may change without a new candidate only when packaged runtime behavior is
 unchanged.
+
+## Alpha release line
+
+- `0.1.x` contains fixes only: installation, upgrades, drift, cursor/lease correctness, schemas,
+  staging cleanup, CLI accuracy, security, and documentation that blocks operation.
+- New connectors, commands, manifest capabilities, writer modes, and subsystems wait for `0.2.0`.
+- Only the latest patch in the current `0.x` minor is supported. A functional patch uses its own
+  candidate, public-artifact proof, protected publication, and clean upgrade verification.
+- GitHub Release notes must match `CHANGELOG.md`, identify the release as alpha, link the known
+  limitations, and name the exact tag and commit.
+
+## `0.1.0` gates and post-release soak
+
+- Before final publication, `0.1.0rc1` must pass the bounded retained-project acceptance and a
+  separate operator must complete the public Greenhouse quickstart in a fresh disposable GCP
+  project without a source checkout or unpublished instructions.
+- The independent installation is a one-time release gate. The 30-day operator soak begins only
+  after `0.1.0` is public and does not retroactively block the release.
+- During the soak HubSpot and Greenhouse run daily, run history is reviewed weekly, each pipeline
+  receives one documented manual rerun, and sanitized outcomes live in one operator-trial issue.
+- A functional patch does not restart the whole soak, but closing it requires seven consecutive
+  clean days on the newest patch. Documentation-only corrections do not affect the clock.

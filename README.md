@@ -2,6 +2,12 @@
 
 [![CI](https://github.com/harrisonoconnorhover/dander/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/dander/actions/workflows/ci.yml)
 
+> [!WARNING]
+> **Alpha software.** Dander `0.1.x` is being stabilized through a retained proof project and an
+> independent-operator trial. Use a disposable GCP project, review every Terraform plan, and read
+> the [known limitations](https://github.com/harrisonoconnorhover/dander/blob/main/docs/known-limitations.md)
+> before relying on it. Only the latest patch in the current `0.x` minor is supported.
+
 **An opinionated, self-hosted, GCP-native data platform you own** — ingest + transform + catalog
 behind one CLI. A focused replacement for Informatica and a customizable stand-in for dbt.
 
@@ -38,6 +44,15 @@ The approval-gated, WIF-authenticated live proof is documented in
 [`docs/live-proof.md`](docs/live-proof.md); keep the pull request draft until its sanitized
 workflow artifact is reviewed.
 
+Operator-facing documentation:
+
+- [Hosted Greenhouse quickstart](https://github.com/harrisonoconnorhover/dander/blob/main/docs/getting-started.md)
+- [Upgrades and safe reruns](https://github.com/harrisonoconnorhover/dander/blob/main/docs/upgrading.md)
+- [Known limitations](https://github.com/harrisonoconnorhover/dander/blob/main/docs/known-limitations.md)
+- [Post-release operator soak](https://github.com/harrisonoconnorhover/dander/blob/main/docs/operator-soak.md)
+- [Security and supported versions](https://github.com/harrisonoconnorhover/dander/blob/main/SECURITY.md)
+- [Release notes](https://github.com/harrisonoconnorhover/dander/blob/main/CHANGELOG.md)
+
 ## Stack
 
 Python 3.12 (app + CLI) · BigQuery SQL (transforms) · Terraform/HCL (infra) · YAML (config).
@@ -57,7 +72,9 @@ dander validate
 
 `dander new` creates a complete, paused starter project: a public Greenhouse connector, one model,
 the Docker runtime context, and Dander's Terraform modules. It refuses to overwrite an existing
-path. You do not need to clone this repository to use the released CLI.
+path. You do not need to clone this repository to use the released CLI. Follow the
+[hosted quickstart](https://github.com/harrisonoconnorhover/dander/blob/main/docs/getting-started.md)
+to provision and manually verify the paused Greenhouse pipeline before enabling its schedule.
 
 ## Repo map
 
@@ -489,18 +506,9 @@ Knowledge Catalog API calls free but charges for stored aspect metadata, so clou
 implicit. See [Knowledge Catalog pricing](https://cloud.google.com/products/knowledge-catalog/pricing)
 and [Dataplex aspect management](https://docs.cloud.google.com/dataplex/docs/enrich-entries-metadata).
 
-Current v0 limits are explicit: hosted SCD1 and sandbox replacement consume bounded endpoint
-batches, while direct SCD2, snapshot, incremental-writer, and Storage Write orchestration retain
-their existing logical-batch behavior. Schema evolution is intentionally limited to declared
-nullable scalar additions, and the Storage Write transport supports an explicitly bounded scalar
-subset. Cloud replace publication is deliberately not advertised as transactionally fenced.
-Public Job Board extraction is a full refresh and does not delete jobs that disappear from a board.
-The CLI bootstrap can plan Secret Manager, IAM/WIF, the complete scheduled public pipeline, and a
-simulation-first cost guard, but deploying those opt-in services may be billable. Visual graph
-execution supports safe mappings, expressions, built-in transforms, and two-input joins; live
-provider/catalog/Storage Write proof still requires external accounts or billable services. The
-tracked completion ledger is in
-[`docs/spec-alignment.md`](docs/spec-alignment.md).
+Current v0 limits are collected in the
+[known-limitations page](https://github.com/harrisonoconnorhover/dander/blob/main/docs/known-limitations.md).
+The tracked implementation ledger remains in [`docs/spec-alignment.md`](docs/spec-alignment.md).
 
 ## The agent workforce & the `/feature` workflow
 

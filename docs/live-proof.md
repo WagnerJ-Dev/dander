@@ -14,10 +14,11 @@ The workflow inputs identify that same project, state bucket, bootstrap service 
 For an interactive clean-project proof instead, an approved `gcloud` administrator can run the single `dander init --project ... --billing-account ... --apply` command documented in the README; that path owns stage zero, image publication, and platform apply itself.
 
 That interactive path was completed on 2026-08-01 in `dander-proof-harrison-20260801`. Both
-schedules remain paused, the HubSpot secret container has no proof-project value, the cost guard is
-simulation-only, and the sanitized local evidence/inventory is under ignored
-`evidence/clean-project-20260801`. The resources were retained; this record does not authorize a
-future deletion or schedule change.
+schedules were paused during the clean proof. They were later enabled through reviewed Terraform
+plans at 09:00 and 10:00 America/New_York, and the HubSpot secret received one operator-supplied
+version as recorded in `docs/session-resume.md`. The cost guard remains simulation-only, and the
+sanitized local evidence/inventory is under ignored `evidence/clean-project-20260801`. The
+resources were retained; this record does not authorize deletion or another schedule change.
 
 ## Safety and proof behavior
 
