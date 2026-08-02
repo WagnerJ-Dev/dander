@@ -27,6 +27,13 @@ Publication waits for bounded candidate acceptance in the retained project and o
 source-free Greenhouse installation in a fresh disposable GCP project. The post-release operator
 soak does not block this release.
 
+## 0.1.0rc4 — 2026-08-02
+
+### Fixed
+
+- Wait for new-project Cloud Functions service identities and cost-guard IAM grants to propagate
+  before starting the first function build.
+
 ## 0.1.0rc3 — 2026-08-02
 
 ### Fixed

@@ -4,9 +4,10 @@
 
 - Completed retained-project `0.1.0rc2` Greenhouse, HubSpot, replay, overlap, cleanup, scheduler,
   alert, and no-drift acceptance.
-- Confirmed public `rc2` installation and source-free project generation outside the checkout.
-- Reproduced a fresh-project first-run IAM propagation race during independent installation.
-- Added a bounded impersonation-readiness wait and prepared replacement candidate `0.1.0rc3`.
+- Published `0.1.0rc3`, confirmed its public source-free installation, and resumed the clean-room
+  project beyond the original bootstrap impersonation failure.
+- Reproduced a second first-run race while Cloud Functions resolved the new cost-guard builder.
+- Added an explicit Terraform propagation gate and prepared replacement candidate `0.1.0rc4`.
 
 ## Try It
 
@@ -18,25 +19,27 @@
 
 - Ruff lint/format, strict mypy, dependency audit, and all 584 tests pass locally.
 - Root, stage-zero, and generated-project Terraform init/validate pass.
-- Ruff lint/format, strict mypy, dependency audit, and all 586 tests pass locally.
+- Ruff lint/format, strict mypy, dependency audit, and all 587 tests pass locally.
 - Root, stage-zero, and generated-project Terraform init/validate pass.
-- Fresh `0.1.0rc3` wheel and sdist pass archive checks, install outside the checkout, and generate
+- Fresh `0.1.0rc4` wheel and sdist pass archive checks, install outside the checkout, and generate
   a valid source-free project.
 
 ## Decisions
 
-- The clean-room failure is a packaged bootstrap defect, so `rc2` cannot be promoted.
-- Readiness probes the permission Dander actually needs and stops after a bounded 60-second wait.
+- The clean-room Cloud Functions failure is a packaged provisioning defect, so `rc3` cannot be
+  promoted.
+- The one-time 120-second gate follows Google's documented propagation boundary and is scoped only
+  to initial cost-guard function creation.
 
 ## Remaining
 
-- Complete the full local and protected-main checks for `rc3`, then publish it through trusted
+- Complete the full local and protected-main checks for `rc4`, then publish it through trusted
   publishing.
 - Resume the fresh-project installation and rerun the bounded retained-project smoke suite.
 - Publish and smoke final `0.1.0` after the replacement candidate passes.
 
 ## Review First
 
-- `src/dander/bootstrap/project.py`
-- `src/dander/cli/main.py`
-- `tests/bootstrap/test_project_bootstrap.py`
+- `infra/modules/cost-guard/main.tf`
+- `infra/modules/cost-guard/versions.tf`
+- `tests/infra/test_clean_bootstrap_contract.py`
