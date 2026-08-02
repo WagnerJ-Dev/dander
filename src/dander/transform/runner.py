@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 import sqlglot
 from google.cloud import bigquery
 
+from dander.concurrency import OwnershipGuard, fenced_dml, fencing_job_config
 from dander.transform.model import Materialization
 from dander.transform.project import TransformModel, TransformProject, TransformProjectError
 
@@ -33,7 +34,12 @@ class _QueryJob(Protocol):
 
 
 class _BigQueryClient(Protocol):
-    def query(self, query: str) -> _QueryJob:
+    def query(
+        self,
+        query: str,
+        *,
+        job_config: bigquery.QueryJobConfig | None = None,
+    ) -> _QueryJob:
         """Submit BigQuery Standard SQL."""
 
 
@@ -51,6 +57,12 @@ class _Assertion:
     sql: str
 
 
+@dataclass(frozen=True)
+class _MaterializationStatement:
+    sql: str
+    dml_finalizer: bool = False
+
+
 class BigQueryTransformRunner:
     """Build and test selected transform models with an injected BigQuery client."""
 
@@ -63,18 +75,31 @@ class BigQueryTransformRunner:
         models_dir: Path,
         *,
         selected: Iterable[str] | None = None,
+        ownership: OwnershipGuard | None = None,
     ) -> TransformRunResult:
         """Materialize selected models in dependency order, then run their assertions."""
         project = TransformProject.load(models_dir, project_id=self._project)
         models = project.ordered(selected)
         compiled = [(model, project.compile(model)) for model in models]
-        statements = [_materialization_sql(project, model, query) for model, query in compiled]
+        statements = [
+            statement
+            for model, query in compiled
+            for statement in _materialization_statements(project, model, query)
+        ]
         assertions = [
             assertion for model in models for assertion in _compile_assertions(project, model)
         ]
         for statement in statements:
-            self._client.query(statement).result()
-        self._run_assertions(assertions)
+            if ownership is not None:
+                ownership.verify()
+            if statement.dml_finalizer and ownership is not None and ownership.fence is not None:
+                self._client.query(
+                    fenced_dml(statement.sql, ownership.fence),
+                    job_config=fencing_job_config(ownership.fence),
+                ).result()
+            else:
+                self._client.query(statement.sql).result()
+        self._run_assertions(assertions, ownership=ownership)
         return TransformRunResult(
             models=tuple(model.name for model in models),
             assertions=len(assertions),
@@ -98,9 +123,16 @@ class BigQueryTransformRunner:
             assertions=len(assertions),
         )
 
-    def _run_assertions(self, assertions: Iterable[_Assertion]) -> None:
+    def _run_assertions(
+        self,
+        assertions: Iterable[_Assertion],
+        *,
+        ownership: OwnershipGuard | None = None,
+    ) -> None:
         failures: list[str] = []
         for assertion in assertions:
+            if ownership is not None:
+                ownership.verify()
             rows = list(self._client.query(assertion.sql).result())
             if len(rows) != 1:
                 raise TransformRunError(f"Assertion returned an invalid result: {assertion.name}")
@@ -141,6 +173,27 @@ def _materialization_sql(project: TransformProject, model: TransformModel, query
             )
 
 
+def _materialization_statements(
+    project: TransformProject,
+    model: TransformModel,
+    query: str,
+) -> tuple[_MaterializationStatement, ...]:
+    if model.metadata.materialization is not Materialization.INCREMENTAL:
+        return (_MaterializationStatement(_materialization_sql(project, model, query)),)
+    relation = project.relation_for_model(model)
+    create, merge = _incremental_materialization_statements(
+        relation=relation,
+        query=query,
+        columns=tuple(column.name for column in model.metadata.columns),
+        unique_key=tuple(model.metadata.unique_key),
+        cursor=model.metadata.incremental_cursor,
+    )
+    return (
+        _MaterializationStatement(create),
+        _MaterializationStatement(merge, dml_finalizer=True),
+    )
+
+
 def _incremental_materialization_sql(
     *,
     relation: str,
@@ -149,6 +202,24 @@ def _incremental_materialization_sql(
     unique_key: tuple[str, ...],
     cursor: str | None,
 ) -> str:
+    create, merge = _incremental_materialization_statements(
+        relation=relation,
+        query=query,
+        columns=columns,
+        unique_key=unique_key,
+        cursor=cursor,
+    )
+    return f"{create};\n{merge}"
+
+
+def _incremental_materialization_statements(
+    *,
+    relation: str,
+    query: str,
+    columns: tuple[str, ...],
+    unique_key: tuple[str, ...],
+    cursor: str | None,
+) -> tuple[str, str]:
     if not unique_key or cursor is None:
         raise TransformProjectError("Incremental materialization metadata is incomplete")
     selected = ", ".join(f"`{column}`" for column in columns)
@@ -169,15 +240,18 @@ def _incremental_materialization_sql(
         f"  ORDER BY source.`{cursor}` DESC, TO_JSON_STRING(source) DESC\n"
         f") = 1"
     )
-    return (
+    create = (
         f"CREATE TABLE IF NOT EXISTS {relation} AS\n"
-        f"SELECT {selected} FROM (\n{query}\n) AS source WHERE FALSE;\n"
+        f"SELECT {selected} FROM (\n{query}\n) AS source WHERE FALSE"
+    )
+    merge = (
         f"MERGE {relation} AS target\n"
         f"USING (\n{source_query}\n) AS source\n"
         f"ON {match}"
         f"{matched}\n"
         f"WHEN NOT MATCHED THEN INSERT ({selected}) VALUES ({source_selected})"
     )
+    return create, merge
 
 
 def _compile_assertions(

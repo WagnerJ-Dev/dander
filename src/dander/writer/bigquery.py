@@ -10,11 +10,14 @@ from uuid import uuid4
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
+from dander.concurrency import fenced_dml, fencing_job_config, fencing_touch_sql
 from dander.schema import BIGQUERY_FIELD_MODES, BIGQUERY_FIELD_TYPES, normalize_bigquery_type
 from dander.writer.base import SchemaEvolution, WriteField, WriteMode, WritePattern, WriteTarget
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
+
+    from dander.concurrency import FencingToken
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -62,7 +65,12 @@ class _BigQueryClient(Protocol):
     ) -> _Job:
         """Atomically copy one staging table over a target."""
 
-    def query(self, query: str) -> _Job:
+    def query(
+        self,
+        query: str,
+        *,
+        job_config: bigquery.QueryJobConfig | None = None,
+    ) -> _Job:
         """Run a SQL query."""
 
     def delete_table(self, table: str, *, not_found_ok: bool = False) -> None:
@@ -160,8 +168,14 @@ class BigQueryScd1Writer(WritePattern):
                 schema=declared,
             )
             self._client.query(_create_target_sql(target_id, staging_id, columns)).result()
-            merge_job = self._client.query(
-                _merge_sql(target_id, staging_id, columns, target.business_key)
+            merge_sql = _merge_sql(target_id, staging_id, columns, target.business_key)
+            merge_job = (
+                self._client.query(
+                    fenced_dml(merge_sql, target.fence),
+                    job_config=fencing_job_config(target.fence),
+                )
+                if target.fence is not None
+                else self._client.query(merge_sql)
             )
             merge_job.result()
             return (
@@ -262,7 +276,15 @@ class BigQuerySnapshotWriter(WritePattern):
                 target,
                 self._schema_evolution,
             )
-            insert_job = self._client.query(_snapshot_insert_sql(target_id, staging_id, columns))
+            insert_sql = _snapshot_insert_sql(target_id, staging_id, columns)
+            insert_job = (
+                self._client.query(
+                    fenced_dml(insert_sql, target.fence),
+                    job_config=fencing_job_config(target.fence),
+                )
+                if target.fence is not None
+                else self._client.query(insert_sql)
+            )
             insert_job.result()
             return (
                 insert_job.num_dml_affected_rows
@@ -331,8 +353,20 @@ class BigQueryScd2Writer(WritePattern):
                 target,
                 self._schema_evolution,
             )
-            history_job = self._client.query(
-                _scd2_sql(target_id, staging_id, columns, target.business_key)
+            history_sql = _scd2_sql(
+                target_id,
+                staging_id,
+                columns,
+                target.business_key,
+                fence=target.fence,
+            )
+            history_job = (
+                self._client.query(
+                    history_sql,
+                    job_config=fencing_job_config(target.fence),
+                )
+                if target.fence is not None
+                else self._client.query(history_sql)
             )
             history_job.result()
             return (
@@ -364,6 +398,10 @@ class BigQueryReplaceWriter(WritePattern):
     def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
         """Stage a bounded input stream, then atomically replace the target."""
         target_id = _target_id(target)
+        if target.fence is not None:
+            raise BigQueryWriteError(
+                "Replace mode does not provide transactionally fenced cloud publication"
+            )
         if target.project != self._project:
             raise BigQueryWriteError(
                 f"Writer project {self._project!r} does not match target project {target.project!r}"
@@ -814,6 +852,8 @@ def _scd2_sql(
     staging_id: str,
     columns: Sequence[str],
     business_key: Sequence[str],
+    *,
+    fence: FencingToken | None = None,
 ) -> str:
     match = " AND ".join(f"target.`{key}` = source.`{key}`" for key in business_key)
     mutable = [column for column in columns if column not in business_key]
@@ -828,6 +868,7 @@ def _scd2_sql(
     key_match_changed = " AND ".join(f"target.`{key}` = changed.`{key}`" for key in business_key)
     insert_columns = (*columns, "valid_from", "valid_to", "is_current")
     source_columns = _quoted_columns(columns, alias="changed")
+    lease_touch = f"{fencing_touch_sql(fence)}\n" if fence is not None else ""
     return (
         "DECLARE effective_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP();\n"
         "CREATE TEMP TABLE changed AS\n"
@@ -835,6 +876,7 @@ def _scd2_sql(
         f"LEFT JOIN `{target_id}` AS target ON {match} AND target.`is_current` = TRUE\n"
         f"WHERE {missing} OR {changed};\n"
         "BEGIN TRANSACTION;\n"
+        f"{lease_touch}"
         f"UPDATE `{target_id}` AS target\n"
         "SET `valid_to` = effective_at, `is_current` = FALSE\n"
         "WHERE target.`is_current` = TRUE AND EXISTS (\n"

@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
+    from dander.concurrency import FencingToken
+
 
 class WriteMode(StrEnum):
     """Supported load strategies."""
@@ -59,6 +61,7 @@ class WriteTarget:
     table: str
     business_key: tuple[str, ...] = field(default_factory=tuple)
     schema: tuple[WriteField, ...] = field(default_factory=tuple)
+    fence: FencingToken | None = None
 
 
 class WritePattern(ABC):

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from dander.concurrency import FencingToken
 from dander.writer import (
     BigQueryStorageIncrementalWriter,
     BigQueryStorageScd1Writer,
@@ -17,6 +18,8 @@ from dander.writer.storage_write import _message_type, _serialize_row
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+
+    from google.cloud import bigquery
 
 
 class _Job:
@@ -32,7 +35,12 @@ class _Client:
         self.queries: list[str] = []
         self.deleted: list[str] = []
 
-    def query(self, query: str) -> _Job:
+    def query(
+        self,
+        query: str,
+        *,
+        job_config: bigquery.QueryJobConfig | None = None,
+    ) -> _Job:
         self.queries.append(query)
         return _Job(affected=2 if query.startswith("MERGE") else None)
 
@@ -100,6 +108,36 @@ def test_storage_writer_uses_pending_backend_then_idempotent_merge() -> None:
     assert client.deleted == [
         f"{backend.target.project}.{backend.target.dataset}.{backend.target.table}"
     ]
+
+
+def test_storage_merge_honors_cloud_fencing_contract() -> None:
+    client = _Client()
+    backend = _Backend()
+    writer = BigQueryStorageScd1Writer(
+        project="unit-project",
+        client=client,
+        backend=backend,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="widgets",
+        business_key=("id",),
+        schema=_target().schema,
+        fence=FencingToken(
+            lease_table="unit-project.meta._dander_leases",
+            pipeline_id="example_pipeline",
+            run_id="run-one",
+            token=3,
+        ),
+    )
+
+    writer.write([{"id": "one", "count": 1}], target)
+
+    script = client.queries[-1]
+    assert script.startswith("BEGIN TRANSACTION;\nUPDATE `unit-project.meta._dander_leases`")
+    assert "ASSERT @@row_count = 1 AS 'Dander pipeline lease lost'" in script
+    assert "MERGE `unit-project.raw.widgets`" in script
 
 
 def test_storage_incremental_requires_cursor_before_staging() -> None:

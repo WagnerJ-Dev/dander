@@ -16,6 +16,7 @@ from dander.state.run_history import RunHistoryStore, RunStatus
 from dander.writer.base import WriteField, WriteTarget
 
 if TYPE_CHECKING:
+    from dander.concurrency import OwnershipGuard
     from dander.ingestion.source import Endpoint, RawField, Source
     from dander.state.watermark import WatermarkStore
     from dander.writer.base import WritePattern
@@ -25,6 +26,10 @@ _LOGGER = logging.getLogger(__name__)
 
 class CursorValueError(ValueError):
     """Raised when a cursor-enabled endpoint returns an unusable cursor."""
+
+
+class WatermarkConflictError(RuntimeError):
+    """Raised when another run changed a cursor boundary before this run committed."""
 
 
 @dataclass(frozen=True)
@@ -72,7 +77,12 @@ class PipelineRunner:
             raise ValueError("batch_rows must be an integer from 1 to 100000")
         self._batch_rows = batch_rows
 
-    def run(self, *, run_id: str | None = None) -> PipelineRunResult:
+    def run(
+        self,
+        *,
+        run_id: str | None = None,
+        ownership: OwnershipGuard | None = None,
+    ) -> PipelineRunResult:
         """Run every configured endpoint and commit each cursor after its successful write."""
         run_id = run_id or uuid4().hex
         source_name = self._source.config.name
@@ -85,7 +95,7 @@ class PipelineRunner:
         completed: list[EndpointRunResult] = []
         try:
             for endpoint in self._source.config.endpoints:
-                completed.append(self._run_endpoint(endpoint, run_id))
+                completed.append(self._run_endpoint(endpoint, run_id, ownership))
         except Exception:
             try:
                 self._finish_history(run_id, completed, succeeded=False)
@@ -124,19 +134,28 @@ class PipelineRunner:
             affected=sum(result.affected for result in completed),
         )
 
-    def _run_endpoint(self, endpoint: Endpoint, run_id: str) -> EndpointRunResult:
+    def _run_endpoint(
+        self,
+        endpoint: Endpoint,
+        run_id: str,
+        ownership: OwnershipGuard | None,
+    ) -> EndpointRunResult:
         source_name = self._source.config.name
-        cursor = (
+        stored_cursor = (
             self._watermarks.get(source_name, endpoint.name)
-            if endpoint.incremental_cursor and self._resume_from_watermark
+            if endpoint.incremental_cursor
             else None
         )
+        cursor = stored_cursor if self._resume_from_watermark else None
+        if ownership is not None:
+            ownership.verify()
         target = WriteTarget(
             project=self._project,
             dataset=self._dataset,
             table=f"{source_name}_{endpoint.name}",
             business_key=tuple(endpoint.primary_key),
             schema=tuple(_write_field(field) for field in endpoint.raw_schema),
+            fence=ownership.fence if ownership is not None else None,
         )
         if not endpoint.raw_schema:
             _LOGGER.warning(
@@ -161,13 +180,31 @@ class PipelineRunner:
                 endpoint=endpoint,
                 target=target,
                 run_id=run_id,
+                ownership=ownership,
             )
         elif self._writer.accepts_streaming_input:
+            if ownership is not None:
+                ownership.verify()
             affected = self._writer.write(records, target)
         else:
-            affected = self._writer.write(list(records), target)
+            buffered = list(records)
+            if ownership is not None:
+                ownership.verify()
+            affected = self._writer.write(buffered, target)
         if observation.extracted and observation.maximum_cursor is not None:
-            self._watermarks.set(source_name, endpoint.name, observation.maximum_cursor)
+            if ownership is not None:
+                ownership.verify()
+            committed = self._watermarks.compare_and_set(
+                source_name,
+                endpoint.name,
+                expected=stored_cursor,
+                cursor=observation.maximum_cursor,
+                fence=ownership.fence if ownership is not None else None,
+            )
+            if not committed:
+                raise WatermarkConflictError(
+                    f"Watermark boundary changed for endpoint {endpoint.name!r}"
+                )
 
         _LOGGER.info(
             "endpoint_finished",
@@ -194,6 +231,7 @@ class PipelineRunner:
         endpoint: Endpoint,
         target: WriteTarget,
         run_id: str,
+        ownership: OwnershipGuard | None,
     ) -> int:
         affected = 0
         wrote_batch = False
@@ -202,6 +240,8 @@ class PipelineRunner:
             start=1,
         ):
             wrote_batch = True
+            if ownership is not None:
+                ownership.verify()
             batch_affected = self._writer.write(record_batch, target)
             affected += batch_affected
             _LOGGER.info(
@@ -217,6 +257,8 @@ class PipelineRunner:
                 },
             )
         if not wrote_batch:
+            if ownership is not None:
+                ownership.verify()
             affected = self._writer.write((), target)
         return affected
 

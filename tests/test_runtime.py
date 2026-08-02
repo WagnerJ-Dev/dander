@@ -7,12 +7,14 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from dander.ingestion.source import Endpoint, RawField, Source, SourceConfig
-from dander.runtime import PipelineRunner, RawSchemaError
-from dander.state import RunHistoryStore, RunStage, RunStatus, WatermarkStore
+from dander.runtime import PipelineRunner, RawSchemaError, WatermarkConflictError
+from dander.state import LeaseLostError, RunHistoryStore, RunStage, RunStatus, WatermarkStore
 from dander.writer import WriteMode, WritePattern, WriteTarget
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
+
+    from dander.concurrency import FencingToken
 
 
 class _Source(Source):
@@ -165,6 +167,33 @@ class _Watermarks(WatermarkStore):
         assert (source, entity) == ("example", "widgets")
         self._events.append("set")
         self.committed = cursor
+
+    def compare_and_set(
+        self,
+        source: str,
+        entity: str,
+        *,
+        expected: str | None,
+        cursor: str,
+        fence: FencingToken | None = None,
+    ) -> bool:
+        assert (source, entity) == ("example", "widgets")
+        current = self.committed or "2026-01-01T00:00:00Z"
+        if current != expected:
+            return False
+        self.set(source, entity, cursor)
+        return True
+
+
+class _Ownership:
+    fence = None
+
+    def __init__(self, outcomes: list[bool]) -> None:
+        self._outcomes = outcomes
+
+    def verify(self) -> None:
+        if not self._outcomes.pop(0):
+            raise LeaseLostError("Pipeline lease ownership was lost")
 
 
 class _History(RunHistoryStore):
@@ -365,7 +394,7 @@ def test_full_refresh_ignores_existing_cursor_but_records_observed_cursor() -> N
 
     runner.run()
 
-    assert events == ["extract", "write", "set"]
+    assert events == ["get", "extract", "write", "set"]
     assert watermarks.committed == "2026-01-03T00:00:00Z"
 
 
@@ -504,6 +533,53 @@ def test_scd1_does_not_advance_watermark_when_later_batch_fails() -> None:
     )
 
     with pytest.raises(RuntimeError, match="synthetic batch failure"):
+        runner.run()
+
+    assert watermarks.committed is None
+
+
+def test_runner_fails_closed_before_writer_after_heartbeat_loss() -> None:
+    events: list[str] = []
+    writer = _BatchedWriter()
+    runner = PipelineRunner(
+        source=_Source(events),
+        writer=writer,
+        watermarks=_Watermarks(events),
+        project="unit-project",
+        dataset="raw",
+    )
+
+    with pytest.raises(LeaseLostError, match="ownership was lost"):
+        runner.run(ownership=_Ownership([True, False]))
+
+    assert writer.batches == []
+
+
+def test_runner_rejects_stale_watermark_commit_after_successful_write() -> None:
+    events: list[str] = []
+
+    class _ConflictingWatermarks(_Watermarks):
+        def compare_and_set(
+            self,
+            source: str,
+            entity: str,
+            *,
+            expected: str | None,
+            cursor: str,
+            fence: FencingToken | None = None,
+        ) -> bool:
+            return False
+
+    watermarks = _ConflictingWatermarks(events)
+    runner = PipelineRunner(
+        source=_Source(events),
+        writer=_BatchedWriter(),
+        watermarks=watermarks,
+        project="unit-project",
+        dataset="raw",
+    )
+
+    with pytest.raises(WatermarkConflictError, match="boundary changed"):
         runner.run()
 
     assert watermarks.committed is None

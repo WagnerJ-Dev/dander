@@ -25,3 +25,11 @@ through target `transport`: load jobs remain the low-latency-insensitive batch d
 `storage_write` uses offset-checked protobuf appends to a pending stream, finalizes it, commits
 atomically, and then merges from staging. The Python path currently accepts BOOL, BYTES, FLOAT64,
 INT64, and STRING schemas; other types fail before creating staging.
+
+Hosted DML finalizers carry the active run's fencing token. SCD1, incremental, snapshot, SCD2, and
+Storage Write merge/insert transactions conditionally DML-touch the matching lease row before
+mutating the target and abort when the pipeline ID, run ID, token, or live expiry no longer match.
+The lease check is in the target transaction, not a preceding read. Permanent-table DDL remains
+outside BigQuery transactions. `BigQueryReplaceWriter` rejects a cloud fence explicitly because
+permanent table replacement cannot provide the same transactional fencing guarantee; replace is
+the sandbox/local v0.1 path.

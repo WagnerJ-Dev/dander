@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from google.cloud import bigquery
 
+from dander.concurrency import FencingToken, fenced_dml, fencing_job_config
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
@@ -29,8 +31,25 @@ class WatermarkStore(ABC):
     def set(self, source: str, entity: str, cursor: str) -> None:
         """Persist ``cursor`` after a successful load (called only on commit)."""
 
+    def compare_and_set(
+        self,
+        source: str,
+        entity: str,
+        *,
+        expected: str | None,
+        cursor: str,
+        fence: FencingToken | None = None,
+    ) -> bool:
+        """Commit only when the stored cursor still matches the extraction boundary."""
+        if self.get(source, entity) != expected:
+            return False
+        self.set(source, entity, cursor)
+        return True
+
 
 class _QueryJob(Protocol):
+    num_dml_affected_rows: int | None
+
     def result(self) -> Iterable[Mapping[str, Any]]:
         """Wait for query completion and return rows."""
 
@@ -114,6 +133,52 @@ class BigQueryWatermarkStore(WatermarkStore):
             job_config=config,
         ).result()
 
+    def compare_and_set(
+        self,
+        source: str,
+        entity: str,
+        *,
+        expected: str | None,
+        cursor: str,
+        fence: FencingToken | None = None,
+    ) -> bool:
+        """Atomically fence and commit only the cursor boundary this run extracted from."""
+        self._ensure_table()
+        parameters = [
+            bigquery.ScalarQueryParameter("source", "STRING", source),
+            bigquery.ScalarQueryParameter("entity", "STRING", entity),
+            bigquery.ScalarQueryParameter("expected", "STRING", expected),
+            bigquery.ScalarQueryParameter("cursor", "STRING", cursor),
+        ]
+        merge = (
+            f"MERGE `{self._table_id}` AS target "
+            "USING (SELECT @source AS source_name, @entity AS entity_name, "
+            "@cursor AS last_cursor) AS incoming "
+            "ON target.source_name = incoming.source_name "
+            "AND target.entity_name = incoming.entity_name "
+            "WHEN MATCHED AND target.last_cursor IS NOT DISTINCT FROM @expected "
+            "THEN UPDATE SET last_cursor = incoming.last_cursor, "
+            "updated_at = CURRENT_TIMESTAMP() "
+            "WHEN NOT MATCHED AND @expected IS NULL THEN INSERT "
+            "(source_name, entity_name, last_cursor, updated_at) "
+            "VALUES (incoming.source_name, incoming.entity_name, "
+            "incoming.last_cursor, CURRENT_TIMESTAMP())"
+        )
+        statement = merge
+        if fence is not None:
+            fence_config = fencing_job_config(fence)
+            parameters.extend(fence_config.query_parameters)
+            statement = fenced_dml(
+                f"{merge};\nASSERT @@row_count = 1 AS 'Dander watermark boundary changed'",
+                fence,
+            )
+        job = self._client.query(
+            statement,
+            job_config=bigquery.QueryJobConfig(query_parameters=parameters),
+        )
+        job.result()
+        return fence is not None or job.num_dml_affected_rows == 1
+
     def _ensure_table(self) -> None:
         if self._table_ready:
             return
@@ -162,3 +227,31 @@ class SqliteWatermarkStore(WatermarkStore):
                 "ON CONFLICT(source, entity) DO UPDATE SET cursor = excluded.cursor",
                 (source, entity, cursor),
             )
+
+    def compare_and_set(
+        self,
+        source: str,
+        entity: str,
+        *,
+        expected: str | None,
+        cursor: str,
+        fence: FencingToken | None = None,
+    ) -> bool:
+        """Serialize local cursor comparison and update in one immediate transaction."""
+        with sqlite3.connect(self._path, isolation_level=None) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT cursor FROM watermarks WHERE source = ? AND entity = ?",
+                (source, entity),
+            ).fetchone()
+            current = str(row[0]) if row is not None else None
+            if current != expected:
+                connection.rollback()
+                return False
+            connection.execute(
+                "INSERT INTO watermarks (source, entity, cursor) VALUES (?, ?, ?) "
+                "ON CONFLICT(source, entity) DO UPDATE SET cursor = excluded.cursor",
+                (source, entity, cursor),
+            )
+            connection.commit()
+        return True

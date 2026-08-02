@@ -70,9 +70,11 @@ from dander.security import (
     OAuth2JWT,
 )
 from dander.state import (
+    BigQueryLeaseStore,
     BigQueryRunHistoryStore,
     BigQueryWatermarkStore,
     RunHistoryStore,
+    SqliteLeaseStore,
     SqliteRunHistoryStore,
     SqliteWatermarkStore,
 )
@@ -929,12 +931,21 @@ def run(
         if config.engine is IngestionEngine.WORKDAY_RAAS
         else DltRestSource(config, auth)
     )
+    control_dataset = settings.bq_dataset_metadata if project_pipeline else resolved_dataset
     history = (
         SqliteRunHistoryStore(state_path)
         if sandbox
         else BigQueryRunHistoryStore(
             project=resolved_project,
-            dataset=(settings.bq_dataset_metadata if project_pipeline else resolved_dataset),
+            dataset=control_dataset,
+        )
+    )
+    leases = (
+        SqliteLeaseStore(state_path)
+        if sandbox
+        else BigQueryLeaseStore(
+            project=resolved_project,
+            dataset=control_dataset,
         )
     )
     metadata_store = None
@@ -994,6 +1005,7 @@ def run(
             metadata_store=metadata_store,
             registry_output=catalog_output,
             dataplex_publisher=dataplex_publisher,
+            leases=leases,
         ).execute()
     except (
         CatalogPublishError,
@@ -1002,6 +1014,10 @@ def run(
         TransformRunError,
     ) as error:
         raise ClickException(str(error)) from error
+
+    if result.skipped:
+        console.print(f"Dander run {result.run_id} skipped: pipeline already active.")
+        return
 
     table = Table(title=f"Dander run {result.run_id}")
     table.add_column("Endpoint")
