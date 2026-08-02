@@ -27,6 +27,15 @@ Publication waits for bounded candidate acceptance in the retained project and o
 source-free Greenhouse installation in a fresh disposable GCP project. The post-release operator
 soak does not block this release.
 
+## 0.1.0rc2 — 2026-08-02
+
+### Fixed
+
+- Keep read-only, full-extraction watermarks monotonic when records newer than the current source
+  population have been deleted between runs.
+- Render in-progress executions in `dander metadata runs` instead of rejecting the persisted
+  `running` lifecycle state.
+
 ## 0.1.0rc1 — 2026-08-01
 
 ### Added

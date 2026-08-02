@@ -65,3 +65,14 @@ def test_sqlite_run_history_records_overlap_as_skipped_complete(tmp_path: Path) 
     assert record.status is RunStatus.SKIPPED
     assert record.stage is RunStage.COMPLETE
     assert record.failure_stage is None
+
+
+def test_sqlite_run_history_reads_active_run(tmp_path: Path) -> None:
+    store = SqliteRunHistoryStore(tmp_path / "state.db")
+    store.start("run-active", "greenhouse", pipeline_id="greenhouse_jobs")
+
+    record = store.recent(pipeline_id="greenhouse_jobs")[0]
+
+    assert record.status is RunStatus.RUNNING
+    assert record.stage is RunStage.INGEST
+    assert record.finished_at is None

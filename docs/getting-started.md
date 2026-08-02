@@ -30,7 +30,7 @@ gcloud config set project "$DANDER_PROJECT"
 ## Install and scaffold
 
 ```bash
-uv tool install dander-platform==0.1.0rc1
+uv tool install dander-platform==0.1.0rc2
 dander --version
 dander new my-dander-project
 cd my-dander-project

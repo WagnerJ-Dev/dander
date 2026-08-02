@@ -99,3 +99,17 @@ def test_metadata_show_returns_governed_metric_definition(tmp_path: Path) -> Non
     assert result.exit_code == 0
     assert '"kind": "metric"' in result.stdout
     assert "Distinct public jobs." in result.stdout
+
+
+def test_metadata_runs_renders_active_run(tmp_path: Path) -> None:
+    state = tmp_path / "state.db"
+    history = SqliteRunHistoryStore(state)
+    history.start("run-active", "greenhouse_job_board", pipeline_id="greenhouse_jobs")
+
+    result = CliRunner().invoke(
+        app,
+        ["metadata", "runs", "--local", "--state-path", str(state)],
+    )
+
+    assert result.exit_code == 0
+    assert "running" in result.stdout
