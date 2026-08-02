@@ -6,20 +6,17 @@ Cloud provisioning has no promised duration and may incur charges.
 
 ## Prerequisites
 
-- A dedicated, disposable GCP project with billing already linked.
+- An existing, dedicated, disposable GCP project with billing already linked.
 - Project Owner on that disposable project (or equivalent permissions to enable services, create
   the state bucket and service accounts, and grant the roles listed by the generated stage-zero
   Terraform).
-- Billing Account Administrator on the linked billing account so stage zero can grant the Dander
-  bootstrap identity the budget and billing-IAM access used by the simulation-only cost guard.
 - Python 3.12, `uv`, Terraform 1.9 or newer, Docker with Buildx, and Google Cloud CLI.
 - An operator email address for hosted failure notifications.
 
-Set the three private operator values in your shell; do not commit them:
+Set the two private operator values in your shell; do not commit them:
 
 ```bash
 export DANDER_PROJECT="your-disposable-project-id"
-export DANDER_BILLING_ACCOUNT="000000-000000-000000"
 export DANDER_ALERT_EMAIL="operator@example.com"
 
 gcloud auth login
@@ -50,14 +47,23 @@ runtime image, and apply the reviewed platform plan:
 ```bash
 dander init \
   --project "$DANDER_PROJECT" \
-  --billing-account "$DANDER_BILLING_ACCOUNT" \
   --failure-alert-email "$DANDER_ALERT_EMAIL" \
   --apply
 ```
 
 The command stores Terraform state in the hardened bucket
 `$DANDER_PROJECT-dander-state`, keeps local operator artifacts outside the project directory, and
-leaves the Greenhouse scheduler paused.
+leaves the Greenhouse scheduler paused. The generated project disables Dander's managed cost guard,
+so this path does not require a billing-account ID or billing-account IAM permissions. Dander is not
+managing, limiting, or preventing cloud spending in this configuration; disabling the guard does not
+prevent or cap cloud charges.
+
+The managed cost guard is optional. To use its simulation-first budget, Pub/Sub notification path,
+billing-shutoff function, and guarded runtime preflight, set
+`platform.safety.require_guarded_free_tier` to `true` and pass `--billing-account`. That opt-in path
+requires permission to grant the bootstrap identity Billing Account Administrator on the linked
+billing account. Review those additional billing-account and project-level IAM changes before any
+apply. The guard remains simulation-first unless `--live-cost-guard` is explicitly supplied.
 
 ## Run and verify Greenhouse
 

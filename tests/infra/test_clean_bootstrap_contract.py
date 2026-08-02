@@ -13,6 +13,24 @@ def test_stage_zero_enables_cloud_resource_manager_before_platform_plan() -> Non
     assert '"cloudresourcemanager.googleapis.com"' in stage_zero
 
 
+def test_stage_zero_limits_guard_permissions_to_guarded_installations() -> None:
+    stage_zero = (ROOT / "infra/bootstrap-admin/main.tf").read_text()
+    normalized = "\n".join(" ".join(line.split()) for line in stage_zero.splitlines())
+
+    assert 'count = var.billing_account_id == "" ? 0 : 1' in normalized
+    assert 'cost_guard_provisioning_roles = var.billing_account_id == "" ? toset([])' in normalized
+    guard_roles = stage_zero.split("cost_guard_provisioning_roles", maxsplit=1)[1].split(
+        "provisioning_roles = setunion", maxsplit=1
+    )[0]
+    assert '"roles/cloudfunctions.admin"' in guard_roles
+    assert '"roles/pubsub.admin"' in guard_roles
+    platform_roles = stage_zero.split("platform_provisioning_roles", maxsplit=1)[1].split(
+        "cost_guard_provisioning_roles", maxsplit=1
+    )[0]
+    assert '"roles/cloudfunctions.admin"' not in platform_roles
+    assert '"roles/pubsub.admin"' not in platform_roles
+
+
 def test_cost_guard_defers_project_lookup_until_required_apis_are_enabled() -> None:
     cost_guard = (ROOT / "infra/modules/cost-guard/main.tf").read_text()
     project_lookup = cost_guard.split('data "google_project" "current"', maxsplit=1)[1]

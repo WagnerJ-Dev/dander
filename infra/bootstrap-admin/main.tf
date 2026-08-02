@@ -9,23 +9,29 @@ locals {
     "sts.googleapis.com",
     "storage.googleapis.com",
   ])
-  provisioning_roles = toset([
+  platform_provisioning_roles = toset([
     "roles/artifactregistry.admin",
     "roles/bigquery.admin",
-    "roles/cloudfunctions.admin",
     "roles/cloudscheduler.admin",
     "roles/dataplex.admin",
     "roles/iam.serviceAccountAdmin",
     "roles/iam.serviceAccountUser",
     "roles/iam.workloadIdentityPoolAdmin",
     "roles/monitoring.editor",
-    "roles/pubsub.admin",
     "roles/resourcemanager.projectIamAdmin",
     "roles/run.admin",
     "roles/secretmanager.admin",
     "roles/serviceusage.serviceUsageAdmin",
     "roles/storage.admin",
   ])
+  cost_guard_provisioning_roles = var.billing_account_id == "" ? toset([]) : toset([
+    "roles/cloudfunctions.admin",
+    "roles/pubsub.admin",
+  ])
+  provisioning_roles = setunion(
+    local.platform_provisioning_roles,
+    local.cost_guard_provisioning_roles,
+  )
 }
 
 resource "google_project_service" "required" {

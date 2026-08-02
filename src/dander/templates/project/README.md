@@ -14,7 +14,8 @@ dander init --project YOUR_GCP_PROJECT --container-image REGION-docker.pkg.dev/P
 ```
 
 `dander init` plans by default. Review the saved Terraform plan before using `--apply`. The starter
-manifest requires the guarded free-tier preflight and keeps its scheduler paused.
+manifest keeps its scheduler paused and does not enable Dander's optional managed cost guard.
+Disabling the guard does not prevent or cap cloud charges.
 
 Use the public [hosted Greenhouse quickstart](https://github.com/harrisonoconnorhover/dander/blob/main/docs/getting-started.md)
 for the complete installation, provisioning, manual-run, and schedule-enablement sequence. Follow
