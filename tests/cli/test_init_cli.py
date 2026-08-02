@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from click import unstyle
 from typer.testing import CliRunner
 
 from dander.cli.main import app
@@ -102,6 +103,33 @@ def test_init_apply_requires_confirmation(
 
     assert result.exit_code != 0
     assert not called
+
+
+def test_init_plan_without_container_image_reports_usage_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_execute(self: object, **kwargs: object) -> Path:
+        raise AssertionError("must not execute")
+
+    monkeypatch.setattr("dander.cli.main.TerraformBootstrap.execute", fake_execute)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "--project",
+            "unit-project",
+            "--billing-account",
+            "ABCDEF-123456-ABCDEF",
+        ],
+    )
+
+    output = unstyle(result.output)
+    assert result.exit_code == 2
+    assert "Invalid value for '--container-image'" in output
+    assert "plan-only runtime initialization" in output
+    assert "requires an immutable image" in output
+    assert "Traceback" not in output
 
 
 def test_live_cost_guard_is_named_in_apply_confirmation(
