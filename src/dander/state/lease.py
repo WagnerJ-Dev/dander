@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from google.cloud import bigquery
 
+from dander._bigquery_retry import run_mutation_with_retry
 from dander.concurrency import FencingToken
 
 if TYPE_CHECKING:
@@ -103,26 +104,29 @@ class BigQueryLeaseStore(LeaseStore):
         """Conditionally claim one row and increment its fencing token."""
         self._ensure_table()
         config = _lease_config(pipeline_id, run_id)
-        self._client.query(
-            f"MERGE `{self._table}` AS target "
-            "USING (SELECT @pipeline_id AS pipeline_id) AS incoming "
-            "ON target.pipeline_id = incoming.pipeline_id "
-            "WHEN NOT MATCHED THEN INSERT "
-            "(pipeline_id, run_id, fencing_token, heartbeat_at, lease_expires_at) "
-            "VALUES (incoming.pipeline_id, NULL, 0, NULL, "
-            "TIMESTAMP('1970-01-01T00:00:00Z'))",
-            job_config=config,
-        ).result()
-        claim = self._client.query(
-            f"UPDATE `{self._table}` SET run_id = @run_id, "
-            "fencing_token = fencing_token + 1, heartbeat_at = CURRENT_TIMESTAMP(), "
-            "lease_expires_at = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), "
-            f"INTERVAL {self._lease_seconds} SECOND) "
-            "WHERE pipeline_id = @pipeline_id "
-            "AND lease_expires_at <= CURRENT_TIMESTAMP()",
-            job_config=config,
+        run_mutation_with_retry(
+            lambda: self._client.query(
+                f"MERGE `{self._table}` AS target "
+                "USING (SELECT @pipeline_id AS pipeline_id) AS incoming "
+                "ON target.pipeline_id = incoming.pipeline_id "
+                "WHEN NOT MATCHED THEN INSERT "
+                "(pipeline_id, run_id, fencing_token, heartbeat_at, lease_expires_at) "
+                "VALUES (incoming.pipeline_id, NULL, 0, NULL, "
+                "TIMESTAMP('1970-01-01T00:00:00Z'))",
+                job_config=config,
+            )
         )
-        claim.result()
+        claim = run_mutation_with_retry(
+            lambda: self._client.query(
+                f"UPDATE `{self._table}` SET run_id = @run_id, "
+                "fencing_token = fencing_token + 1, heartbeat_at = CURRENT_TIMESTAMP(), "
+                "lease_expires_at = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), "
+                f"INTERVAL {self._lease_seconds} SECOND) "
+                "WHERE pipeline_id = @pipeline_id "
+                "AND lease_expires_at <= CURRENT_TIMESTAMP()",
+                job_config=config,
+            )
+        )
         if claim.num_dml_affected_rows != 1:
             return None
         rows = list(
@@ -153,36 +157,38 @@ class BigQueryLeaseStore(LeaseStore):
 
     def heartbeat(self, lease: LeaseHandle) -> bool:
         self._ensure_table()
-        job = self._client.query(
-            f"UPDATE `{self._table}` SET heartbeat_at = CURRENT_TIMESTAMP(), "
-            "lease_expires_at = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), "
-            f"INTERVAL {self._lease_seconds} SECOND) "
-            "WHERE pipeline_id = @pipeline_id AND run_id = @run_id "
-            "AND fencing_token = @fencing_token "
-            "AND lease_expires_at > CURRENT_TIMESTAMP()",
-            job_config=_lease_config(
-                lease.pipeline_id,
-                lease.run_id,
-                fencing_token=lease.fencing_token,
-            ),
+        job = run_mutation_with_retry(
+            lambda: self._client.query(
+                f"UPDATE `{self._table}` SET heartbeat_at = CURRENT_TIMESTAMP(), "
+                "lease_expires_at = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), "
+                f"INTERVAL {self._lease_seconds} SECOND) "
+                "WHERE pipeline_id = @pipeline_id AND run_id = @run_id "
+                "AND fencing_token = @fencing_token "
+                "AND lease_expires_at > CURRENT_TIMESTAMP()",
+                job_config=_lease_config(
+                    lease.pipeline_id,
+                    lease.run_id,
+                    fencing_token=lease.fencing_token,
+                ),
+            )
         )
-        job.result()
         return job.num_dml_affected_rows == 1
 
     def release(self, lease: LeaseHandle) -> bool:
         self._ensure_table()
-        job = self._client.query(
-            f"UPDATE `{self._table}` SET run_id = NULL, "
-            "heartbeat_at = CURRENT_TIMESTAMP(), lease_expires_at = CURRENT_TIMESTAMP() "
-            "WHERE pipeline_id = @pipeline_id AND run_id = @run_id "
-            "AND fencing_token = @fencing_token",
-            job_config=_lease_config(
-                lease.pipeline_id,
-                lease.run_id,
-                fencing_token=lease.fencing_token,
-            ),
+        job = run_mutation_with_retry(
+            lambda: self._client.query(
+                f"UPDATE `{self._table}` SET run_id = NULL, "
+                "heartbeat_at = CURRENT_TIMESTAMP(), lease_expires_at = CURRENT_TIMESTAMP() "
+                "WHERE pipeline_id = @pipeline_id AND run_id = @run_id "
+                "AND fencing_token = @fencing_token",
+                job_config=_lease_config(
+                    lease.pipeline_id,
+                    lease.run_id,
+                    fencing_token=lease.fencing_token,
+                ),
+            )
         )
-        job.result()
         return job.num_dml_affected_rows == 1
 
     def _ensure_table(self) -> None:

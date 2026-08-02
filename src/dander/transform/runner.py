@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Protocol, cast
 
 import sqlglot
 from google.cloud import bigquery
 
+from dander._bigquery_retry import run_mutation_with_retry
 from dander.concurrency import OwnershipGuard, fenced_dml, fencing_job_config
 from dander.transform.model import Materialization
 from dander.transform.project import TransformModel, TransformProject, TransformProjectError
@@ -93,10 +95,9 @@ class BigQueryTransformRunner:
             if ownership is not None:
                 ownership.verify()
             if statement.dml_finalizer and ownership is not None and ownership.fence is not None:
-                self._client.query(
-                    fenced_dml(statement.sql, ownership.fence),
-                    job_config=fencing_job_config(ownership.fence),
-                ).result()
+                script = fenced_dml(statement.sql, ownership.fence)
+                config = fencing_job_config(ownership.fence)
+                run_mutation_with_retry(partial(self._client.query, script, job_config=config))
             else:
                 self._client.query(statement.sql).result()
         self._run_assertions(assertions, ownership=ownership)

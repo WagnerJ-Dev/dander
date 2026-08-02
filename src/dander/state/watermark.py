@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from google.cloud import bigquery
 
+from dander._bigquery_retry import run_mutation_with_retry
 from dander.concurrency import FencingToken, fenced_dml, fencing_job_config
 
 if TYPE_CHECKING:
@@ -116,8 +117,8 @@ class BigQueryWatermarkStore(WatermarkStore):
                 bigquery.ScalarQueryParameter("cursor", "STRING", cursor),
             ]
         )
-        self._client.query(
-            (
+        run_mutation_with_retry(
+            lambda: self._client.query(
                 f"MERGE `{self._table_id}` AS target "
                 "USING (SELECT @source AS source_name, @entity AS entity_name, "
                 "@cursor AS last_cursor) AS incoming "
@@ -128,10 +129,10 @@ class BigQueryWatermarkStore(WatermarkStore):
                 "WHEN NOT MATCHED THEN INSERT "
                 "(source_name, entity_name, last_cursor, updated_at) "
                 "VALUES (incoming.source_name, incoming.entity_name, "
-                "incoming.last_cursor, CURRENT_TIMESTAMP())"
-            ),
-            job_config=config,
-        ).result()
+                "incoming.last_cursor, CURRENT_TIMESTAMP())",
+                job_config=config,
+            )
+        )
 
     def compare_and_set(
         self,
@@ -172,11 +173,12 @@ class BigQueryWatermarkStore(WatermarkStore):
                 f"{merge};\nASSERT @@row_count = 1 AS 'Dander watermark boundary changed'",
                 fence,
             )
-        job = self._client.query(
-            statement,
-            job_config=bigquery.QueryJobConfig(query_parameters=parameters),
+        job = run_mutation_with_retry(
+            lambda: self._client.query(
+                statement,
+                job_config=bigquery.QueryJobConfig(query_parameters=parameters),
+            )
         )
-        job.result()
         return fence is not None or job.num_dml_affected_rows == 1
 
     def _ensure_table(self) -> None:
