@@ -1,10 +1,22 @@
 [project]
-name = "dander"
-version = "0.0.1"
+name = "dander-platform"
+version = "0.1.0rc1"
 description = "Opinionated, GCP-native, self-hosted data platform: ingest + transform + catalog behind one CLI."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+authors = [{ name = "Harrison O'Connor-Hover" }]
+keywords = ["bigquery", "data-platform", "etl", "gcp", "terraform"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Database",
+  "Topic :: Software Development :: Build Tools",
+]
 dependencies = [
   "dlt[bigquery]>=1.0",            # standard-REST ingestion path (hybrid decision)
   "google-cloud-bigquery>=3.25",
@@ -22,6 +34,11 @@ dependencies = [
   "tenacity>=8.5",                 # backoff/retry for the hand-rolled path
   "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/harrisonoconnorhover/dander"
+Issues = "https://github.com/harrisonoconnorhover/dander/issues"
+Repository = "https://github.com/harrisonoconnorhover/dander.git"
 
 [project.scripts]
 dander = "dander.cli.main:app"
@@ -41,8 +58,90 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+exclude = [
+  "**/.DS_Store",
+  "**/.terraform/**",
+  "**/__pycache__/**",
+  "**/*.tfplan",
+  "**/*.tfstate*",
+  "**/*.tfvars",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/dander"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"infra/.terraform.lock.hcl" = "dander/templates/project/infra/.terraform.lock.hcl"
+"infra/README.md" = "dander/templates/project/infra/README.md"
+"infra/__init__.py" = "dander/templates/project/infra/__init__.py"
+"infra/bootstrap-admin/.terraform.lock.hcl" = "dander/templates/project/infra/bootstrap-admin/.terraform.lock.hcl"
+"infra/bootstrap-admin/README.md" = "dander/templates/project/infra/bootstrap-admin/README.md"
+"infra/bootstrap-admin/main.tf" = "dander/templates/project/infra/bootstrap-admin/main.tf"
+"infra/bootstrap-admin/outputs.tf" = "dander/templates/project/infra/bootstrap-admin/outputs.tf"
+"infra/bootstrap-admin/variables.tf" = "dander/templates/project/infra/bootstrap-admin/variables.tf"
+"infra/bootstrap-admin/versions.tf" = "dander/templates/project/infra/bootstrap-admin/versions.tf"
+"infra/functions/__init__.py" = "dander/templates/project/infra/functions/__init__.py"
+"infra/functions/stop_billing/__init__.py" = "dander/templates/project/infra/functions/stop_billing/__init__.py"
+"infra/functions/stop_billing/handler.py" = "dander/templates/project/infra/functions/stop_billing/handler.py"
+"infra/functions/stop_billing/main.py" = "dander/templates/project/infra/functions/stop_billing/main.py"
+"infra/functions/stop_billing/requirements.txt" = "dander/templates/project/infra/functions/stop_billing/requirements.txt"
+"infra/main.tf" = "dander/templates/project/infra/main.tf"
+"infra/modules/bigquery/main.tf" = "dander/templates/project/infra/modules/bigquery/main.tf"
+"infra/modules/bigquery/outputs.tf" = "dander/templates/project/infra/modules/bigquery/outputs.tf"
+"infra/modules/bigquery/variables.tf" = "dander/templates/project/infra/modules/bigquery/variables.tf"
+"infra/modules/cost-guard/README.md" = "dander/templates/project/infra/modules/cost-guard/README.md"
+"infra/modules/cost-guard/main.tf" = "dander/templates/project/infra/modules/cost-guard/main.tf"
+"infra/modules/cost-guard/outputs.tf" = "dander/templates/project/infra/modules/cost-guard/outputs.tf"
+"infra/modules/cost-guard/variables.tf" = "dander/templates/project/infra/modules/cost-guard/variables.tf"
+"infra/modules/cost-guard/versions.tf" = "dander/templates/project/infra/modules/cost-guard/versions.tf"
+"infra/modules/github-wif/README.md" = "dander/templates/project/infra/modules/github-wif/README.md"
+"infra/modules/github-wif/main.tf" = "dander/templates/project/infra/modules/github-wif/main.tf"
+"infra/modules/github-wif/outputs.tf" = "dander/templates/project/infra/modules/github-wif/outputs.tf"
+"infra/modules/github-wif/variables.tf" = "dander/templates/project/infra/modules/github-wif/variables.tf"
+"infra/modules/github-wif/versions.tf" = "dander/templates/project/infra/modules/github-wif/versions.tf"
+"infra/modules/scheduled-job/README.md" = "dander/templates/project/infra/modules/scheduled-job/README.md"
+"infra/modules/scheduled-job/main.tf" = "dander/templates/project/infra/modules/scheduled-job/main.tf"
+"infra/modules/scheduled-job/outputs.tf" = "dander/templates/project/infra/modules/scheduled-job/outputs.tf"
+"infra/modules/scheduled-job/variables.tf" = "dander/templates/project/infra/modules/scheduled-job/variables.tf"
+"infra/modules/scheduled-job/versions.tf" = "dander/templates/project/infra/modules/scheduled-job/versions.tf"
+"infra/modules/secret-manager/README.md" = "dander/templates/project/infra/modules/secret-manager/README.md"
+"infra/modules/secret-manager/main.tf" = "dander/templates/project/infra/modules/secret-manager/main.tf"
+"infra/modules/secret-manager/outputs.tf" = "dander/templates/project/infra/modules/secret-manager/outputs.tf"
+"infra/modules/secret-manager/variables.tf" = "dander/templates/project/infra/modules/secret-manager/variables.tf"
+"infra/modules/secret-manager/versions.tf" = "dander/templates/project/infra/modules/secret-manager/versions.tf"
+"infra/outputs.tf" = "dander/templates/project/infra/outputs.tf"
+"infra/ownership-cutover.tf" = "dander/templates/project/infra/ownership-cutover.tf"
+"infra/sandbox.auto.tfvars.example" = "dander/templates/project/infra/sandbox.auto.tfvars.example"
+"infra/variables.tf" = "dander/templates/project/infra/variables.tf"
+"infra/versions.tf" = "dander/templates/project/infra/versions.tf"
+"connectors/greenhouse_job_board.yaml" = "dander/templates/project/connectors/greenhouse_job_board.yaml"
+"models/staging/stg_greenhouse__jobs.sql" = "dander/templates/project/models/staging/stg_greenhouse__jobs.sql"
+"models/staging/stg_greenhouse__jobs.yml" = "dander/templates/project/models/staging/stg_greenhouse__jobs.yml"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  ".dockerignore",
+  "Dockerfile",
+  "LICENSE",
+  "README.md",
+  "connectors",
+  "dander.yaml",
+  "infra",
+  "models",
+  "pyproject.toml",
+  "src",
+  "tests",
+  "uv.lock",
+]
+exclude = [
+  "**/.DS_Store",
+  "**/.terraform/**",
+  "**/__pycache__/**",
+  "**/*.tfplan",
+  "**/*.tfstate*",
+  "**/*.tfvars",
+]
 
 [tool.ruff]
 line-length = 100

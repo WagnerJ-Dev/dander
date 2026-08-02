@@ -2,40 +2,39 @@
 
 ## Finished
 
-- Added exclusive pipeline leases with heartbeats, overlap skipping, and monotonic fencing tokens.
-- Fenced BigQuery DML finalizers by conditionally touching the exact owned lease in-transaction.
-- Added atomic watermark compare-and-set from each endpoint's pre-extraction cursor boundary.
-- Failed closed before writes, transforms, cursor commits, and metadata publication after lease loss.
-- Preserved sandbox replace while explicitly excluding transactionally fenced cloud replacement.
+- Renamed the distribution to `dander-platform` at `0.1.0rc1`; imports and CLI remain `dander`.
+- Added `dander new DIR` with a paused Greenhouse project, Docker context, and Terraform modules.
+- Built clean wheel/sdist archives that exclude Terraform state, plans, caches, and private tfvars.
+- Added isolated artifact-install CI plus exact-tag, environment-gated PyPI trusted publishing.
+- Made installed-project runtime image hashing work without a cloned source tree.
 
 ## Try It
 
-- Run `uv run dander validate`.
-- Run `uv run pytest tests/state tests/test_runtime.py tests/test_executor.py`.
-- Run `uv run dander run greenhouse_jobs --dry-run --project PROJECT_ID`.
+- Run `uv run dander --version`.
+- Run `uv run dander new /tmp/my-dander && cd /tmp/my-dander && dander validate`.
+- Run `uv build` and `uv run python scripts/check_distribution.py dist/*.whl dist/*.tar.gz`.
 
 ## Checks
 
-- Ruff lint/format and strict mypy pass across source and tests.
-- All 573 tests and the focused lease/fencing/cursor suite pass locally.
-- Terraform format/init/validate pass for root and bootstrap-admin modules.
-- Locked dependency audit reports no known vulnerabilities.
-- Both tracked pipeline dry-runs, project validation, and local container smoke checks pass.
+- Ruff lint/format, strict mypy, and all 581 tests pass locally.
+- Direct wheel and sdist builds pass archive identity, required-asset, and hygiene validation.
+- Both artifacts install outside the checkout; version, scaffold, project, and Terraform validate.
+- Root/stage-zero Terraform, dependency audit, tracked dry-runs, and container smoke pass.
 
 ## Decisions
 
-- Overlaps are successful control-plane skips, not retried failures.
-- Hosted finalizers require an in-transaction DML lease touch; a lease `SELECT` never fences writes.
-- Cursor compare-and-set and fencing are one commit boundary for hosted incremental endpoints.
+- Distribution name and public import/command names intentionally differ.
+- Starter projects are complete but paused, guarded, and credential-free by default.
+- PyPI publishing is tag-exact, trusted, and separately environment-approved.
 
 ## Remaining
 
-- Run the complete repository validation matrix and merge Phase 4 through protected main.
-- Begin packaging only from the merged Phase 4 main branch.
-- No Terraform apply or GCP mutation occurred; none is authorized in this phase.
+- Run the full validation matrix and merge Phase 5 through protected main.
+- Obtain explicit approval before creating/pushing the candidate tag or publishing to PyPI.
+- No package publication, Terraform apply, or GCP mutation occurred.
 
 ## Review First
 
-- `src/dander/state/lease.py`
-- `src/dander/runtime.py`
-- `src/dander/executor.py`
+- `src/dander/project/scaffold.py`
+- `pyproject.toml`
+- `.github/workflows/publish.yml`

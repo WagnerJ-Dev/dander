@@ -1,0 +1,6 @@
+.dander/
+infra/.terraform/
+infra/*.tfplan
+infra/*.tfstate
+infra/*.tfstate.*
+infra/sandbox.auto.tfvars

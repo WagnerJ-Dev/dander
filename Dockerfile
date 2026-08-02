@@ -9,12 +9,13 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv==0.12.0
 
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
-RUN uv sync --frozen --no-dev --no-editable
-
 COPY connectors ./connectors
 COPY models ./models
+COPY infra ./infra
+RUN uv sync --frozen --no-dev --no-editable
+
 COPY dander.yaml ./dander.yaml
 
 USER 65532:65532

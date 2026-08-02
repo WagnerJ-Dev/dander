@@ -1,5 +1,14 @@
 # Engineering Decisions
 
+## 2026-08-01 — Installable distribution and complete starter project
+
+- PyPI distribution `dander-platform` avoids the occupied `dander` project name; the public Python
+  package and CLI remain `dander`, and version metadata has one installed-distribution source.
+- `dander new DIR` atomically copies a paused, credential-free project plus the tracked Terraform
+  modules and refuses every existing destination. Local plans, state, caches, and tfvars never ship.
+- Release publication accepts only an exact version tag and uses a reviewed `pypi` environment with
+  trusted publishing. Wheel and sdist must both install and run outside the source checkout.
+
 ## 2026-08-01 — Exclusive runs, transactional fencing, and cursor CAS
 
 - Named pipelines acquire one expiring lease and heartbeat it throughout execution. An overlap is

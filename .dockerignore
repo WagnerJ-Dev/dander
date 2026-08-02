@@ -4,6 +4,7 @@
 !pyproject.toml
 !uv.lock
 !README.md
+!LICENSE
 !dander.yaml
 !src/
 !src/**
@@ -11,3 +12,12 @@
 !connectors/**
 !models/
 !models/**
+!infra/
+!infra/**
+infra/.DS_Store
+infra/.terraform/
+infra/**/.terraform/
+infra/**/__pycache__/
+infra/**/*.tfplan
+infra/**/*.tfstate*
+infra/**/*.tfvars
