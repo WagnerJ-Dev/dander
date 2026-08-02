@@ -42,6 +42,22 @@ def test_concurrent_update_transaction_is_resubmitted(monkeypatch: MonkeyPatch) 
     assert delays == [0.25]
 
 
+def test_serialization_message_is_also_resubmitted(monkeypatch: MonkeyPatch) -> None:
+    success = _Job()
+    jobs = [
+        _Job(
+            BadRequest(  # type: ignore[no-untyped-call]
+                "Could not serialize access to table p:d.t due to concurrent update"
+            )
+        ),
+        success,
+    ]
+    monkeypatch.setattr("dander._bigquery_retry.random.uniform", lambda _start, _end: 0.0)
+    monkeypatch.setattr(_bigquery_retry, "sleep", lambda _delay: None)
+
+    assert _bigquery_retry.run_mutation_with_retry(lambda: jobs.pop(0)) is success
+
+
 def test_unrelated_bad_request_is_not_retried(monkeypatch: MonkeyPatch) -> None:
     submissions = 0
 

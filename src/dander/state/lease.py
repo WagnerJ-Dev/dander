@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import sqlite3
@@ -92,9 +93,9 @@ class BigQueryLeaseStore(LeaseStore):
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", dataset):
             raise ValueError(f"Invalid BigQuery dataset: {dataset!r}")
         self._lease_seconds = _validated_lease_seconds(lease_seconds)
-        self._table = f"{project}.{dataset}._dander_leases"
+        self._table_prefix = f"{project}.{dataset}._dander_lease_"
         self._client = client or cast("_BigQueryClient", bigquery.Client(project=project))
-        self._ready = False
+        self._ready: set[str] = set()
 
     @property
     def lease_seconds(self) -> int:
@@ -102,11 +103,12 @@ class BigQueryLeaseStore(LeaseStore):
 
     def acquire(self, pipeline_id: str, run_id: str) -> LeaseHandle | None:
         """Conditionally claim one row and increment its fencing token."""
-        self._ensure_table()
+        table = self._table_for_pipeline(pipeline_id)
+        self._ensure_table(table)
         config = _lease_config(pipeline_id, run_id)
         run_mutation_with_retry(
             lambda: self._client.query(
-                f"MERGE `{self._table}` AS target "
+                f"MERGE `{table}` AS target "
                 "USING (SELECT @pipeline_id AS pipeline_id) AS incoming "
                 "ON target.pipeline_id = incoming.pipeline_id "
                 "WHEN NOT MATCHED THEN INSERT "
@@ -118,7 +120,7 @@ class BigQueryLeaseStore(LeaseStore):
         )
         claim = run_mutation_with_retry(
             lambda: self._client.query(
-                f"UPDATE `{self._table}` SET run_id = @run_id, "
+                f"UPDATE `{table}` SET run_id = @run_id, "
                 "fencing_token = fencing_token + 1, heartbeat_at = CURRENT_TIMESTAMP(), "
                 "lease_expires_at = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), "
                 f"INTERVAL {self._lease_seconds} SECOND) "
@@ -131,7 +133,7 @@ class BigQueryLeaseStore(LeaseStore):
             return None
         rows = list(
             self._client.query(
-                f"SELECT fencing_token FROM `{self._table}` "
+                f"SELECT fencing_token FROM `{table}` "
                 "WHERE pipeline_id = @pipeline_id AND run_id = @run_id "
                 "AND lease_expires_at > CURRENT_TIMESTAMP()",
                 job_config=config,
@@ -148,7 +150,7 @@ class BigQueryLeaseStore(LeaseStore):
             fencing_token=token,
             lease_seconds=self._lease_seconds,
             fence=FencingToken(
-                lease_table=self._table,
+                lease_table=table,
                 pipeline_id=pipeline_id,
                 run_id=run_id,
                 token=token,
@@ -156,10 +158,11 @@ class BigQueryLeaseStore(LeaseStore):
         )
 
     def heartbeat(self, lease: LeaseHandle) -> bool:
-        self._ensure_table()
+        table = self._table_for_pipeline(lease.pipeline_id)
+        self._ensure_table(table)
         job = run_mutation_with_retry(
             lambda: self._client.query(
-                f"UPDATE `{self._table}` SET heartbeat_at = CURRENT_TIMESTAMP(), "
+                f"UPDATE `{table}` SET heartbeat_at = CURRENT_TIMESTAMP(), "
                 "lease_expires_at = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), "
                 f"INTERVAL {self._lease_seconds} SECOND) "
                 "WHERE pipeline_id = @pipeline_id AND run_id = @run_id "
@@ -175,10 +178,11 @@ class BigQueryLeaseStore(LeaseStore):
         return job.num_dml_affected_rows == 1
 
     def release(self, lease: LeaseHandle) -> bool:
-        self._ensure_table()
+        table = self._table_for_pipeline(lease.pipeline_id)
+        self._ensure_table(table)
         job = run_mutation_with_retry(
             lambda: self._client.query(
-                f"UPDATE `{self._table}` SET run_id = NULL, "
+                f"UPDATE `{table}` SET run_id = NULL, "
                 "heartbeat_at = CURRENT_TIMESTAMP(), lease_expires_at = CURRENT_TIMESTAMP() "
                 "WHERE pipeline_id = @pipeline_id AND run_id = @run_id "
                 "AND fencing_token = @fencing_token",
@@ -191,16 +195,20 @@ class BigQueryLeaseStore(LeaseStore):
         )
         return job.num_dml_affected_rows == 1
 
-    def _ensure_table(self) -> None:
-        if self._ready:
+    def _table_for_pipeline(self, pipeline_id: str) -> str:
+        digest = hashlib.sha256(pipeline_id.encode("utf-8")).hexdigest()[:16]
+        return f"{self._table_prefix}{digest}"
+
+    def _ensure_table(self, table: str) -> None:
+        if table in self._ready:
             return
         self._client.query(
-            f"CREATE TABLE IF NOT EXISTS `{self._table}` ("
+            f"CREATE TABLE IF NOT EXISTS `{table}` ("
             "pipeline_id STRING NOT NULL, run_id STRING, fencing_token INT64 NOT NULL, "
             "heartbeat_at TIMESTAMP, lease_expires_at TIMESTAMP NOT NULL) "
             "CLUSTER BY pipeline_id"
         ).result()
-        self._ready = True
+        self._ready.add(table)
 
 
 class SqliteLeaseStore(LeaseStore):

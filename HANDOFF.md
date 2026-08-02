@@ -2,13 +2,12 @@
 
 ## Finished
 
-- Published `0.1.0rc5` and deployed its source-free image with both retained schedules paused.
-- Reproduced the retained overlap failure: different pipelines concurrently touching the shared
-  BigQuery lease table could abort fenced finalization transactions.
-- Prepared `0.1.0rc6` with bounded, exact-error retries around BigQuery control mutations and
-  transactionally fenced finalizers.
-- Added regression coverage proving retry, unrelated-error pass-through, exhaustion, and the
-  hosted SCD1 finalizer path.
+- Published and deployed source-free `0.1.0rc6` with both retained schedules paused.
+- Reproduced the rc6 failure: BigQuery serializes concurrent DML by table, so separate pipeline
+  rows in one lease table still caused cross-pipeline aborts and a misleading task retry success.
+- Prepared `0.1.0rc7` with deterministic per-pipeline lease tables and bounded retry support for
+  both observed BigQuery serialization errors.
+- Added regression coverage for pipeline isolation, stable table naming, and alternate-error retry.
 - Preserved the completed fresh-project source-free Greenhouse proof from public rc4.
 
 ## Try It
@@ -19,28 +18,25 @@
 
 ## Checks
 
-- All 592 tests, Ruff lint/format, strict mypy, dependency audit, and lock validation pass.
+- All 594 tests, Ruff lint/format, strict mypy, dependency audit, and lock validation pass.
 - Root, stage-zero, and generated-project Terraform formatting and validation pass.
-- Fresh rc6 wheel and sdist pass archive checks; the wheel installs outside the checkout and
-  generates a validated source-free project with the rc6 Docker pin and no `src/` directory.
 
 ## Decisions
 
-- Retry only the exact BigQuery concurrent-update transaction abort; fencing, stale-cursor,
-  permission, schema, and unrelated BigQuery errors still fail immediately.
-- Retry the entire aborted transaction at most five submissions, preserving atomic publication and
-  cursor semantics.
-- Keep both retained schedulers paused until rc6 acceptance finishes.
+- Isolate lease DML by pipeline because BigQuery contention is table-wide, not row-scoped.
+- Leave the historical shared lease table untouched; rc7 creates deterministic isolated tables on
+  demand and retains exact-error retry for same-pipeline races.
+- Keep both retained schedulers paused until rc7 acceptance finishes.
 
 ## Remaining
 
-- Merge and publish `0.1.0rc6` through protected GitHub and PyPI environments.
-- Deploy the public source-free rc6 image and rerun the exact cross-pipeline overlap first.
+- Build and externally install rc7, then merge and publish it through protected environments.
+- Deploy the public source-free rc7 image and rerun the exact cross-pipeline overlap first.
 - Complete retained acceptance, restore schedules, and require a no-drift Terraform plan.
-- Publish and smoke final `0.1.0` when rc6 passes.
+- Publish and smoke final `0.1.0` when rc7 passes.
 
 ## Review First
 
 - `src/dander/_bigquery_retry.py`
 - `src/dander/state/lease.py`
-- `src/dander/writer/bigquery.py`
+- `tests/state/test_lease.py`
