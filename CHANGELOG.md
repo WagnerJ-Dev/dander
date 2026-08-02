@@ -4,7 +4,7 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: `0.1.x` contains fixes only, and the next product capability
 will be `0.2.0`.
 
-## 0.1.0 — unreleased alpha
+## 0.1.0 — 2026-08-02 (alpha)
 
 ### Added
 
@@ -21,11 +21,15 @@ will be `0.2.0`.
 - Classify the public product and package metadata as alpha.
 - Correct retained-project documentation to reflect that both hosted schedules are enabled.
 
-### Release gate
+### Acceptance
 
-Publication waits for bounded candidate acceptance in the retained project and one independent,
-source-free Greenhouse installation in a fresh disposable GCP project. The post-release operator
-soak does not block this release.
+- Public `0.1.0rc7` installed and generated a validated source-free project outside the checkout.
+- A fresh disposable project completed the independent source-free Greenhouse installation gate.
+- The retained project passed simultaneous Greenhouse/HubSpot execution, Greenhouse replay,
+  HubSpot create/update/replay/cleanup, same-pipeline overlap, cursor, lease, staging, alert, and
+  duplicate checks.
+- Both schedules were restored to the tracked enabled state and the final Terraform plan reported
+  no changes. The post-release operator soak does not block this release.
 
 ## 0.1.0rc7 — 2026-08-02
 

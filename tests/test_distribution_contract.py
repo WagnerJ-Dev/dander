@@ -8,11 +8,11 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 
 
-def test_distribution_identity_and_version_are_release_candidate() -> None:
+def test_distribution_identity_and_version_are_public_release() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 
     assert project["name"] == "dander-platform"
-    assert project["version"] == "0.1.0rc7"
+    assert project["version"] == "0.1.0"
     assert project["scripts"]["dander"] == "dander.cli.main:app"
 
 
