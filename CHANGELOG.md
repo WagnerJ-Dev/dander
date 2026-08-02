@@ -4,6 +4,23 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: `0.1.x` contains fixes only, and the next product capability
 will be `0.2.0`.
 
+## 0.1.1 — 2026-08-02 (alpha)
+
+### Fixed
+
+- Make newly generated hosted projects default to the existing unguarded installation path, so
+  standard provisioning needs no billing-account ID or billing-account IAM changes.
+- Omit the managed cost guard, guard-specific IAM, and guarded runtime preflight when that existing
+  safety setting is disabled, while preserving the opt-in guarded path.
+
+### Acceptance
+
+- Public `0.1.1rc1` installed source-free in a fresh billing-linked project using an operator
+  identity with no billing-account IAM role.
+- The hosted Greenhouse run ingested 21 rows, built one model, passed three assertions, recorded a
+  successful run, enabled its daily schedule, and finished with a no-change Terraform plan.
+- The `0.1.1` runtime is unchanged from the accepted candidate.
+
 ## 0.1.1rc1 — 2026-08-02
 
 ### Fixed
