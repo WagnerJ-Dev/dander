@@ -4,6 +4,15 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: `0.1.x` contains fixes only, and the next product capability
 will be `0.2.0`.
 
+## 0.1.1rc1 — 2026-08-02
+
+### Fixed
+
+- Make newly generated hosted projects default to the existing unguarded installation path, so
+  standard provisioning needs no billing-account ID or billing-account IAM changes.
+- Omit the managed cost guard, guard-specific IAM, and guarded runtime preflight when that existing
+  safety setting is disabled, while preserving the opt-in guarded path.
+
 ## 0.1.0 — 2026-08-02 (alpha)
 
 ### Added
