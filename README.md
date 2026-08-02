@@ -399,6 +399,21 @@ older inference-based release may therefore need an operator-reviewed migration 
 Dander will not guess a destructive conversion. Running a connector directly without
 `dander.yaml` may still omit `raw_schema` for compatibility, but that inference path is deprecated.
 
+### Concurrency and cursor safety
+
+Every named pipeline acquires one exclusive lease before extraction. Hosted runs keep that lease
+in `dander_meta._dander_leases`; sandbox runs use `.dander/state.db`. A second invocation records a
+terminal `skipped` run instead of overlapping the active owner. Heartbeats renew the lease, and a
+run that cannot renew fails closed before its next write, transform, or metadata publication.
+
+Each successful acquisition receives a monotonically increasing fencing token. BigQuery DML
+finalizers conditionally update the matching pipeline ID, run ID, and token inside the same
+transaction as target mutation; a read-only lease check is not sufficient. Cursor commits use
+compare-and-set against the watermark read before extraction and perform that same fenced lease
+touch in hosted execution. A stale run can therefore neither publish a DML finalizer nor advance a
+newer run's cursor. Sandbox replace remains atomic but is not claimed as transactionally fenced
+cloud publication.
+
 ### Build and test SQL models
 
 Every SQL model has a YAML sidecar that defines its materialization, catalog metadata, columns, and
@@ -460,13 +475,14 @@ and [Dataplex aspect management](https://docs.cloud.google.com/dataplex/docs/enr
 Current v0 limits are explicit: hosted SCD1 and sandbox replacement consume bounded endpoint
 batches, while direct SCD2, snapshot, incremental-writer, and Storage Write orchestration retain
 their existing logical-batch behavior. Schema evolution is intentionally limited to declared
-nullable scalar additions, and the
-Storage Write transport supports an explicitly bounded scalar subset. Public Job Board extraction
-is a full refresh and does not delete jobs that disappear from a board. The CLI bootstrap can plan
-Secret Manager, IAM/WIF, the complete scheduled public pipeline, and a simulation-first cost guard,
-but deploying those opt-in services may be billable. Visual graph execution supports safe mappings,
-expressions, built-in transforms, and two-input joins; live provider/catalog/Storage Write proof
-still requires external accounts or billable services. The tracked completion ledger is in
+nullable scalar additions, and the Storage Write transport supports an explicitly bounded scalar
+subset. Cloud replace publication is deliberately not advertised as transactionally fenced.
+Public Job Board extraction is a full refresh and does not delete jobs that disappear from a board.
+The CLI bootstrap can plan Secret Manager, IAM/WIF, the complete scheduled public pipeline, and a
+simulation-first cost guard, but deploying those opt-in services may be billable. Visual graph
+execution supports safe mappings, expressions, built-in transforms, and two-input joins; live
+provider/catalog/Storage Write proof still requires external accounts or billable services. The
+tracked completion ledger is in
 [`docs/spec-alignment.md`](docs/spec-alignment.md).
 
 ## The agent workforce & the `/feature` workflow

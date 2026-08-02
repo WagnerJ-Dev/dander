@@ -2,40 +2,40 @@
 
 ## Finished
 
-- Added recursive `Endpoint.raw_schema` declarations and required them for hosted pipelines.
-- Normalized sparse/nested/repeated records and rejected undeclared or invalid values safely.
-- Bootstrapped empty BigQuery targets and preserved atomic sandbox replacement through table copy.
-- Limited hosted evolution to missing top-level nullable fields; all other deployed drift fails.
-- Declared the retained Greenhouse and HubSpot raw schemas without changing GCP or Terraform.
+- Added exclusive pipeline leases with heartbeats, overlap skipping, and monotonic fencing tokens.
+- Fenced BigQuery DML finalizers by conditionally touching the exact owned lease in-transaction.
+- Added atomic watermark compare-and-set from each endpoint's pre-extraction cursor boundary.
+- Failed closed before writes, transforms, cursor commits, and metadata publication after lease loss.
+- Preserved sandbox replace while explicitly excluding transactionally fenced cloud replacement.
 
 ## Try It
 
 - Run `uv run dander validate`.
-- Run `uv run pytest tests/test_runtime.py tests/writer/test_bigquery_writer.py`.
+- Run `uv run pytest tests/state tests/test_runtime.py tests/test_executor.py`.
 - Run `uv run dander run greenhouse_jobs --dry-run --project PROJECT_ID`.
 
 ## Checks
 
 - Ruff lint/format and strict mypy pass across source and tests.
-- All 550 tests pass; both tracked pipeline dry-runs and `dander validate` pass.
+- All 573 tests and the focused lease/fencing/cursor suite pass locally.
 - Terraform format/init/validate pass for root and bootstrap-admin modules.
 - Locked dependency audit reports no known vulnerabilities.
-- Local container build, CLI/user smoke, and bundled HubSpot asset checks pass.
+- Both tracked pipeline dry-runs, project validation, and local container smoke checks pass.
 
 ## Decisions
 
-- Hosted schemas are complete source contracts, not metadata-spine projections.
-- Only missing top-level `NULLABLE` fields evolve automatically; nested/type/mode/removal drift fails.
-- Legacy direct-source inference remains deprecated compatibility behavior.
+- Overlaps are successful control-plane skips, not retried failures.
+- Hosted finalizers require an in-transaction DML lease touch; a lease `SELECT` never fences writes.
+- Cursor compare-and-set and fencing are one commit boundary for hosted incremental endpoints.
 
 ## Remaining
 
-- Merge Phase 3 through protected main before starting Phase 4.
-- Pre-schema inferred tables may need an operator-reviewed migration before a future live proof.
+- Run the complete repository validation matrix and merge Phase 4 through protected main.
+- Begin packaging only from the merged Phase 4 main branch.
 - No Terraform apply or GCP mutation occurred; none is authorized in this phase.
 
 ## Review First
 
+- `src/dander/state/lease.py`
 - `src/dander/runtime.py`
-- `src/dander/writer/bigquery.py`
-- `src/dander/ingestion/source.py`
+- `src/dander/executor.py`

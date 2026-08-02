@@ -10,16 +10,30 @@ from dander.catalog import MetadataSnapshot, MetadataStore
 from dander.executor import PipelineExecutor
 from dander.ingestion import Endpoint, SourceConfig
 from dander.runtime import EndpointRunResult, PipelineRunResult
-from dander.state import RunHistoryStore, RunStage, RunStatus
+from dander.state import (
+    LeaseHandle,
+    LeaseLostError,
+    LeaseStore,
+    RunHistoryStore,
+    RunStage,
+    RunStatus,
+)
 from dander.transform import TransformRunResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
+    from dander.concurrency import OwnershipGuard
+
 
 class _Ingestion:
-    def run(self, *, run_id: str | None = None) -> PipelineRunResult:
+    def run(
+        self,
+        *,
+        run_id: str | None = None,
+        ownership: OwnershipGuard | None = None,
+    ) -> PipelineRunResult:
         assert run_id is not None
         return PipelineRunResult(
             run_id=run_id,
@@ -44,6 +58,7 @@ class _Transform:
         models_dir: Path,
         *,
         selected: Iterable[str] | None = None,
+        ownership: OwnershipGuard | None = None,
     ) -> TransformRunResult:
         assert models_dir.is_dir()
         assert tuple(selected or ()) == ("stg_widgets",)
@@ -107,6 +122,29 @@ class _Metadata(MetadataStore):
         return ()
 
 
+class _Leases(LeaseStore):
+    def __init__(self, *, available: bool, heartbeat: bool = True) -> None:
+        self._available = available
+        self._heartbeat = heartbeat
+        self.released = False
+
+    @property
+    def lease_seconds(self) -> int:
+        return 30
+
+    def acquire(self, pipeline_id: str, run_id: str) -> LeaseHandle | None:
+        if not self._available:
+            return None
+        return LeaseHandle(pipeline_id, run_id, 1, self.lease_seconds)
+
+    def heartbeat(self, lease: LeaseHandle) -> bool:
+        return self._heartbeat
+
+    def release(self, lease: LeaseHandle) -> bool:
+        self.released = True
+        return True
+
+
 def _models(models_dir: Path) -> None:
     staging = models_dir / "staging"
     staging.mkdir(parents=True)
@@ -144,6 +182,7 @@ def _executor(
     history: _History,
     metadata: _Metadata,
     fail_transform: bool = False,
+    leases: LeaseStore | None = None,
 ) -> PipelineExecutor:
     source = SourceConfig(
         name="example",
@@ -169,6 +208,7 @@ def _executor(
         build_models=True,
         transform_runner=_Transform(fail=fail_transform),
         metadata_store=metadata,
+        leases=leases,
     )
 
 
@@ -207,3 +247,42 @@ def test_executor_marks_transform_failure_without_claiming_ingestion_only_succes
 
     assert history.checkpoints == [RunStage.TRANSFORM]
     assert history.finished == (RunStatus.FAILED, RunStage.TRANSFORM, 0, 0, 0)
+
+
+def test_executor_records_active_overlap_as_skipped_without_running_pipeline(
+    tmp_path: Path,
+) -> None:
+    _models(tmp_path)
+    history = _History()
+
+    result = _executor(
+        tmp_path,
+        history=history,
+        metadata=_Metadata(),
+        leases=_Leases(available=False),
+    ).execute()
+
+    assert result.skipped
+    assert result.ingestion.endpoints == ()
+    assert history.checkpoints == []
+    assert history.finished == (RunStatus.SKIPPED, None, 0, 0, 0)
+
+
+def test_executor_fails_closed_before_transform_when_heartbeat_is_lost(
+    tmp_path: Path,
+) -> None:
+    _models(tmp_path)
+    history = _History()
+    leases = _Leases(available=True, heartbeat=False)
+
+    with pytest.raises(LeaseLostError, match="ownership was lost"):
+        _executor(
+            tmp_path,
+            history=history,
+            metadata=_Metadata(),
+            leases=leases,
+        ).execute()
+
+    assert history.checkpoints == [RunStage.TRANSFORM]
+    assert history.finished == (RunStatus.FAILED, RunStage.TRANSFORM, 0, 0, 0)
+    assert leases.released

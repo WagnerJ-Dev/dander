@@ -21,6 +21,7 @@ class RunStatus(StrEnum):
 
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 class RunStage(StrEnum):
@@ -191,7 +192,11 @@ class BigQueryRunHistoryStore(RunHistoryStore):
         self._update(
             run_id,
             status=status,
-            stage=RunStage.COMPLETE if status is RunStatus.SUCCEEDED else failure_stage,
+            stage=(
+                RunStage.COMPLETE
+                if status in {RunStatus.SUCCEEDED, RunStatus.SKIPPED}
+                else failure_stage
+            ),
             endpoints=endpoints,
             extracted=extracted,
             affected=affected,
@@ -376,7 +381,11 @@ class SqliteRunHistoryStore(RunHistoryStore):
         assets: int = 0,
         failure_stage: RunStage | None = None,
     ) -> None:
-        stage = RunStage.COMPLETE if status is RunStatus.SUCCEEDED else failure_stage
+        stage = (
+            RunStage.COMPLETE
+            if status in {RunStatus.SUCCEEDED, RunStatus.SKIPPED}
+            else failure_stage
+        )
         with sqlite3.connect(self._path) as connection:
             connection.execute(
                 "UPDATE runs SET status = ?, stage = ?, finished_at = CURRENT_TIMESTAMP, "

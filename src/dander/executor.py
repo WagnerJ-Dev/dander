@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
 from dander.catalog import MetadataSpine, SemanticRegistryPublisher
-from dander.state import RunStage, RunStatus
+from dander.runtime import PipelineRunResult
+from dander.state import LeaseHeartbeat, RunStage, RunStatus
 from dander.transform import TransformProject, TransformRunResult
 
 if TYPE_CHECKING:
@@ -16,9 +17,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from dander.catalog import CatalogAsset, MetadataStore
+    from dander.concurrency import OwnershipGuard
     from dander.ingestion import SourceConfig
-    from dander.runtime import PipelineRunner, PipelineRunResult
-    from dander.state import RunHistoryStore
+    from dander.runtime import PipelineRunner
+    from dander.state import LeaseStore, RunHistoryStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +31,7 @@ class _TransformRunner(Protocol):
         models_dir: Path,
         *,
         selected: Iterable[str] | None = None,
+        ownership: OwnershipGuard | None = None,
     ) -> TransformRunResult:
         """Build models and run their assertions."""
 
@@ -48,6 +51,7 @@ class PipelineExecutionResult:
     models: tuple[str, ...]
     assertions: int
     assets: int
+    skipped: bool = False
 
 
 class PipelineExecutor:
@@ -68,6 +72,7 @@ class PipelineExecutor:
         metadata_store: MetadataStore | None = None,
         registry_output: Path | None = None,
         dataplex_publisher: _DataplexPublisher | None = None,
+        leases: LeaseStore | None = None,
     ) -> None:
         if build_models and transform_runner is None:
             raise ValueError("A transform runner is required when build_models is enabled")
@@ -83,6 +88,7 @@ class PipelineExecutor:
         self._metadata_store = metadata_store
         self._registry_output = registry_output
         self._dataplex_publisher = dataplex_publisher
+        self._leases = leases
 
     def execute(self) -> PipelineExecutionResult:
         """Execute every enabled stage and record one truthful terminal outcome."""
@@ -94,8 +100,45 @@ class PipelineExecutor:
             self._source_config.name,
             pipeline_id=self._pipeline_id,
         )
+        heartbeat: LeaseHeartbeat | None = None
         try:
-            ingestion_result = self._ingestion.run(run_id=run_id)
+            if self._leases is not None:
+                lease = self._leases.acquire(self._pipeline_id, run_id)
+                if lease is None:
+                    self._history.finish(
+                        run_id,
+                        RunStatus.SKIPPED,
+                        endpoints=0,
+                        extracted=0,
+                        affected=0,
+                    )
+                    _LOGGER.info(
+                        "pipeline_overlap_skipped",
+                        extra={
+                            "dander_event": "pipeline_overlap_skipped",
+                            "pipeline_id": self._pipeline_id,
+                            "run_id": run_id,
+                        },
+                    )
+                    return PipelineExecutionResult(
+                        run_id=run_id,
+                        pipeline_id=self._pipeline_id,
+                        ingestion=PipelineRunResult(
+                            run_id=run_id,
+                            source=self._source_config.name,
+                            endpoints=(),
+                        ),
+                        models=(),
+                        assertions=0,
+                        assets=0,
+                        skipped=True,
+                    )
+                heartbeat = LeaseHeartbeat(self._leases, lease)
+                heartbeat.__enter__()
+            ingestion_result = self._ingestion.run(
+                run_id=run_id,
+                ownership=heartbeat,
+            )
             endpoints = len(ingestion_result.endpoints)
             extracted = sum(result.extracted for result in ingestion_result.endpoints)
             affected = sum(result.affected for result in ingestion_result.endpoints)
@@ -111,9 +154,12 @@ class PipelineExecutor:
                     affected=affected,
                 )
                 assert self._transform_runner is not None
+                if heartbeat is not None:
+                    heartbeat.verify()
                 transform_result = self._transform_runner.build(
                     self._models_dir,
                     selected=self._selected_models,
+                    ownership=heartbeat,
                 )
                 models = len(transform_result.models)
                 assertions = transform_result.assertions
@@ -146,17 +192,25 @@ class PipelineExecutor:
                 )
                 assets = len(compiled_assets)
                 if self._metadata_store is not None:
+                    if heartbeat is not None:
+                        heartbeat.verify()
                     self._metadata_store.publish(
                         pipeline_id=self._pipeline_id,
                         run_id=run_id,
                         manifest=manifest,
                     )
                 if self._registry_output is not None:
+                    if heartbeat is not None:
+                        heartbeat.verify()
                     SemanticRegistryPublisher().publish(manifest, self._registry_output)
                 if self._dataplex_publisher is not None:
                     for asset in compiled_assets:
+                        if heartbeat is not None:
+                            heartbeat.verify()
                         self._dataplex_publisher.publish(asset)
 
+            if heartbeat is not None:
+                heartbeat.verify()
             self._history.finish(
                 run_id,
                 RunStatus.SUCCEEDED,
@@ -190,6 +244,9 @@ class PipelineExecutor:
                     },
                 )
             raise
+        finally:
+            if heartbeat is not None:
+                heartbeat.__exit__()
         return PipelineExecutionResult(
             run_id=run_id,
             pipeline_id=self._pipeline_id,

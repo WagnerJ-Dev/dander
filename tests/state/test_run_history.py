@@ -47,3 +47,21 @@ def test_sqlite_run_history_persists_terminal_aggregates(tmp_path: Path) -> None
     assert len(records) == 1
     assert records[0].pipeline_id == "greenhouse_jobs"
     assert records[0].stage is RunStage.COMPLETE
+
+
+def test_sqlite_run_history_records_overlap_as_skipped_complete(tmp_path: Path) -> None:
+    store = SqliteRunHistoryStore(tmp_path / "state.db")
+    store.start("run-skipped", "hubspot", pipeline_id="hubspot_companies")
+
+    store.finish(
+        "run-skipped",
+        RunStatus.SKIPPED,
+        endpoints=0,
+        extracted=0,
+        affected=0,
+    )
+
+    record = store.recent(pipeline_id="hubspot_companies")[0]
+    assert record.status is RunStatus.SKIPPED
+    assert record.stage is RunStage.COMPLETE
+    assert record.failure_stage is None

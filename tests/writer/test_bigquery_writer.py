@@ -8,6 +8,7 @@ import pytest
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
+from dander.concurrency import FencingToken
 from dander.writer import (
     BigQueryIncrementalWriter,
     BigQueryReplaceWriter,
@@ -49,6 +50,7 @@ class _Client:
         self.loaded_batches: list[list[dict[str, Any]]] = []
         self.destination = ""
         self.queries: list[str] = []
+        self.query_configs: list[bigquery.QueryJobConfig | None] = []
         self.deleted: list[str] = []
         self.write_disposition: str | None = None
         self.write_dispositions: list[str] = []
@@ -127,8 +129,14 @@ class _Client:
             self.tables[destination] = bigquery.Table(destination, schema=source.schema)
         return _Job()
 
-    def query(self, query: str) -> _Job:
+    def query(
+        self,
+        query: str,
+        *,
+        job_config: bigquery.QueryJobConfig | None = None,
+    ) -> _Job:
         self.queries.append(query)
+        self.query_configs.append(job_config)
         return _Job(affected=2 if query.startswith("MERGE") else None)
 
     def delete_table(self, table: str, *, not_found_ok: bool = False) -> None:
@@ -143,6 +151,21 @@ def _target() -> WriteTarget:
         dataset="raw",
         table="example_widgets",
         business_key=("id",),
+    )
+
+
+def _fenced_target() -> WriteTarget:
+    return WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        fence=FencingToken(
+            lease_table="unit-project.meta._dander_leases",
+            pipeline_id="example_pipeline",
+            run_id="run-one",
+            token=11,
+        ),
     )
 
 
@@ -173,6 +196,45 @@ def test_scd1_deduplicates_last_record_and_builds_explicit_merge() -> None:
     assert "target.`label` = source.`label`" in merge
     assert "SELECT *" not in merge
     assert client.deleted == [client.destination]
+
+
+def test_scd1_finalizer_dml_touches_matching_lease_inside_transaction() -> None:
+    client = _Client()
+    writer = BigQueryScd1Writer(project="unit-project", client=client)
+    fence = FencingToken(
+        lease_table="unit-project.meta._dander_leases",
+        pipeline_id="greenhouse_jobs",
+        run_id="run-one",
+        token=11,
+    )
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        fence=fence,
+    )
+
+    writer.write([{"id": "one", "label": "active"}], target)
+
+    script = client.queries[-1]
+    assert script.startswith("BEGIN TRANSACTION;\nUPDATE `unit-project.meta._dander_leases`")
+    assert "pipeline_id = @dander_pipeline_id" in script
+    assert "run_id = @dander_run_id" in script
+    assert "fencing_token = @dander_fencing_token" in script
+    assert "ASSERT @@row_count = 1 AS 'Dander pipeline lease lost'" in script
+    assert "MERGE `unit-project.raw.example_widgets`" in script
+    assert script.index("UPDATE `unit-project.meta._dander_leases`") < script.index(
+        "MERGE `unit-project.raw.example_widgets`"
+    )
+    assert "SELECT" not in script.split("ASSERT @@row_count", 1)[0]
+    config = client.query_configs[-1]
+    assert config is not None
+    assert {parameter.name: parameter.value for parameter in config.query_parameters} == {
+        "dander_pipeline_id": "greenhouse_jobs",
+        "dander_run_id": "run-one",
+        "dander_fencing_token": 11,
+    }
 
 
 def test_writer_rejects_inconsistent_shape_before_network() -> None:
@@ -213,6 +275,17 @@ def test_replace_writer_stages_then_atomically_replaces_target() -> None:
         )
     ]
     assert client.deleted == [client.destination]
+
+
+def test_replace_writer_rejects_cloud_fence_instead_of_claiming_transactional_safety() -> None:
+    client = _Client()
+    writer = BigQueryReplaceWriter(project="unit-project", client=client)
+
+    with pytest.raises(BigQueryWriteError, match="does not provide transactionally fenced"):
+        writer.write([{"id": "one"}], _fenced_target())
+
+    assert client.loaded_batches == []
+    assert client.queries == []
 
 
 def test_replace_writer_deletes_stale_table_for_empty_snapshot() -> None:
@@ -638,6 +711,24 @@ def test_snapshot_writer_partitions_and_suppresses_exact_reruns() -> None:
     assert client.deleted == [client.destination]
 
 
+def test_snapshot_insert_honors_cloud_fence() -> None:
+    client = _Client()
+    writer = BigQuerySnapshotWriter(
+        project="unit-project",
+        snapshot_field="snapshot_at",
+        client=client,
+    )
+
+    writer.write(
+        [{"id": "one", "snapshot_at": "2026-07-29T12:00:00Z"}],
+        _fenced_target(),
+    )
+
+    script = client.queries[-1]
+    assert script.startswith("BEGIN TRANSACTION;\nUPDATE `unit-project.meta._dander_leases`")
+    assert "INSERT INTO `unit-project.raw.example_widgets`" in script
+
+
 def test_snapshot_writer_rejects_missing_or_null_snapshot_value() -> None:
     writer = BigQuerySnapshotWriter(
         project="unit-project",
@@ -681,6 +772,20 @@ def test_scd2_writer_builds_transactional_change_history() -> None:
     assert "COMMIT TRANSACTION" in history
     assert "SELECT *" not in history
     assert client.deleted == [client.destination]
+
+
+def test_scd2_transaction_touches_matching_lease_before_history_mutation() -> None:
+    client = _Client()
+    writer = BigQueryScd2Writer(project="unit-project", client=client)
+
+    writer.write([{"id": "one", "label": "new"}], _fenced_target())
+
+    script = client.queries[-1]
+    assert "BEGIN TRANSACTION;\nUPDATE `unit-project.meta._dander_leases`" in script
+    assert script.index("UPDATE `unit-project.meta._dander_leases`") < script.index(
+        "UPDATE `unit-project.raw.example_widgets` AS target"
+    )
+    assert "ASSERT @@row_count = 1 AS 'Dander pipeline lease lost'" in script
 
 
 def test_scd2_writer_rejects_reserved_columns_and_missing_key() -> None:

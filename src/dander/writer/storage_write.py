@@ -9,6 +9,7 @@ from google.cloud import bigquery, bigquery_storage_v1
 from google.cloud.bigquery_storage_v1 import types, writer
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
+from dander.concurrency import fenced_dml, fencing_job_config
 from dander.writer.base import SchemaEvolution, WriteMode, WritePattern, WriteTarget
 from dander.writer.bigquery import (
     BigQueryWriteError,
@@ -38,7 +39,12 @@ class _Job(Protocol):
 
 
 class _BigQueryClient(Protocol):
-    def query(self, query: str) -> _Job:
+    def query(
+        self,
+        query: str,
+        *,
+        job_config: bigquery.QueryJobConfig | None = None,
+    ) -> _Job:
         """Run BigQuery SQL."""
 
     def delete_table(self, table: str, *, not_found_ok: bool = False) -> None:
@@ -178,8 +184,14 @@ class BigQueryStorageScd1Writer(WritePattern):
                 target,
                 self._schema_evolution,
             )
-            merge = self._client.query(
-                _merge_sql(target_id, staging_id, columns, target.business_key)
+            merge_sql = _merge_sql(target_id, staging_id, columns, target.business_key)
+            merge = (
+                self._client.query(
+                    fenced_dml(merge_sql, target.fence),
+                    job_config=fencing_job_config(target.fence),
+                )
+                if target.fence is not None
+                else self._client.query(merge_sql)
             )
             merge.result()
             return (

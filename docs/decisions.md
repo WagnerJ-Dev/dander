@@ -1,5 +1,15 @@
 # Engineering Decisions
 
+## 2026-08-01 — Exclusive runs, transactional fencing, and cursor CAS
+
+- Named pipelines acquire one expiring lease and heartbeat it throughout execution. An overlap is
+  recorded as a terminal skipped run; a heartbeat failure prevents subsequent finalization.
+- Hosted DML finalizers must update the exact pipeline/run/fencing-token lease row inside their
+  target transaction and assert that one row matched. A read-only ownership query is insufficient.
+- Watermarks advance through compare-and-set from the pre-extraction boundary and share the hosted
+  fence transaction. Sandbox replace stays atomic but does not claim transactionally fenced cloud
+  publication in v0.1.
+
 ## 2026-08-01 — Focused bounded-memory ingestion
 
 - The normal hosted SCD1 path consumes `platform.runtime.batch_rows` batches and performs an
