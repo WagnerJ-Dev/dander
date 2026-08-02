@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
+from dander import __version__
 from dander.bootstrap import (
     AdministrativeBootstrap,
     AdministrativeBootstrapError,
@@ -53,7 +54,9 @@ from dander.project import (
     PlatformSafetySpec,
     PlatformSpec,
     ProjectConfigError,
+    ProjectScaffoldError,
     load_project_config,
+    scaffold_project,
 )
 from dander.runtime import PipelineRunner
 from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafetyError
@@ -105,6 +108,36 @@ _DEFAULT_MODELS_DIR = Path("models")
 _DEFAULT_CATALOG_PATH = Path(".dander/catalog.json")
 _DEFAULT_BOOTSTRAP_ADMIN_DIR = Path("infra/bootstrap-admin")
 _DEFAULT_PROJECT_CONFIG = Path("dander.yaml")
+
+
+def _show_version(value: bool) -> None:
+    if value:
+        console.print(f"dander {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def cli(
+    version: bool = typer.Option(  # noqa: B008
+        False,
+        "--version",
+        callback=_show_version,
+        is_eager=True,
+        help="Show the installed Dander version and exit.",
+    ),
+) -> None:
+    """Run the Dander command-line interface."""
+
+
+@app.command("new")
+def new_project(directory: Path = typer.Argument(...)) -> None:  # noqa: B008
+    """Create a complete starter project without overwriting an existing path."""
+    try:
+        created = scaffold_project(directory)
+    except ProjectScaffoldError as error:
+        raise ClickException(str(error)) from error
+    console.print(f"[green]Created Dander project at {created}.[/green]")
+    console.print(f"Next: cd {created} && dander validate")
 
 
 @app.command("validate")

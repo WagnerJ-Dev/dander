@@ -4,4 +4,9 @@ Keep this module import-light: importing ``dander`` must not require the heavy o
 dependencies. Import from the subpackages (``dander.ingestion``, ``dander.writer``, ...) directly.
 """
 
-__version__ = "0.0.1"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("dander-platform")
+except PackageNotFoundError:  # pragma: no cover - only an unpackaged source tree
+    __version__ = "0+unknown"

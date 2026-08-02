@@ -76,5 +76,46 @@ def test_runtime_image_publisher_returns_an_immutable_digest(tmp_path: Path) -> 
     assert "--platform" in build and "linux/amd64" in build and "--push" in build
 
 
+def test_runtime_image_publisher_accepts_installed_project_context(tmp_path: Path) -> None:
+    for name in ("Dockerfile", "README.md", "dander.yaml"):
+        (tmp_path / name).write_text(name, encoding="utf-8")
+    for directory in ("connectors", "models"):
+        path = tmp_path / directory
+        path.mkdir()
+        (path / "content.txt").write_text(directory, encoding="utf-8")
+
+    image = RuntimeImagePublisher(tmp_path, runner=_Runner()).publish(
+        project="unit-project",
+        region="us-central1",
+    )
+
+    assert image.endswith("@sha256:" + "a" * 64)
+
+
+def test_runtime_image_tag_ignores_local_state_but_tracks_infrastructure(tmp_path: Path) -> None:
+    for name in ("Dockerfile", "dander.yaml"):
+        (tmp_path / name).write_text(name, encoding="utf-8")
+    for directory in ("connectors", "models", "infra"):
+        path = tmp_path / directory
+        path.mkdir()
+        (path / "content.txt").write_text(directory, encoding="utf-8")
+    runner = _Runner()
+    publisher = RuntimeImagePublisher(tmp_path, runner=runner)
+
+    publisher.publish(project="unit-project", region="us-central1")
+    (tmp_path / "infra" / "local.tfstate").write_text("state", encoding="utf-8")
+    publisher.publish(project="unit-project", region="us-central1")
+    (tmp_path / "infra" / "content.txt").write_text("changed", encoding="utf-8")
+    publisher.publish(project="unit-project", region="us-central1")
+
+    tags = [
+        command[command.index("-t") + 1]
+        for command in runner.commands
+        if command[:3] == ("docker", "buildx", "build")
+    ]
+    assert tags[0] == tags[1]
+    assert tags[2] != tags[1]
+
+
 def test_active_admin_member_uses_the_authenticated_gcloud_user(tmp_path: Path) -> None:
     assert active_admin_member(cwd=tmp_path, runner=_Runner()) == ("user:operator@example.invalid")

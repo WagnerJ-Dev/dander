@@ -199,17 +199,40 @@ class RuntimeImagePublisher:
 
     def _content_digest(self) -> str:
         hasher = hashlib.sha256()
-        roots = (
-            self._repository_dir / "src",
+        required = (
+            self._repository_dir / "Dockerfile",
+            self._repository_dir / "dander.yaml",
             self._repository_dir / "connectors",
             self._repository_dir / "models",
         )
+        if any(not path.exists() for path in required):
+            raise ProjectBootstrapError("Runtime build context is incomplete")
+        roots = tuple(
+            path
+            for path in (
+                self._repository_dir / "src",
+                self._repository_dir / "connectors",
+                self._repository_dir / "models",
+                self._repository_dir / "infra",
+            )
+            if path.is_dir()
+        )
         files = [
             self._repository_dir / name
-            for name in ("Dockerfile", "pyproject.toml", "uv.lock", "dander.yaml")
+            for name in (
+                ".dockerignore",
+                "Dockerfile",
+                "README.md",
+                "dander.yaml",
+                "pyproject.toml",
+                "uv.lock",
+            )
+            if (self._repository_dir / name).is_file()
         ]
         for root in roots:
-            files.extend(path for path in root.rglob("*") if path.is_file())
+            files.extend(
+                path for path in root.rglob("*") if path.is_file() and _is_build_context_file(path)
+            )
         try:
             for path in sorted(files):
                 hasher.update(str(path.relative_to(self._repository_dir)).encode())
@@ -217,6 +240,18 @@ class RuntimeImagePublisher:
         except OSError as error:
             raise ProjectBootstrapError("Could not hash the runtime build context") from error
         return hasher.hexdigest()
+
+
+def _is_build_context_file(path: Path) -> bool:
+    if any(part in {".terraform", "__pycache__"} for part in path.parts):
+        return False
+    name = path.name
+    return not (
+        name == ".DS_Store"
+        or name.endswith(".tfplan")
+        or ".tfstate" in name
+        or (name.endswith(".tfvars") and not name.endswith(".tfvars.example"))
+    )
 
 
 def active_admin_member(*, cwd: Path, runner: _Runner | None = None) -> str:

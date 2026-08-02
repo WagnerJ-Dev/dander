@@ -42,6 +42,23 @@ workflow artifact is reviewed.
 
 Python 3.12 (app + CLI) · BigQuery SQL (transforms) · Terraform/HCL (infra) · YAML (config).
 
+## Install a release candidate
+
+The Python distribution is named `dander-platform` because the `dander` name on PyPI belongs to a
+different project. The import package and command remain `dander`:
+
+```bash
+uv tool install dander-platform==0.1.0rc1
+dander --version
+dander new my-data-platform
+cd my-data-platform
+dander validate
+```
+
+`dander new` creates a complete, paused starter project: a public Greenhouse connector, one model,
+the Docker runtime context, and Dander's Terraform modules. It refuses to overwrite an existing
+path. You do not need to clone this repository to use the released CLI.
+
 ## Repo map
 
 ```
