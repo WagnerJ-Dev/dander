@@ -13,8 +13,9 @@ locals {
       ]
     ]) : binding.key => binding
   }
-  failure_alerts_enabled  = nonsensitive(var.failure_alert_email != "")
-  failure_alert_pipelines = local.failure_alerts_enabled ? var.pipelines : {}
+  failure_alerts_enabled    = nonsensitive(var.failure_alert_email != "")
+  failure_alert_pipelines   = local.failure_alerts_enabled ? var.pipelines : {}
+  guarded_runtime_pipelines = var.require_guarded_free_tier ? var.pipelines : {}
 }
 
 # Preserve the original Greenhouse resources while the module evolves from one hard-coded job to
@@ -125,7 +126,7 @@ resource "google_project_iam_member" "runtime_job_user" {
 }
 
 resource "google_project_iam_member" "runtime_pubsub_viewer" {
-  for_each = var.pipelines
+  for_each = local.guarded_runtime_pipelines
 
   project = var.project_id
   role    = "roles/pubsub.viewer"
@@ -161,7 +162,7 @@ resource "google_project_iam_member" "runtime_catalog_editor" {
 }
 
 resource "google_billing_account_iam_member" "runtime_budget_viewer" {
-  for_each = var.pipelines
+  for_each = local.guarded_runtime_pipelines
 
   billing_account_id = var.billing_account_id
   role               = "roles/billing.viewer"

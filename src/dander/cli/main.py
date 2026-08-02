@@ -264,10 +264,13 @@ def init(
         "--failure-alert-email",
         help="Email receiving Cloud Run failure alerts; omitted from dander.yaml for privacy.",
     ),
-    enable_cost_guard: bool = typer.Option(
-        True,
+    enable_cost_guard: bool | None = typer.Option(
+        None,
         "--enable-cost-guard/--no-cost-guard",
-        help="Provision the USD 5 simulation-first budget guard (enabled by default).",
+        help=(
+            "Provision the USD 5 simulation-first budget guard; defaults to "
+            "platform.safety.require_guarded_free_tier."
+        ),
     ),
     cost_guard_budget_name: str = typer.Option(
         "dander-sbx-cap",
@@ -312,10 +315,19 @@ def init(
     pipelines = manifest.terraform_pipelines() if enable_runtime else {}
     runtime = platform.runtime
     safety = platform.safety
-    if enable_runtime and safety.require_guarded_free_tier and not enable_cost_guard:
+    resolved_enable_cost_guard = (
+        safety.require_guarded_free_tier if enable_cost_guard is None else enable_cost_guard
+    )
+    if enable_runtime and safety.require_guarded_free_tier and not resolved_enable_cost_guard:
         raise ClickException(
             "platform.safety.require_guarded_free_tier=true requires the cost guard; "
             "enable it or explicitly override the safety setting"
+        )
+    resolved_billing_account_id = billing_account_id if resolved_enable_cost_guard else ""
+    if not safety.require_guarded_free_tier and not resolved_enable_cost_guard:
+        console.print(
+            "[yellow]Warning: Dander is not managing, limiting, or preventing cloud spending "
+            "for this installation.[/yellow]"
         )
     resolved_state_bucket = state_bucket or f"{project}-dander-state"
     resolved_bootstrap_account = bootstrap_service_account or (
@@ -355,7 +367,7 @@ def init(
                 apply=True,
                 region=platform.region,
                 state_location=state_location,
-                billing_account_id=billing_account_id,
+                billing_account_id=resolved_billing_account_id,
                 github_repository=github_repository,
                 github_ref=github_ref,
                 adopt_state_bucket=True,
@@ -396,14 +408,14 @@ def init(
         runtime_batch_rows=runtime.batch_rows,
         require_guarded_free_tier=safety.require_guarded_free_tier,
         enable_runtime=enable_runtime,
-        billing_account_id=billing_account_id,
+        billing_account_id=resolved_billing_account_id,
         container_image=container_image,
         pipelines=pipelines,
         failure_alert_email=failure_alert_email,
         secret_ids=tuple(secret_ids or ()),
         github_repository=github_repository,
         github_ref=github_ref,
-        enable_cost_guard=enable_cost_guard,
+        enable_cost_guard=resolved_enable_cost_guard,
         cost_guard_budget_name=cost_guard_budget_name,
         cost_guard_budget_amount=cost_guard_budget_amount,
         live_cost_guard=live_cost_guard,

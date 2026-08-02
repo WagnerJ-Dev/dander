@@ -10,7 +10,7 @@ platform:
     max_retries: 1
     batch_rows: 10000
   safety:
-    require_guarded_free_tier: true
+    require_guarded_free_tier: false
 
 pipelines:
   greenhouse_jobs:

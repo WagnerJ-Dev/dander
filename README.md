@@ -250,10 +250,11 @@ credentials. Harvest v3 still requires access to a Greenhouse customer account:
 uv run dander run greenhouse_job_board --sandbox --dry-run --project my-no-billing-project
 ```
 
-### Billing-linked guarded free tier
+### Billing-linked hosted platform and optional cost guard
 
-To exercise the real Secret Manager, BigQuery `MERGE`, and BigQuery watermark path, link a billing
-account and configure a project-scoped budget. Google currently provides monthly free usage for
+To exercise the real Secret Manager, BigQuery `MERGE`, and BigQuery watermark path, use an existing
+project with billing already linked. The managed cost guard and its project-scoped budget are
+optional. Google currently provides monthly free usage for
 [the first 10 GiB of BigQuery storage and 1 TiB of analysis](https://cloud.google.com/bigquery/pricing),
 [six active Secret Manager versions and 10,000 accesses](https://cloud.google.com/secret-manager/pricing),
 and bounded [Cloud Run compute and request usage](https://cloud.google.com/run/pricing). These are
@@ -301,7 +302,8 @@ method; manually upgrading makes overages beyond remaining credit and free allow
 `dander init` owns the complete two-stage bootstrap. It creates a hardened/versioned state bucket,
 adopts it into Terraform, creates the administrative identity and Artifact Registry, builds and
 pushes the current runtime, then applies datasets, per-pipeline IAM/jobs/schedules/secrets, and the
-simulation-first budget guard from `dander.yaml`:
+safety policy from `dander.yaml`. Newly generated projects use the ordinary hosted path without the
+optional managed cost guard:
 
 ```yaml
 platform:
@@ -314,7 +316,7 @@ platform:
     max_retries: 1
     batch_rows: 10000
   safety:
-    require_guarded_free_tier: true
+    require_guarded_free_tier: false
 ```
 
 These repository-owned values configure every hosted job. `batch_rows` bounds both hosted SCD1
@@ -322,12 +324,13 @@ extraction batches and BigQuery writer requests. Sandbox replacement also consum
 as bounded batches through a run-scoped staging table. When guarded free tier is required,
 initialization rejects a disabled cost guard and hosted jobs receive
 `--guarded-free-tier`. The `--region`, `--bigquery-location`, `--runtime-*`, and guarded-free-tier
-override flags take precedence only when explicitly supplied.
+override flags take precedence only when explicitly supplied. The cost guard defaults to enabled
+when `require_guarded_free_tier` is true and disabled when it is false; explicit cost-guard flags can
+override that default when the combination is valid.
 
 ```bash
 uv run dander init \
   --project my-gcp-project \
-  --billing-account ABCDEF-123456-ABCDEF \
   --failure-alert-email operator@example.com \
   --github-repository owner/repository \
   --apply
@@ -346,7 +349,13 @@ established environments but requires an existing backend, bootstrap identity, a
 The granular `init-admin-*` and `init-platform-*` commands remain available for operators who need
 to review/apply each identity boundary separately. The normal path is the single command above.
 The approved administrative identity is deliberately separate from runtime identities; only it
-can provision project resources and delegate each runtime's read-only billing visibility.
+can provision project resources. Guarded installations additionally use it to delegate each
+runtime's read-only billing visibility.
+The default unguarded path does not request billing-account IAM or grant runtime billing/Pub/Sub
+guard permissions. Dander does not manage, limit, or prevent cloud spending in that configuration.
+To opt into the managed guard, set `require_guarded_free_tier: true` and pass
+`--billing-account ABCDEF-123456-ABCDEF`; the caller then needs the additional billing-account
+permissions required for the reviewed IAM and budget plan.
 
 For an established environment, the equivalent explicit plan is:
 
@@ -355,7 +364,6 @@ uv run dander init \
   --project my-gcp-project \
   --state-bucket my-existing-tfstate-bucket \
   --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com \
-  --billing-account ABCDEF-123456-ABCDEF \
   --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DIGEST \
   --config dander.yaml \
   --github-repository owner/repository
@@ -368,7 +376,7 @@ manifest or Terraform state.
 GitHub Actions authenticates through repository/ref-constrained OIDC rather than a downloaded key.
 Set `publish_dataplex: true` only on pipelines that should store catalog aspects; it enables the
 API and IAM required for that potentially billable operation.
-The integrated cost guard creates the project budget, Pub/Sub wiring, and Gen 2 function in
+The optional integrated cost guard creates the project budget, Pub/Sub wiring, and Gen 2 function in
 simulation mode. Live billing detachment requires the additional `--live-cost-guard` flag and is
 called out in the apply confirmation. Function deployment uses billable Cloud Build, Cloud Run,
 Storage, and Artifact Registry services; free allowances do not make this a hard $0 guarantee.
@@ -389,7 +397,7 @@ uv run dander run hubspot_companies --dry-run --project my-gcp-project
 Provision or reconcile both pipelines from the manifest:
 
 ```bash
-uv run dander init --project "$PROJECT_ID" --billing-account "$BILLING_ACCOUNT_ID" --apply
+uv run dander init --project "$PROJECT_ID" --apply
 gcloud run jobs execute dander-hubspot-companies --region=us-central1 --wait
 ```
 
@@ -398,7 +406,7 @@ After a new pipeline's manual ingestion, transform tests, and registry compilati
 repository deletes untagged images after one day and retains the three most recent versions. A
 small number of Scheduler jobs and Cloud Run executions may fit current free allowances, but those
 allowances are not a hard spending cap. The guarded CLI preflight and budget kill switch remain
-required.
+available through the explicit safety opt-in described above.
 
 ### Declared raw schemas
 

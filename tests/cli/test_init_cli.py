@@ -8,6 +8,7 @@ from click import unstyle
 from typer.testing import CliRunner
 
 from dander.cli.main import app
+from dander.project import scaffold_project
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -282,8 +283,6 @@ pipelines:
         "init",
         "--project",
         "unit-project",
-        "--billing-account",
-        "ABCDEF-123456-ABCDEF",
         "--container-image",
         f"example.invalid/project/repository/image@sha256:{'a' * 64}",
         "--config",
@@ -310,6 +309,8 @@ pipelines:
             "--runtime-batch-rows",
             "4096",
             "--require-guarded-free-tier",
+            "--billing-account",
+            "ABCDEF-123456-ABCDEF",
         ],
     )
 
@@ -345,6 +346,77 @@ pipelines:
     assert captured[1]["runtime_max_retries"] == 5
     assert captured[1]["runtime_batch_rows"] == 4096
     assert captured[1]["require_guarded_free_tier"] is True
+    assert captured[0]["enable_cost_guard"] is False
+    assert captured[0]["billing_account_id"] == ""
+    assert captured[1]["enable_cost_guard"] is True
+    assert captured[1]["billing_account_id"] == "ABCDEF-123456-ABCDEF"
+    warning = "Dander is not managing, limiting, or preventing cloud spending"
+    assert unstyle(authored.output).count(warning) == 1
+    assert warning not in unstyle(overridden.output)
+
+
+def test_init_unguarded_apply_passes_empty_billing_account_to_stage_zero(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_dir = scaffold_project(tmp_path / "generated")
+    captured_admin: dict[str, object] = {}
+    captured_platform: dict[str, object] = {}
+
+    monkeypatch.setattr("dander.cli.main.StateBucketBootstrap.ensure", lambda self, **kwargs: True)
+
+    def fake_admin(self: object, **kwargs: object) -> Path:
+        captured_admin.update(kwargs)
+        return tmp_path / "admin.tfplan"
+
+    def fake_platform(self: object, **kwargs: object) -> Path:
+        captured_platform.update(kwargs)
+        return tmp_path / "platform.tfplan"
+
+    monkeypatch.setattr("dander.cli.main.AdministrativeBootstrap.execute", fake_admin)
+    monkeypatch.setattr(
+        "dander.cli.main.RuntimeImagePublisher.publish",
+        lambda self, **kwargs: (
+            "us-central1-docker.pkg.dev/unit-project/dander/dander@sha256:" + "a" * 64
+        ),
+    )
+    monkeypatch.setattr(
+        "dander.cli.main.wait_for_service_account_impersonation", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        "dander.cli.main.active_admin_member",
+        lambda **kwargs: "user:operator@example.invalid",
+    )
+    monkeypatch.setattr("dander.cli.main.TerraformBootstrap.execute", fake_platform)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "--project",
+            "unit-project",
+            "--config",
+            str(project_dir / "dander.yaml"),
+            "--operator-artifact-dir",
+            str(tmp_path / "operator"),
+            "--failure-alert-email",
+            "operator@example.invalid",
+            "--apply",
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured_admin["billing_account_id"] == ""
+    assert captured_platform["billing_account_id"] == ""
+    assert captured_platform["enable_cost_guard"] is False
+    assert captured_platform["require_guarded_free_tier"] is False
+    assert (
+        unstyle(result.output).count(
+            "Dander is not managing, limiting, or preventing cloud spending"
+        )
+        == 1
+    )
 
 
 def test_init_rejects_required_guard_when_cost_guard_is_disabled(

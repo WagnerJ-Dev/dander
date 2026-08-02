@@ -88,7 +88,7 @@ class TerraformBootstrap:
             runtime_batch_rows: Maximum rows sent in one BigQuery writer request.
             require_guarded_free_tier: Whether hosted jobs must run the cost-guard preflight.
             enable_runtime: Whether to provision the scheduled Cloud Run slice.
-            billing_account_id: Billing account used by the runtime safety check.
+            billing_account_id: Billing account used by the managed guard and runtime safety check.
             container_image: Immutable runtime image reference including a sha256 digest.
             pipelines: Expanded additive hosted-pipeline definitions from ``dander.yaml``.
             failure_alert_email: Operator email receiving hosted-pipeline failure notifications.
@@ -132,9 +132,10 @@ class TerraformBootstrap:
 
         expanded_pipelines = dict(pipelines or {})
         if enable_runtime:
-            if not _BILLING_ACCOUNT.fullmatch(billing_account_id):
+            if require_guarded_free_tier and not _BILLING_ACCOUNT.fullmatch(billing_account_id):
                 raise TerraformBootstrapError(
-                    "Runtime enablement requires --billing-account in XXXXXX-XXXXXX-XXXXXX format"
+                    "Guarded runtime enablement requires --billing-account in "
+                    "XXXXXX-XXXXXX-XXXXXX format"
                 )
             if not _IMMUTABLE_IMAGE.fullmatch(container_image):
                 raise TerraformBootstrapError(

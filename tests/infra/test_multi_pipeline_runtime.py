@@ -37,7 +37,12 @@ def test_scheduled_module_preserves_greenhouse_and_creates_each_pipeline() -> No
     assert 'resource "google_monitoring_alert_policy" "pipeline_failure" {' in module
     assert 'metric.type = \\"run.googleapis.com/job/completed_execution_count\\"' in module
     assert 'metric.label.\\"result\\" = \\"failed\\"' in module
-    assert module.count("for_each = var.pipelines") >= 8
+    assert module.count("for_each = var.pipelines") >= 7
+    assert (
+        "guarded_runtime_pipelines = var.require_guarded_free_tier ? var.pipelines : {}"
+        in normalized
+    )
+    assert module.count("for_each = local.guarded_runtime_pipelines") == 2
     assert 'timeout = "${var.runtime_timeout_seconds}s"' in normalized
     assert "max_retries = var.runtime_max_retries" in normalized
     assert "cpu = tostring(var.runtime_cpu)" in normalized
@@ -48,6 +53,37 @@ def test_scheduled_module_preserves_greenhouse_and_creates_each_pipeline() -> No
     assert "max_retries = 1" not in normalized
     assert 'cpu = "1"' not in normalized
     assert 'memory = "512Mi"' not in normalized
+
+
+def test_unguarded_runtime_omits_guard_resources_but_keeps_hosted_platform() -> None:
+    root = (ROOT / "infra/main.tf").read_text(encoding="utf-8")
+    module = (ROOT / "infra/modules/scheduled-job/main.tf").read_text(encoding="utf-8")
+    normalized_root = "\n".join(" ".join(line.split()) for line in root.splitlines())
+    normalized_module = "\n".join(" ".join(line.split()) for line in module.splitlines())
+
+    assert "count = var.enable_cost_guard ? 1 : 0" in normalized_root
+    assert (
+        "guarded_runtime_pipelines = var.require_guarded_free_tier ? var.pipelines : {}"
+        in normalized_module
+    )
+    for resource in (
+        'resource "google_billing_account_iam_member" "runtime_budget_viewer"',
+        'resource "google_project_iam_member" "runtime_pubsub_viewer"',
+    ):
+        guarded_resource = module.split(resource, maxsplit=1)[1].split("resource ", maxsplit=1)[0]
+        assert "for_each = local.guarded_runtime_pipelines" in guarded_resource
+    for resource in (
+        'resource "google_service_account" "runtime"',
+        'resource "google_service_account" "scheduler"',
+        'resource "google_bigquery_dataset_iam_member" "runtime_writer"',
+        'resource "google_cloud_run_v2_job" "ingestion"',
+        'resource "google_cloud_scheduler_job" "ingestion"',
+        'resource "google_monitoring_alert_policy" "pipeline_failure"',
+    ):
+        assert resource in module
+    assert 'var.require_guarded_free_tier ? ["--guarded-free-tier"] : []' in normalized_module
+    assert 'module "bigquery"' in root
+    assert 'module "secret_manager"' in root
 
 
 def test_container_carries_the_project_manifest() -> None:

@@ -99,7 +99,6 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         runtime_batch_rows=2048,
         require_guarded_free_tier=False,
         enable_runtime=True,
-        billing_account_id="ABCDEF-123456-ABCDEF",
         container_image=f"us-east1-docker.pkg.dev/unit-project/dander/dander@sha256:{digest}",
         pipelines=_pipelines(paused=False, publish_dataplex=True),
         failure_alert_email="operator@example.invalid",
@@ -122,6 +121,7 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
     assert "-var=runtime_max_retries=3" in plan
     assert "-var=runtime_batch_rows=2048" in plan
     assert "-var=require_guarded_free_tier=false" in plan
+    assert "-var=billing_account_id=" in plan
     pipeline_argument = next(
         argument for argument in plan if argument.startswith("-var=pipelines=")
     )

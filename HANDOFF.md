@@ -2,39 +2,45 @@
 
 ## Finished
 
-- Published public `0.1.0rc7` and deployed its source-free image to the retained project.
-- Passed simultaneous Greenhouse/HubSpot execution with isolated leases and no task retries.
-- Passed Greenhouse replay, authenticated HubSpot create/update/replay/cleanup, and same-pipeline
-  skip/success overlap with stable hashes, cursors, and duplicate-free tables.
-- Verified clear leases, cleaned staging, staging expiration, enabled alerts, and restored schedules.
-- Finished with a no-drift Terraform plan and preserved the independent fresh-project proof.
+- Reused `require_guarded_free_tier` and the existing cost-guard CLI flags so the resolved safety
+  setting controls the default without adding another installation mode or manifest field.
+- Made unguarded hosted initialization accept no billing-account ID and omit billing-account IAM,
+  cost-guard resources, guard-specific Pub/Sub access, runtime billing viewer, and runtime preflight.
+- Preserved the guarded path and conditioned only Cloud Functions/Pub/Sub bootstrap permissions that
+  exist for the managed guard.
+- Changed generated projects to default unguarded and updated the hosted quickstart with the billing
+  and spending warning; the retained repository manifest remains explicitly guarded.
+- Added focused regression coverage for CLI resolution, stage zero, Terraform rendering, scaffold
+  output, ordinary hosted resources, and guarded compatibility.
 
 ## Try It
 
-- Run `uv run pytest` and `uv run dander --version`.
-- Build with `uv build`, install outside the checkout, and run `dander new` plus Terraform validate.
+- Run `uv run dander new /tmp/dander-optional` and inspect its `dander.yaml`.
+- Run `uv run pytest tests/cli/test_init_cli.py tests/bootstrap/test_terraform.py tests/infra`.
 
 ## Checks
 
-- All 594 tests, Ruff lint/format, strict mypy, dependency audit, and lock validation pass.
-- Public wheel/sdist installation and source-free scaffold validation pass.
-- Retained live acceptance and final Terraform no-drift reconciliation pass.
+- Focused suite: 67 passed. Full suite: 597 passed.
+- Ruff lint/format, strict mypy, dependency audit, Terraform format, and diff checks pass.
+- Repository, generated-source, wheel, and sdist Terraform roots initialize with backends disabled
+  and validate; wheel/sdist inspection, external installation, scaffolding, and container startup pass.
+- Retained stage-zero and platform Terraform plans each report exactly `No changes.`
 
 ## Decisions
 
-- Promote the tested rc7 runtime unchanged; the final PR changes only version/release records.
-- Keep the historical shared lease table untouched; per-pipeline tables are the active control path.
-- Begin the 30-day operator soak only after the public `0.1.0` smoke succeeds.
+- Generated manifests explicitly default to unguarded while the model default remains guarded for
+  compatibility with existing manifests that omit the safety field.
+- Billing input is passed to stage zero and platform Terraform only when the managed guard is enabled.
+- Runtime billing and Pub/Sub visibility follows the guarded-runtime setting, not general ingestion.
 
 ## Remaining
 
-- Merge the final version-only PR through protected main.
-- Tag and publish `v0.1.0` through the protected PyPI environment.
-- Verify public installation, generated project, final image update, Greenhouse smoke, and no drift.
-- Create the alpha GitHub Release and open the single operator-soak issue.
+- Review the focused pull request; do not merge it without separate approval.
+- Treat any deliberate change from guarded to unguarded on an existing install as a normal reviewed
+  Terraform removal plan.
 
 ## Review First
 
-- `CHANGELOG.md`
-- `pyproject.toml`
-- `.github/workflows/ci.yml`
+- `src/dander/cli/main.py`
+- `infra/bootstrap-admin/main.tf`
+- `infra/modules/scheduled-job/main.tf`

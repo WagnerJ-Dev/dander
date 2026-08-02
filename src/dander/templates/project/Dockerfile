@@ -16,4 +16,4 @@ COPY dander.yaml ./dander.yaml
 USER 65532:65532
 
 ENTRYPOINT ["dander"]
-CMD ["run", "greenhouse_jobs", "--guarded-free-tier"]
+CMD ["run", "greenhouse_jobs"]
