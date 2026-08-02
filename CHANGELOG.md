@@ -27,12 +27,21 @@ Publication waits for bounded candidate acceptance in the retained project and o
 source-free Greenhouse installation in a fresh disposable GCP project. The post-release operator
 soak does not block this release.
 
+## 0.1.0rc7 — 2026-08-02
+
+### Fixed
+
+- Isolate hosted pipeline leases in deterministic per-pipeline BigQuery tables so unrelated
+  finalizers and heartbeats cannot contend on one shared table.
+- Retry BigQuery's alternate concurrent-update serialization message while preserving the same
+  bounded retry policy.
+
 ## 0.1.0rc6 — 2026-08-02
 
 ### Fixed
 
-- Retry only BigQuery transactions aborted by concurrent mutations of the shared lease table,
-  preserving fencing and cursor atomicity when different hosted pipelines finish together.
+- Retry BigQuery's transaction-aborted concurrent-update response with a bounded exact-error
+  policy.
 
 ## 0.1.0rc5 — 2026-08-02
 

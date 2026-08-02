@@ -13,7 +13,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 _LOGGER = logging.getLogger(__name__)
-_CONCURRENT_UPDATE = "transaction is aborted due to concurrent update against table"
+_CONCURRENT_UPDATE_MESSAGES = (
+    "transaction is aborted due to concurrent update against table",
+    "could not serialize access to table",
+)
 _MAX_ATTEMPTS = 5
 _BASE_DELAY_SECONDS = 0.25
 
@@ -31,7 +34,11 @@ def run_mutation_with_retry[JobT: _Job](submit: Callable[[], JobT]) -> JobT:
             job.result()
             return job
         except BadRequest as error:
-            if _CONCURRENT_UPDATE not in str(error).lower() or attempt == _MAX_ATTEMPTS:
+            message = str(error).lower()
+            concurrent_update = any(
+                signature in message for signature in _CONCURRENT_UPDATE_MESSAGES
+            )
+            if not concurrent_update or attempt == _MAX_ATTEMPTS:
                 raise
             delay = (_BASE_DELAY_SECONDS * (2 ** (attempt - 1))) + random.uniform(
                 0,

@@ -10,7 +10,7 @@ The examples assume the operator has set `DANDER_PROJECT`, `DANDER_BILLING_ACCOU
 ## Upgrade the CLI and project image
 
 ```bash
-export DANDER_TARGET_VERSION="0.1.0rc6"
+export DANDER_TARGET_VERSION="0.1.0rc7"
 uv tool install --force "dander-platform==$DANDER_TARGET_VERSION"
 dander --version
 ```

@@ -77,10 +77,28 @@ def test_bigquery_lease_claims_with_conditional_dml_and_builds_fence() -> None:
     assert lease is not None
     assert lease.fencing_token == 7
     assert lease.fence is not None
-    assert lease.fence.lease_table == "unit-project.meta._dander_leases"
+    assert lease.fence.lease_table.startswith("unit-project.meta._dander_lease_")
     claim = next(query for query in client.queries if "fencing_token + 1" in query)
     assert "lease_expires_at <= CURRENT_TIMESTAMP()" in claim
     assert "SELECT" not in claim.split("WHERE", 1)[1]
+
+
+def test_bigquery_leases_isolate_pipeline_mutations_in_separate_tables() -> None:
+    client = _Client()
+    store = BigQueryLeaseStore(
+        project="unit-project",
+        dataset="meta",
+        client=client,
+    )
+
+    greenhouse = store.acquire("greenhouse_jobs", "run-one")
+    hubspot = store.acquire("hubspot_companies", "run-two")
+
+    assert greenhouse is not None and greenhouse.fence is not None
+    assert hubspot is not None and hubspot.fence is not None
+    assert greenhouse.fence.lease_table != hubspot.fence.lease_table
+    assert greenhouse.fence.lease_table.startswith("unit-project.meta._dander_lease_")
+    assert hubspot.fence.lease_table.startswith("unit-project.meta._dander_lease_")
 
 
 @pytest.mark.parametrize("affected", [0, 2])
