@@ -65,6 +65,9 @@ material, credentials, or non-public data is introduced.
 
 Append newest at top. Format: `- YYYY-MM-DD — decision — rationale`.
 
+- 2026-08-02 — **Workday acceptance begins with a three-operation RaaS contract** — token
+  issuance plus workers and organizations custom reports are simulated over real loopback HTTP;
+  tenant auth, prompt aliases, and permissions remain unproven until a narrow live acceptance.
 - 2026-07-31 — **One executor owns end-to-end success** — named pipeline history cannot claim
   success after ingestion alone; the terminal record includes transform/test and metadata stages,
   aggregate counts, and a failure-stage marker without retaining data or exception text.

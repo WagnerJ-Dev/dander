@@ -1,5 +1,15 @@
 # Engineering Decisions
 
+## 2026-08-02 — Simulate the first Workday tenant contract before live acceptance
+
+- The first read-only Workday slice is three provider operations: tenant token issuance plus
+  `Dander_Workers` and `Dander_Organizations` RaaS custom reports. Simulator controls are never
+  represented as Workday APIs.
+- The local FastAPI service uses invented packaged fixtures, deterministic state changes, and
+  named failures to exercise Dander over loopback without credentials, GCP, or tenant data.
+- Tenant-specific OAuth grant support, report prompt aliases, and domain permissions remain
+  explicit real-tenant acceptance items; passing the simulator is not called tenant validation.
+
 ## 2026-08-01 — Alpha stabilization and latest-patch support
 
 - Dander `0.1.x` accepts only defects a user can encounter in installation, upgrades,

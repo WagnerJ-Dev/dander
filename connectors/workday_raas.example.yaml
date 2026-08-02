@@ -1,5 +1,7 @@
-# Template only: copy to an ignored/local connector and replace identifiers with your tenant's
-# report URL. The credential is a reference resolved by Dander, never a literal in this file.
+# Template only: copy to an ignored/local connector and replace tenant/owner identifiers. These
+# two report names and their aliases are the narrow Dander acceptance contract documented in
+# docs/workday-simulator.md. Confirm the tenant's supported OAuth grant during real acceptance;
+# the credential remains a reference resolved by Dander, never a literal in this file.
 name: workday_raas
 engine: workday_raas
 base_url: https://wd2-impl-services1.workday.com/ccx/service/customreport2/TENANT
@@ -9,9 +11,14 @@ auth_refs:
   client_secret: WORKDAY_CLIENT_SECRET
 auth_options:
   token_url: https://wd2-impl-services1.workday.com/ccx/oauth2/TENANT/token
+rate_limit:
+  requests_per_second: 2
+  burst: 1
+  backoff: exponential
+  max_retries: 4
 endpoints:
   - name: workers
-    path: REPORT_OWNER/REPORT_NAME
+    path: REPORT_OWNER/Dander_Workers
     pagination:
       kind: page_number
       page_param: page
@@ -25,4 +32,38 @@ endpoints:
     field_types:
       worker_id: STRING
       active: BOOL
+      base_pay: NUMERIC
+      hire_date: DATE
       updated_at: TIMESTAMP
+    raw_schema:
+      - {name: worker_id, type: STRING}
+      - {name: employee_number, type: STRING}
+      - {name: preferred_name, type: STRING}
+      - {name: business_title, type: STRING}
+      - {name: organization_id, type: STRING}
+      - {name: active, type: BOOL}
+      - {name: base_pay, type: NUMERIC}
+      - {name: hire_date, type: DATE}
+      - {name: updated_at, type: TIMESTAMP}
+  - name: organizations
+    path: REPORT_OWNER/Dander_Organizations
+    pagination:
+      kind: page_number
+      page_param: page
+      size_param: count
+      page_size: 100
+      start_page: 1
+    data_selector: Report_Entry
+    incremental_cursor: updated_at
+    cursor_param: updated_after
+    primary_key: [organization_id]
+    field_types:
+      organization_id: STRING
+      active: BOOL
+      updated_at: TIMESTAMP
+    raw_schema:
+      - {name: organization_id, type: STRING}
+      - {name: organization_name, type: STRING}
+      - {name: organization_type, type: STRING}
+      - {name: active, type: BOOL}
+      - {name: updated_at, type: TIMESTAMP}

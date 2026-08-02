@@ -24,7 +24,7 @@ class EnterpriseSourceError(ValueError):
 
 
 class _Response(Protocol):
-    def raise_for_status(self) -> None:
+    def raise_for_status(self) -> object:
         """Raise for an unsuccessful response."""
 
     def json(self) -> object:
@@ -125,14 +125,28 @@ class WorkdayRaasSource(EnterpriseSource):
                 response = self._client.send(request)
                 response.raise_for_status()
                 return response
-            except httpx.HTTPError as error:
-                if attempt == max_retries:
+            except httpx.HTTPStatusError as error:
+                status = error.response.status_code
+                if 400 <= status < 500 and status != 429:
+                    if status == 401:
+                        reason = "authentication failed"
+                    elif status == 403:
+                        reason = "permission denied"
+                    else:
+                        reason = "request was rejected"
                     raise EnterpriseSourceError(
-                        f"Endpoint {endpoint!r} request failed after bounded retries"
+                        f"Endpoint {endpoint!r} {reason} (HTTP {status})"
                     ) from error
-                assert policy is not None
-                multiplier = 2**attempt if policy.backoff is BackoffKind.EXPONENTIAL else 1
-                self._sleep(multiplier / policy.requests_per_second)
+                retry_error: httpx.HTTPError = error
+            except httpx.HTTPError as error:
+                retry_error = error
+            if attempt == max_retries:
+                raise EnterpriseSourceError(
+                    f"Endpoint {endpoint!r} request failed after bounded retries"
+                ) from retry_error
+            assert policy is not None
+            multiplier = 2**attempt if policy.backoff is BackoffKind.EXPONENTIAL else 1
+            self._sleep(multiplier / policy.requests_per_second)
         raise AssertionError("bounded retry loop did not return or raise")
 
 

@@ -1,0 +1,35 @@
+[
+  {
+    "worker_id": "W-1001",
+    "employee_number": "D-001",
+    "preferred_name": "Ari Quill",
+    "business_title": "Data Platform Engineer",
+    "organization_id": "ORG-ENG",
+    "active": "true",
+    "base_pay": "125000.00",
+    "hire_date": "2024-02-12",
+    "updated_at": "2026-08-01T13:00:00Z"
+  },
+  {
+    "worker_id": "W-1002",
+    "employee_number": "D-002",
+    "preferred_name": "Mika Rowan",
+    "business_title": "Finance Systems Analyst",
+    "organization_id": "ORG-FIN",
+    "active": "true",
+    "base_pay": "108500.50",
+    "hire_date": "2023-09-18",
+    "updated_at": "2026-08-01T14:00:00Z"
+  },
+  {
+    "worker_id": "W-1003",
+    "employee_number": "D-003",
+    "preferred_name": "Sol Vega",
+    "business_title": "People Operations Lead",
+    "organization_id": "ORG-PEOPLE",
+    "active": "false",
+    "base_pay": "117250.00",
+    "hire_date": "2022-05-02",
+    "updated_at": "2026-08-01T15:00:00Z"
+  }
+]

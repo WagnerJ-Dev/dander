@@ -1,0 +1,23 @@
+[
+  {
+    "organization_id": "ORG-ENG",
+    "organization_name": "Engineering",
+    "organization_type": "Supervisory",
+    "active": "true",
+    "updated_at": "2026-08-01T10:00:00Z"
+  },
+  {
+    "organization_id": "ORG-FIN",
+    "organization_name": "Finance",
+    "organization_type": "Supervisory",
+    "active": "true",
+    "updated_at": "2026-08-01T10:00:00Z"
+  },
+  {
+    "organization_id": "ORG-PEOPLE",
+    "organization_name": "People Operations",
+    "organization_type": "Supervisory",
+    "active": "true",
+    "updated_at": "2026-08-01T10:00:00Z"
+  }
+]
