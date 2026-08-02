@@ -23,6 +23,7 @@ class _Source(Source):
         events: list[str],
         *,
         expected_since: str | None = "2026-01-01T00:00:00Z",
+        cursor_param: str | None = None,
     ) -> None:
         super().__init__(
             SourceConfig(
@@ -35,6 +36,7 @@ class _Source(Source):
                         name="widgets",
                         path="/widgets",
                         incremental_cursor="updated_at",
+                        cursor_param=cursor_param,
                         primary_key=["id"],
                     )
                 ],
@@ -161,7 +163,7 @@ class _Watermarks(WatermarkStore):
     def get(self, source: str, entity: str) -> str | None:
         assert (source, entity) == ("example", "widgets")
         self._events.append("get")
-        return "2026-01-01T00:00:00Z"
+        return self.committed or "2026-01-01T00:00:00Z"
 
     def set(self, source: str, entity: str, cursor: str) -> None:
         assert (source, entity) == ("example", "widgets")
@@ -396,6 +398,29 @@ def test_full_refresh_ignores_existing_cursor_but_records_observed_cursor() -> N
 
     assert events == ["get", "extract", "write", "set"]
     assert watermarks.committed == "2026-01-03T00:00:00Z"
+
+
+def test_runner_never_regresses_watermark_after_full_read() -> None:
+    events: list[str] = []
+    watermarks = _Watermarks(events)
+    watermarks.committed = "2026-01-04T00:00:00Z"
+    runner = PipelineRunner(
+        source=_Source(
+            events,
+            expected_since="2026-01-04T00:00:00Z",
+            cursor_param="",
+        ),
+        writer=_Writer(events),
+        watermarks=watermarks,
+        project="unit-project",
+        dataset="raw",
+    )
+
+    result = runner.run()
+
+    assert events == ["get", "extract", "write", "set"]
+    assert watermarks.committed == "2026-01-04T00:00:00Z"
+    assert result.endpoints[0].committed_cursor == "2026-01-04T00:00:00Z"
 
 
 @pytest.mark.parametrize(

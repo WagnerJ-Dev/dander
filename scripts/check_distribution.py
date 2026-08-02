@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 EXPECTED_NAME = "dander-platform"
-EXPECTED_VERSION = "0.1.0rc1"
+EXPECTED_VERSION = "0.1.0rc2"
 WHEEL_REQUIRED = {
     "dander/templates/project/.dockerignore",
     "dander/templates/project/.gitignore",

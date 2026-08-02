@@ -191,20 +191,29 @@ class PipelineRunner:
             if ownership is not None:
                 ownership.verify()
             affected = self._writer.write(buffered, target)
+        committed_cursor: str | None = None
         if observation.extracted and observation.maximum_cursor is not None:
             if ownership is not None:
                 ownership.verify()
+            cursor_to_commit = observation.maximum_cursor
+            # A deliberate read-only cursor still records proof of progress, but its source does
+            # not filter by the stored boundary. Deletions must not move that watermark backward.
+            if stored_cursor is not None and (
+                endpoint.cursor_param == "" or not self._resume_from_watermark
+            ):
+                cursor_to_commit = max(stored_cursor, cursor_to_commit)
             committed = self._watermarks.compare_and_set(
                 source_name,
                 endpoint.name,
                 expected=stored_cursor,
-                cursor=observation.maximum_cursor,
+                cursor=cursor_to_commit,
                 fence=ownership.fence if ownership is not None else None,
             )
             if not committed:
                 raise WatermarkConflictError(
                     f"Watermark boundary changed for endpoint {endpoint.name!r}"
                 )
+            committed_cursor = cursor_to_commit
 
         _LOGGER.info(
             "endpoint_finished",
@@ -221,7 +230,7 @@ class PipelineRunner:
             endpoint=endpoint.name,
             extracted=observation.extracted,
             affected=affected,
-            committed_cursor=observation.maximum_cursor if observation.extracted else None,
+            committed_cursor=committed_cursor,
         )
 
     def _write_batched(

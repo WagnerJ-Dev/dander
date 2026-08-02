@@ -17,8 +17,9 @@ if TYPE_CHECKING:
 
 
 class RunStatus(StrEnum):
-    """Terminal state recorded for one pipeline run."""
+    """Lifecycle state recorded for one pipeline run."""
 
+    RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     SKIPPED = "skipped"
