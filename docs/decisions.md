@@ -1,5 +1,15 @@
 # Engineering Decisions
 
+## 2026-08-03 — ServiceNow v1 favors complete reads over unsafe cursor paging
+
+- The first ServiceNow slice uses OAuth client credentials and the read-only Table API incident
+  operation; simulator mutations exist only to prepare deterministic acceptance state.
+- Extraction requests primitive internal values and orders every full read by
+  `(sys_updated_on, sys_id)`. It does not combine a timestamp watermark with offset paging,
+  because records moving between pages could be skipped.
+- The hosted pipeline is additive and paused by default. Source hard deletes are not propagated;
+  incrementality requires a later keyset-pagination contract proven against a real instance.
+
 ## 2026-08-02 — Simulate the first Workday tenant contract before live acceptance
 
 - The first read-only Workday slice is three provider operations: tenant token issuance plus

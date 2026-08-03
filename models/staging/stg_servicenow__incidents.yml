@@ -1,0 +1,65 @@
+model: stg_servicenow__incidents
+description: ServiceNow incidents normalized from the read-only Table API contract.
+owner: data-eng
+materialization: incremental
+dataset: staging
+source_system: servicenow
+sensitivity: confidential
+unique_key: [incident_id]
+incremental_cursor: updated_at
+
+columns:
+  - name: incident_id
+    type: STRING
+    description: Stable ServiceNow record identifier.
+  - name: incident_number
+    type: STRING
+    description: Human-readable incident number.
+  - name: short_description
+    type: STRING
+    description: Incident summary.
+  - name: description
+    type: STRING
+    description: Incident details when present.
+  - name: state
+    type: INT64
+    description: ServiceNow internal incident state value.
+  - name: priority
+    type: INT64
+    description: ServiceNow internal incident priority value.
+  - name: is_active
+    type: BOOL
+    description: Whether the incident is active.
+  - name: opened_at
+    type: TIMESTAMP
+    description: UTC time the incident opened.
+  - name: resolved_at
+    type: TIMESTAMP
+    description: UTC time the incident resolved, when present.
+  - name: closed_at
+    type: TIMESTAMP
+    description: UTC time the incident closed, when present.
+  - name: created_at
+    type: TIMESTAMP
+    description: UTC record creation time.
+  - name: updated_at
+    type: TIMESTAMP
+    description: UTC record modification time.
+  - name: updated_by
+    type: STRING
+    description: User name responsible for the latest change.
+
+tests:
+  - column: incident_id
+    not_null: true
+    unique: true
+  - column: incident_number
+    not_null: true
+  - column: is_active
+    not_null: true
+
+metrics:
+  - name: incident_count
+    description: Number of ServiceNow incidents represented.
+    aggregation: count_distinct
+    field: incident_id
