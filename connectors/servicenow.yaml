@@ -1,0 +1,47 @@
+# Read-only incidents connector proven against Dander's disposable ServiceNow developer instance.
+# Credential values are resolved from Secret Manager or the environment; they are never literals.
+name: servicenow
+engine: dlt
+base_url: https://dev387037.service-now.com/api/now/table
+auth_strategy: oauth2_client_credentials
+auth_refs:
+  client_id: SERVICENOW_CLIENT_ID
+  client_secret: SERVICENOW_CLIENT_SECRET
+auth_options:
+  token_url: https://dev387037.service-now.com/oauth_token.do
+  credential_placement: body
+rate_limit:
+  requests_per_second: 4
+  burst: 2
+  backoff: exponential
+  max_retries: 4
+
+endpoints:
+  - name: incidents
+    path: /incident
+    data_selector: result
+    pagination:
+      kind: offset
+      offset_param: sysparm_offset
+      limit_param: sysparm_limit
+      page_size: 500
+    query_params:
+      sysparm_display_value: false
+      sysparm_exclude_reference_link: true
+      sysparm_fields: sys_id,number,short_description,description,state,priority,active,opened_at,resolved_at,closed_at,sys_created_on,sys_updated_on,sys_updated_by
+      sysparm_query: ORDERBYsys_updated_on^ORDERBYsys_id
+    primary_key: [sys_id]
+    raw_schema:
+      - {name: sys_id, type: STRING, mode: REQUIRED}
+      - {name: number, type: STRING, mode: REQUIRED}
+      - {name: short_description, type: STRING}
+      - {name: description, type: STRING}
+      - {name: state, type: STRING}
+      - {name: priority, type: STRING}
+      - {name: active, type: STRING}
+      - {name: opened_at, type: STRING}
+      - {name: resolved_at, type: STRING}
+      - {name: closed_at, type: STRING}
+      - {name: sys_created_on, type: STRING, mode: REQUIRED}
+      - {name: sys_updated_on, type: STRING, mode: REQUIRED}
+      - {name: sys_updated_by, type: STRING}

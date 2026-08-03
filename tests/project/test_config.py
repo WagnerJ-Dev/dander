@@ -23,7 +23,7 @@ endpoints:
 """.strip()
 
 
-def test_repository_manifest_defines_three_additive_hosted_pipelines() -> None:
+def test_repository_manifest_defines_four_additive_hosted_pipelines() -> None:
     project = load_project_config(Path("dander.yaml"))
     project.validate_references(Path.cwd())
 
@@ -38,7 +38,12 @@ def test_repository_manifest_defines_three_additive_hosted_pipelines() -> None:
     }
     assert project.platform.safety.require_guarded_free_tier is True
     expanded = project.terraform_pipelines()
-    assert set(expanded) == {"greenhouse_jobs", "hubspot_companies", "salesforce_accounts"}
+    assert set(expanded) == {
+        "greenhouse_jobs",
+        "hubspot_companies",
+        "salesforce_accounts",
+        "servicenow_incidents",
+    }
     assert expanded["greenhouse_jobs"]["job_name"] == "dander-greenhouse-public"
     assert expanded["greenhouse_jobs"]["secret_env"] == {}
     assert expanded["hubspot_companies"]["job_name"] == "dander-hubspot-companies"
@@ -52,6 +57,12 @@ def test_repository_manifest_defines_three_additive_hosted_pipelines() -> None:
         "SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY": (
             "salesforce-external-client-app-private-key"
         ),
+    }
+    assert expanded["servicenow_incidents"]["job_name"] == "dander-servicenow-incidents"
+    assert expanded["servicenow_incidents"]["paused"] is True
+    assert expanded["servicenow_incidents"]["secret_env"] == {
+        "SERVICENOW_CLIENT_ID": "servicenow-client-id",
+        "SERVICENOW_CLIENT_SECRET": "servicenow-client-secret",
     }
 
 

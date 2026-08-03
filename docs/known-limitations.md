@@ -13,6 +13,9 @@ an unattended production system containing business-critical data.
   may still infer a schema and is deprecated.
 - HubSpot companies extraction performs a full endpoint read followed by idempotent SCD1 merge;
   the selected endpoint does not receive a server-side incremental filter.
+- ServiceNow incidents extraction performs a stably ordered full endpoint read. It does not use a
+  timestamp watermark with offset paging because that combination can skip moving records.
+- Source hard deletes are not propagated by the first ServiceNow incidents slice.
 - Greenhouse Job Board extraction is a full refresh but does not delete jobs that disappear from
   the public board.
 

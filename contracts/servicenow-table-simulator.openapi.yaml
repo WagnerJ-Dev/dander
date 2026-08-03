@@ -1,0 +1,83 @@
+openapi: 3.1.0
+info:
+  title: Dander ServiceNow Table API simulator
+  version: 1.0.0
+  description: >-
+    Synthetic contract for Dander's read-only incident extraction. Incident mutation operations
+    prepare acceptance state only and are not used by the connector.
+paths:
+  /oauth_token.do:
+    post:
+      operationId: issueAccessToken
+      tags: [servicenow-contract]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id, client_secret]
+              properties:
+                grant_type: {type: string, const: client_credentials}
+                client_id: {type: string}
+                client_secret: {type: string}
+      responses:
+        "200":
+          description: OAuth access token.
+        "401":
+          description: Invalid or expired client credentials.
+  /api/now/table/incident:
+    get:
+      operationId: listIncidents
+      tags: [servicenow-contract]
+      parameters:
+        - {name: sysparm_limit, in: query, schema: {type: integer, minimum: 1}}
+        - {name: sysparm_offset, in: query, schema: {type: integer, minimum: 0}}
+        - {name: sysparm_fields, in: query, schema: {type: string}}
+        - {name: sysparm_query, in: query, schema: {type: string}}
+        - {name: sysparm_display_value, in: query, schema: {type: boolean}}
+        - {name: sysparm_exclude_reference_link, in: query, schema: {type: boolean}}
+      responses:
+        "200":
+          description: Ordered page of incident records.
+        "401": {description: Missing or expired access token.}
+        "403": {description: Integration user lacks incident read access.}
+        "429": {description: Request throttled.}
+    post:
+      operationId: createIncident
+      tags: [acceptance-setup]
+      description: Simulator-only acceptance setup; the Dander connector is read-only.
+      responses:
+        "200": {description: Synthetic incident created.}
+  /api/now/table/incident/{sys_id}:
+    parameters:
+      - name: sys_id
+        in: path
+        required: true
+        schema: {type: string, pattern: "^[0-9a-f]{32}$"}
+    patch:
+      operationId: updateIncident
+      tags: [acceptance-setup]
+      description: Simulator-only acceptance setup; the Dander connector is read-only.
+      responses:
+        "200": {description: Synthetic incident updated.}
+        "404": {description: Incident not found.}
+    delete:
+      operationId: deleteIncident
+      tags: [acceptance-setup]
+      description: Simulator-only cleanup; hard-delete propagation is not claimed.
+      responses:
+        "204": {description: Synthetic incident deleted.}
+        "404": {description: Incident not found.}
+  /_dander/scenario:
+    put:
+      operationId: setScenario
+      tags: [simulator-control]
+      responses:
+        "200": {description: Named scenario selected.}
+  /_dander/reset:
+    post:
+      operationId: resetSimulator
+      tags: [simulator-control]
+      responses:
+        "200": {description: Fixtures and simulator state reset.}

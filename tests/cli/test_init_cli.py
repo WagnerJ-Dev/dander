@@ -57,10 +57,16 @@ def test_init_passes_optional_runtime_inputs(
     assert captured["enable_runtime"] is True
     pipelines = captured["pipelines"]
     assert isinstance(pipelines, dict)
-    assert set(pipelines) == {"greenhouse_jobs", "hubspot_companies", "salesforce_accounts"}
+    assert set(pipelines) == {
+        "greenhouse_jobs",
+        "hubspot_companies",
+        "salesforce_accounts",
+        "servicenow_incidents",
+    }
     assert pipelines["greenhouse_jobs"]["paused"] is False
     assert pipelines["hubspot_companies"]["paused"] is False
     assert pipelines["salesforce_accounts"]["paused"] is True
+    assert pipelines["servicenow_incidents"]["paused"] is True
     assert captured["secret_ids"] == ("api-token",)
     assert captured["github_repository"] == "WagnerJ-Dev/dander"
     assert captured["failure_alert_email"] == "operator@example.invalid"

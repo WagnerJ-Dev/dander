@@ -223,6 +223,11 @@ opaque `nextRecordsUrl` pagination, a declared raw schema, and soft-delete visib
 slice deliberately performs a full query and relies on idempotent SCD1 publication; server-filtered
 SOQL and Bulk API are later scale work. See [`docs/salesforce.md`](docs/salesforce.md).
 
+`connectors/servicenow.example.yaml` reads incidents through ServiceNow's Table API using OAuth2
+client credentials, primitive internal values, stable offset paging, and a declared raw schema.
+The first slice performs a full read and idempotent SCD1 publication; it does not claim unsafe
+timestamp-plus-offset incrementality. See [`docs/servicenow.md`](docs/servicenow.md).
+
 `connectors/netsuite.example.yaml` demonstrates OAuth1 TBA with four credential references and
 HMAC-SHA256 request signing. Copy either template to a local connector and replace only
 account/endpoint identifiers and secret reference names; do not place credential values in YAML.

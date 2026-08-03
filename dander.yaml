@@ -50,3 +50,17 @@ pipelines:
       job: dander-salesforce-accounts
       runtime_service_account: dander-runtime-salesforce
       scheduler_service_account: dander-scheduler-salesforce
+
+  servicenow_incidents:
+    source: servicenow
+    models: [stg_servicenow__incidents]
+    schedule: "0 12 * * *"
+    time_zone: America/New_York
+    paused: true
+    secrets:
+      SERVICENOW_CLIENT_ID: servicenow-client-id
+      SERVICENOW_CLIENT_SECRET: servicenow-client-secret
+    resources:
+      job: dander-servicenow-incidents
+      runtime_service_account: dander-runtime-servicenow
+      scheduler_service_account: dander-scheduler-servicenow

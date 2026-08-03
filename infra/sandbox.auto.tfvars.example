@@ -5,6 +5,8 @@ secret_ids = [
   "hubspot-private-app-token",
   "salesforce-external-client-app-id",
   "salesforce-external-client-app-private-key",
+  "servicenow-client-id",
+  "servicenow-client-secret",
 ]
 
 pipelines = {
@@ -50,6 +52,22 @@ pipelines = {
     secret_env = {
       SALESFORCE_EXTERNAL_CLIENT_APP_ID          = "salesforce-external-client-app-id"
       SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY = "salesforce-external-client-app-private-key"
+    }
+  }
+  servicenow_incidents = {
+    job_name                     = "dander-servicenow-incidents"
+    runtime_service_account_id   = "dander-runtime-servicenow"
+    scheduler_service_account_id = "dander-scheduler-servicenow"
+    source                       = "servicenow"
+    models                       = ["stg_servicenow__incidents"]
+    build_models                 = true
+    publish_dataplex             = false
+    schedule                     = "0 12 * * *"
+    time_zone                    = "America/New_York"
+    paused                       = true
+    secret_env = {
+      SERVICENOW_CLIENT_ID     = "servicenow-client-id"
+      SERVICENOW_CLIENT_SECRET = "servicenow-client-secret"
     }
   }
 }

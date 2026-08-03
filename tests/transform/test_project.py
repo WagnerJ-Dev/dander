@@ -130,3 +130,15 @@ def test_salesforce_accounts_model_loads_and_compiles_raw_relation() -> None:
     assert project.ordered([model.name]) == (model,)
     assert "`valid-project-123.raw.salesforce_accounts`" in project.compile(model)
     assert [metric.name for metric in model.metadata.metrics] == ["account_count"]
+
+
+def test_servicenow_incidents_model_loads_and_casts_internal_utc_values() -> None:
+    models = Path(__file__).parents[2] / "models"
+    project = TransformProject.load(models, project_id="valid-project-123")
+    model = project.models["stg_servicenow__incidents"]
+
+    assert project.ordered([model.name]) == (model,)
+    compiled = project.compile(model)
+    assert "`valid-project-123.raw.servicenow_incidents`" in compiled
+    assert "PARSE_TIMESTAMP('%F %H:%M:%S', sys_updated_on)" in compiled
+    assert [metric.name for metric in model.metadata.metrics] == ["incident_count"]
