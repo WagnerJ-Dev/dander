@@ -2,41 +2,41 @@
 
 ## Finished
 
-- Published and source-free deployed `0.2.0rc2`; its Salesforce acceptance run exposed a timestamp serialization defect.
-- Verified the failed run published no rows or watermark and left no active lease or staging table.
-- Merged the provider-agnostic timestamp repair through protected PR #36 with all five checks passing.
-- Prepared `0.2.0rc3` as a version-only candidate over that repaired runtime.
+- Tagged protected main as `v0.2.0rc3` and published the wheel and source distribution through the protected PyPI environment.
+- Installed the public package outside the checkout, generated a source-free project, and built the retained image from PyPI.
+- Applied the reviewed image-only plan: all three Cloud Run jobs now use digest `sha256:67c7050ca59a0ccdc4e72163b4d5309380275b78a41738204c84b06b140e36d5`.
+- Completed Salesforce first ingestion and replay successfully.
+- Restored Greenhouse and HubSpot schedules to tracked enabled state; Salesforce remains intentionally paused.
 
 ## Try It
 
 ```bash
-uv run dander --version
-uv build --out-dir /tmp/dander-v020rc3
-uv run python scripts/check_distribution.py /tmp/dander-v020rc3/*.whl /tmp/dander-v020rc3/*.tar.gz
+uv tool install --force "dander-platform==0.2.0rc3"
+dander --version
 ```
 
 ## Checks
 
-- Timestamp repair: focused 60 passed; full 611 passed; Ruff, mypy, lock, audit, and Terraform validations passed.
-- Protected PR #36: Python, Terraform, distribution, container/scan, and secret checks passed.
-- rc3 candidate: full 611 passed; Ruff, mypy, lock, artifact inspection, external source-free install/scaffold, and generated Terraform validation passed.
+- Protected publication run `30811104703` succeeded; public PyPI provides both rc3 wheel and sdist.
+- First Salesforce run `dander-salesforce-accounts-pcsvr` and replay `dander-salesforce-accounts-dn4xj` succeeded without retries.
+- Both runs extracted 13 accounts, built one model, passed four assertions, and published one metadata asset.
+- Raw and modeled tables remain 13 rows with 13 distinct IDs; the canonical watermark did not regress.
+- Lease released, no staging residue remains, all three alerts are enabled, and final Terraform plan reported `No changes.`
 
 ## Decisions
 
-- Treat rc2 as failed acceptance and do not promote it.
-- Keep rc3 version-only relative to repaired `main`; do not change `src/dander`.
-- Require explicit approval before tagging or publishing rc3.
+- Treat rc2 as failed acceptance and rc3 as the corrected candidate.
+- Keep Salesforce scheduled execution paused while its manual proof is evaluated.
+- Preserve the tracked daily Greenhouse and HubSpot operator-soak schedules.
 
 ## Remaining
 
-- Merge the rc3 candidate through protected CI.
-- Obtain explicit approval, then tag and publish `0.2.0rc3`.
-- Deploy the exact public source-free rc3 image and complete Salesforce ingestion plus replay.
-- Verify rows, transforms/tests, run history, monotonic watermark, cleanup, and Terraform drift.
-- Restore retained scheduler state only after candidate acceptance is complete.
+- Observe one Greenhouse and one HubSpot execution on rc3 as the bounded candidate smoke.
+- If both remain clean, decide whether to promote the unchanged runtime to final `0.2.0`.
+- Continue the existing 30-day operator-soak issue on the newest accepted version.
 
 ## Review First
 
 - `CHANGELOG.md`
-- `pyproject.toml`
-- `.github/workflows/ci.yml`
+- `src/dander/runtime.py`
+- `tests/test_runtime.py`
