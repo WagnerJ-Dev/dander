@@ -73,6 +73,10 @@ class SourceNodeConfig(NodeConfig):
     source config references credentials by Secret Manager name / env var name only.
 
     Attributes:
+        connector: Optional connector-YAML name used by the executable hosted graph bridge.
+        endpoint: Optional endpoint name within that connector. Older declarative graphs may use
+            this key for an API path; runtime binding validates the identifier only when
+            `connector` is also present.
         request: Optional declarative request/payload spec (DANDER-11) describing how this source
             node calls its API — HTTP method, headers, query params, and a body template. `None`
             (the default) is a plain, spec-less GET, unchanged from a pre-DANDER-11 source node.
@@ -81,6 +85,8 @@ class SourceNodeConfig(NodeConfig):
             `dander.pipeline.request_spec.RequestSpec`.
     """
 
+    connector: str | None = None
+    endpoint: str | None = None
     request: RequestSpec | None = None
 
 

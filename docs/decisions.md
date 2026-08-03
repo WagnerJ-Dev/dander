@@ -361,3 +361,14 @@
 - The first slice fully rereads Accounts and publishes through idempotent SCD1 while recording a
   monotonic `SystemModstamp`. Parameterized incremental SOQL and Bulk API remain later scale work,
   not prerequisites for validating the authenticated product path.
+
+## 2026-08-03 — PipelineGraph executes through connector bindings
+
+- Connector YAML remains authoritative for API, authentication, pagination, raw schema, and
+  cursor behavior. Executable source nodes name only `config.connector` and `config.endpoint`.
+- The first hosted slice permits one connector with one or more selected endpoints and
+  `replace` targets. Unsupported writer modes, inline requests, graph tests, mixed connectors,
+  and graph metadata publication fail clearly instead of being ignored.
+- Graph replacement stages compiled SQL output, then conditionally touches the active lease and
+  replaces target rows with DML in one transaction. The existing `dander run` Cloud Run command
+  remains the sole execution and deployment entrypoint.

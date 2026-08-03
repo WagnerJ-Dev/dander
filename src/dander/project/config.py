@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 _PIPELINE_ID = re.compile(r"^[a-z][a-z0-9_]{1,62}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
@@ -53,7 +53,8 @@ class PipelineSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source: str = Field(pattern=_IDENTIFIER.pattern)
-    models: list[str] = Field(min_length=1)
+    graph: str | None = None
+    models: list[str] = Field(default_factory=list)
     schedule: str = Field(default="0 9 * * *", min_length=1)
     time_zone: str = Field(default="America/New_York", min_length=1)
     paused: bool = True
@@ -70,6 +71,33 @@ class PipelineSpec(BaseModel):
         if len(values) != len(set(values)):
             raise ValueError("models must not contain duplicates")
         return values
+
+    @field_validator("graph")
+    @classmethod
+    def validate_graph_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        path = Path(value)
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or "\\" in value
+            or path.suffix.lower() not in {".yaml", ".yml", ".json"}
+        ):
+            raise ValueError("graph must be a safe relative YAML or JSON path")
+        return path.as_posix()
+
+    @model_validator(mode="after")
+    def validate_execution_shape(self) -> PipelineSpec:
+        if self.graph is None:
+            if self.build_models and not self.models:
+                raise ValueError("models must not be empty when build_models is enabled")
+            return self
+        if self.models or self.build_models or self.publish_dataplex:
+            raise ValueError(
+                "graph pipelines require models=[], build_models=false, and publish_dataplex=false"
+            )
+        return self
 
     @field_validator("schedule", "time_zone")
     @classmethod
@@ -159,6 +187,11 @@ class DanderProject(BaseModel):
     ) -> None:
         """Require every hosted connector, raw schema, and selected model to exist."""
         from dander.ingestion import ConnectorConfigError, load_source_config
+        from dander.pipeline.runtime import (
+            GraphRuntimeError,
+            load_graph_for_execution,
+            plan_graph_execution,
+        )
 
         connectors = (root / connectors_dir).resolve()
         models = (root / models_dir).resolve()
@@ -181,7 +214,26 @@ class DanderProject(BaseModel):
                         f"Pipeline {pipeline_id!r} endpoint {endpoint.name!r} "
                         "must declare raw_schema"
                     )
-            if missing := sorted(set(pipeline.models) - available_models):
+            if pipeline.graph is not None:
+                graph_path = root / pipeline.graph
+                try:
+                    resolved_graph = graph_path.resolve(strict=True)
+                    if not resolved_graph.is_relative_to(root.resolve()):
+                        raise ProjectConfigError(
+                            f"Pipeline {pipeline_id!r} graph must stay inside the project"
+                        )
+                    graph = load_graph_for_execution(resolved_graph)
+                    plan_graph_execution(
+                        graph,
+                        source,
+                        project="dander-project",
+                        dataset="raw",
+                    )
+                except (OSError, GraphRuntimeError) as error:
+                    raise ProjectConfigError(
+                        f"Pipeline {pipeline_id!r} references an invalid executable graph"
+                    ) from error
+            elif missing := sorted(set(pipeline.models) - available_models):
                 raise ProjectConfigError(
                     f"Pipeline {pipeline_id!r} references missing model {missing[0]!r}"
                 )

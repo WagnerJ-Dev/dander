@@ -252,6 +252,56 @@ def test_runner_commits_maximum_cursor_after_write() -> None:
     assert result.endpoints[0].affected == 2
 
 
+def test_runner_extracts_only_selected_configured_endpoints() -> None:
+    extracted: list[str] = []
+
+    class SelectedSource(Source):
+        def __init__(self) -> None:
+            super().__init__(
+                SourceConfig(
+                    name="selected",
+                    base_url="https://example.test",
+                    auth_strategy="none",
+                    endpoints=[
+                        Endpoint(name="one", path="/one"),
+                        Endpoint(name="two", path="/two"),
+                    ],
+                )
+            )
+
+        def discover(self) -> Mapping[str, Any]:
+            return {}
+
+        def extract(
+            self,
+            endpoint: str,
+            *,
+            since: str | None = None,
+        ) -> Iterator[Mapping[str, Any]]:
+            assert since is None
+            extracted.append(endpoint)
+            yield {"id": endpoint}
+
+    class SelectedWriter(WritePattern):
+        mode = WriteMode.SCD1
+
+        def write(self, records: Iterable[Mapping[str, Any]], target: WriteTarget) -> int:
+            assert target.table == "selected_two"
+            return len(list(records))
+
+    result = PipelineRunner(
+        source=SelectedSource(),
+        writer=SelectedWriter(),
+        watermarks=_Watermarks([]),
+        project="unit-project",
+        dataset="raw",
+        endpoint_names=["two"],
+    ).run()
+
+    assert extracted == ["two"]
+    assert [endpoint.endpoint for endpoint in result.endpoints] == ["two"]
+
+
 def test_runner_normalizes_sparse_nested_records_from_declared_schema() -> None:
     writer = _CapturingWriter()
     runner = PipelineRunner(

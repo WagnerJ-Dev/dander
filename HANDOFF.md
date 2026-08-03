@@ -2,42 +2,43 @@
 
 ## Finished
 
-- Added `dander graph serve --file <graph.yaml>` for one explicit local PipelineGraph file.
-- Added canonical GET/conditional-PUT persistence with ETags, validation, atomic replacement, and stale-write rejection.
-- Rejects unknown graph fields instead of silently deleting data from a newer graph contract.
-- Restricted browser access to an exact configured origin and loopback binding.
-- Documented the local visual-editor contract and its intentional execution/deployment boundary.
+- Added a strict executable `PipelineGraph` bridge for existing connector YAML and endpoint bindings.
+- Runs graph-selected ingestion and replace-mode BigQuery targets inside the existing history, lease, and heartbeat lifecycle.
+- Publishes graph targets through run-scoped staging with creation-time expiry and transactionally fenced replacement.
+- Added a source-free Greenhouse graph example to generated projects and container/package assets.
+- Preserved existing model pipelines and left all retained live manifests and GCP resources unchanged.
 
 ## Try It
 
 ```bash
-uv run dander graph serve --file path/to/pipeline.yaml
+uv run dander init /tmp/dander-graph-demo
+uv run dander run greenhouse_jobs --dry-run --project unit-project --config dander.yaml
 ```
 
-Then open Druff at `http://localhost:3000`, choose **Open from Dander**, edit, and
-choose **Save to Dander**.
+Set a pipeline's `graph` to `graphs/greenhouse_jobs.yaml`, with `models: []` and
+`build_models: false`, to activate graph execution for that pipeline.
 
 ## Checks
 
-- Ruff check/format and `uv run mypy src tests` — passed for 140 source files.
-- `uv run pytest` — 626 passed.
-- `pip-audit --strict` — no known vulnerabilities after the two CI-required lock refreshes.
-- Focused graph-service tests — 7 passed.
-- Browser acceptance — save succeeded, stale save returned conflict without overwrite, restart/reopen succeeded.
+- `uv run pytest` — 636 passed.
+- Ruff check/format and `uv run mypy src tests` — passed; 142 source files type-checked.
+- `terraform fmt -check -recursive infra` and generated-project `terraform validate` — passed.
+- Wheel/sdist build, clean external wheel install, source-free scaffold validation, and container build/dry-run — passed.
 
 ## Decisions
 
-- `PipelineGraph` remains canonical; Pydantic 2.12+ rejects unknown fields before the service can normalize them.
-- Persistence serves exactly one operator-selected YAML/JSON file with explicit Open/Save.
-- This slice stops at local write-back; execution and deployment remain outside the API.
+- Connector YAML remains authoritative for credentials, requests, pagination, raw schema, and cursor behavior.
+- The first runtime slice supports one connector, one or more bound endpoints, compiled transforms, and `replace` targets only.
+- Unsupported graph behavior fails before extraction; graph metadata publication remains deferred.
 
 ## Remaining
 
-- Review and merge the Dander graph-service PR before treating Druff write-back as generally available.
-- Keep the service local-only unless a later authenticated remote design is approved.
+- Review and merge this bridge after the graph-service dependency lands.
+- Require explicit approval before pushing an image or adding/deploying a graph pipeline in GCP.
+- Extend executable write modes and metadata projection only as separate product work.
 
 ## Review First
 
-- `src/dander/pipeline/graph_service.py`
-- `tests/pipeline/test_graph_service.py`
+- `src/dander/pipeline/runtime.py`
 - `src/dander/cli/main.py`
+- `tests/pipeline/test_runtime_bridge.py`

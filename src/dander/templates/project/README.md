@@ -21,3 +21,16 @@ Use the public [hosted Greenhouse quickstart](https://github.com/harrisonoconnor
 for the complete installation, provisioning, manual-run, and schedule-enablement sequence. Follow
 the [upgrade guide](https://github.com/harrisonoconnorhover/dander/blob/main/docs/upgrading.md)
 before changing the pinned `DANDER_VERSION` in this project's Dockerfile.
+
+`graphs/greenhouse_jobs.yaml` is an inactive Druff-compatible example. To make a pipeline execute
+that graph instead of SQL models, set its manifest entry to:
+
+```yaml
+source: greenhouse_job_board
+graph: graphs/greenhouse_jobs.yaml
+models: []
+build_models: false
+```
+
+The graph reuses `connectors/greenhouse_job_board.yaml`; it never stores API or authentication
+settings itself. Review the graph target before planning or running it.

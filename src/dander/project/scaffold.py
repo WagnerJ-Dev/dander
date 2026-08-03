@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 _SOURCE_ASSETS = (
     Path("connectors/greenhouse_job_board.yaml"),
+    Path("graphs/greenhouse_jobs.yaml"),
     Path("models/staging/stg_greenhouse__jobs.sql"),
     Path("models/staging/stg_greenhouse__jobs.yml"),
 )

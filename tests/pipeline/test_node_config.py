@@ -111,7 +111,7 @@ def _assert_mixed_types_graph(graph: PipelineGraph) -> None:
     source_node, transform_node, target_node = graph.nodes
 
     assert isinstance(source_node.config, SourceNodeConfig)
-    assert source_node.config.endpoint == "/candidates"  # type: ignore[attr-defined]
+    assert source_node.config.endpoint == "/candidates"
 
     assert isinstance(transform_node.config, TransformNodeConfig)
     assert transform_node.config.note == "transform-extra"  # type: ignore[attr-defined]
@@ -255,7 +255,7 @@ def test_params_alias_still_populates_config() -> None:
         {"id": "n1", "type": "source", "name": "n", "params": {"endpoint": "/candidates"}}
     )
     assert isinstance(node.config, SourceNodeConfig)
-    assert node.config.endpoint == "/candidates"  # type: ignore[attr-defined]
+    assert node.config.endpoint == "/candidates"
 
 
 def test_modeled_node_with_no_config_loads_as_empty_typed_model_and_round_trips(
@@ -284,7 +284,7 @@ def test_dander_2_style_graph_still_loads_and_round_trips(tmp_path: Path) -> Non
     loaded = load_graph_from_yaml(path)
 
     assert isinstance(loaded.nodes[0].config, SourceNodeConfig)
-    assert loaded.nodes[0].config.endpoint == "/candidates"  # type: ignore[attr-defined]
+    assert loaded.nodes[0].config.endpoint == "/candidates"
     assert loaded.nodes[0].config.method == "GET"  # type: ignore[attr-defined]
     assert isinstance(loaded.nodes[1].config, TargetNodeConfig)
 
@@ -301,7 +301,7 @@ def test_resolve_node_config_known_type_dict_returns_typed_instance() -> None:
     """A known type + dict value resolves to the matching typed instance."""
     result = resolve_node_config("source", {"endpoint": "/candidates"})
     assert isinstance(result, SourceNodeConfig)
-    assert result.endpoint == "/candidates"  # type: ignore[attr-defined]
+    assert result.endpoint == "/candidates"
 
 
 def test_resolve_node_config_known_type_correct_instance_returns_same_instance() -> None:

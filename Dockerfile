@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir uv==0.12.0
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
 COPY connectors ./connectors
+COPY graphs ./graphs
 COPY models ./models
 COPY infra ./infra
 RUN uv sync --frozen --no-dev --no-editable

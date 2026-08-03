@@ -309,15 +309,17 @@ def _validate_pipelines(pipelines: Mapping[str, Mapping[str, object]]) -> None:
             raise TerraformBootstrapError(f"Pipeline {pipeline_id!r} has an invalid shape")
         source = pipeline["source"]
         models = pipeline["models"]
+        build_models = pipeline["build_models"]
         secret_env = pipeline["secret_env"]
         if not isinstance(source, str) or not _IDENTIFIER.fullmatch(source):
             raise TerraformBootstrapError(f"Pipeline {pipeline_id!r} has an invalid source")
         if (
             not isinstance(models, list)
-            or not models
             or any(
                 not isinstance(model, str) or not _IDENTIFIER.fullmatch(model) for model in models
             )
+            or not isinstance(build_models, bool)
+            or (build_models and not models)
         ):
             raise TerraformBootstrapError(f"Pipeline {pipeline_id!r} has invalid models")
         if not isinstance(secret_env, dict) or any(

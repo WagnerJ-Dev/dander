@@ -51,6 +51,13 @@ from dander.ingestion import (
     load_source_config,
 )
 from dander.pipeline.graph_service import GraphDocumentError, serve_graph_file
+from dander.pipeline.runtime import (
+    BigQueryGraphRunner,
+    GraphExecutionPlan,
+    GraphRuntimeError,
+    load_graph_for_execution,
+    plan_graph_execution,
+)
 from dander.project import (
     PlatformRuntimeSpec,
     PlatformSafetySpec,
@@ -947,6 +954,7 @@ def run(
     source = pipeline_or_source
     pipeline_id = pipeline_or_source
     project_pipeline = False
+    graph_file: Path | None = None
     if project_config.is_file():
         try:
             manifest = load_project_config(project_config)
@@ -959,7 +967,9 @@ def run(
                     models_dir=models_dir,
                 )
                 source = pipeline.source
-                if selected_models is None:
+                if pipeline.graph is not None:
+                    graph_file = project_config.resolve().parent / pipeline.graph
+                elif selected_models is None:
                     selected_models = list(pipeline.models)
                 build_models = build_models or pipeline.build_models
                 publish_dataplex = publish_dataplex or pipeline.publish_dataplex
@@ -977,16 +987,35 @@ def run(
     if sandbox and guarded_free_tier:
         raise ClickException("--sandbox and --guarded-free-tier are mutually exclusive")
 
+    graph_plan: GraphExecutionPlan | None = None
+    if graph_file is not None:
+        if build_models or selected_models is not None:
+            raise ClickException("Graph pipelines do not accept --build-models or --select-model")
+        if catalog_output is not None or publish_dataplex:
+            raise ClickException("Graph metadata publication is not supported yet")
+        try:
+            graph = load_graph_for_execution(graph_file)
+            graph_plan = plan_graph_execution(
+                graph,
+                config,
+                project=resolved_project or "dander-dry-run",
+                dataset=resolved_dataset,
+            )
+        except GraphRuntimeError as error:
+            raise ClickException(str(error)) from error
+
     if dry_run:
         _print_plan(
             config.name,
             resolved_project,
             resolved_dataset,
-            config.endpoints,
+            _selected_endpoints(config, graph_plan),
             sandbox=sandbox,
             guarded_free_tier=guarded_free_tier,
             batch_rows=batch_rows,
         )
+        if graph_plan is not None:
+            _print_graph_plan(graph_plan, project=resolved_project)
         return
     if not resolved_project:
         raise ClickException("GCP project is required via --project or GCP_PROJECT_ID")
@@ -1030,7 +1059,7 @@ def run(
         )
     )
     metadata_store = None
-    if project_pipeline:
+    if project_pipeline and graph_plan is None:
         metadata_store = (
             SqliteMetadataStore(state_path)
             if sandbox
@@ -1069,6 +1098,7 @@ def run(
         dataset=resolved_dataset,
         resume_from_watermark=not sandbox,
         batch_rows=batch_rows,
+        endpoint_names=(graph_plan.bindings.endpoint_names if graph_plan is not None else None),
     )
     try:
         result = PipelineExecutor(
@@ -1077,11 +1107,15 @@ def run(
             ingestion=ingestion_runner,
             history=history,
             project=resolved_project,
-            models_dir=models_dir,
-            selected_models=selected_models,
-            build_models=build_models,
+            models_dir=graph_file.parent if graph_file is not None else models_dir,
+            selected_models=None if graph_plan is not None else selected_models,
+            build_models=graph_plan is not None or build_models,
             transform_runner=(
-                BigQueryTransformRunner(project=resolved_project) if build_models else None
+                BigQueryGraphRunner(plan=graph_plan, project=resolved_project)
+                if graph_plan is not None
+                else BigQueryTransformRunner(project=resolved_project)
+                if build_models
+                else None
             ),
             metadata_store=metadata_store,
             registry_output=catalog_output,
@@ -1093,6 +1127,7 @@ def run(
         SemanticRegistryError,
         TransformProjectError,
         TransformRunError,
+        GraphRuntimeError,
     ) as error:
         raise ClickException(str(error)) from error
 
@@ -1113,6 +1148,8 @@ def run(
             "yes" if endpoint.committed_cursor is not None else "no",
         )
     console.print(table)
+    if graph_plan is not None:
+        console.print(f"Graph targets: {', '.join(result.models)}")
 
 
 def _run_post_ingestion(
@@ -1631,6 +1668,32 @@ def _print_plan(
         table.add_row(str(name), f"{project or '<unset>'}.{dataset}.{source}_{name}", mode)
     console.print(table)
     console.print(f"Writer batch rows: {batch_rows}")
+
+
+def _selected_endpoints(
+    config: SourceConfig,
+    graph_plan: GraphExecutionPlan | None,
+) -> list[Endpoint]:
+    if graph_plan is None:
+        return list(config.endpoints)
+    selected = set(graph_plan.bindings.endpoint_names)
+    return [endpoint for endpoint in config.endpoints if endpoint.name in selected]
+
+
+def _print_graph_plan(plan: GraphExecutionPlan, *, project: str) -> None:
+    """Render the compiled target portion of a credential-free graph plan."""
+    table = Table(title="PipelineGraph targets")
+    table.add_column("Node")
+    table.add_column("Target")
+    table.add_column("Mode")
+    for target in plan.targets:
+        target_project = project or "<runtime-project>"
+        table.add_row(
+            target.node_id,
+            f"{target_project}.{target.target.dataset}.{target.target.table}",
+            target.write_mode.value.upper(),
+        )
+    console.print(table)
 
 
 if __name__ == "__main__":

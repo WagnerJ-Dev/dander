@@ -65,6 +65,7 @@ class PipelineRunner:
         resume_from_watermark: bool = True,
         history: RunHistoryStore | None = None,
         batch_rows: int = 10_000,
+        endpoint_names: Iterable[str] | None = None,
     ) -> None:
         self._source = source
         self._writer = writer
@@ -76,6 +77,18 @@ class PipelineRunner:
         if isinstance(batch_rows, bool) or not 1 <= batch_rows <= 100_000:
             raise ValueError("batch_rows must be an integer from 1 to 100000")
         self._batch_rows = batch_rows
+        configured = {endpoint.name for endpoint in source.config.endpoints}
+        if endpoint_names is None:
+            self._endpoint_names = None
+        else:
+            requested = tuple(endpoint_names)
+            if not requested:
+                raise ValueError("endpoint_names must select at least one endpoint")
+            if len(requested) != len(set(requested)):
+                raise ValueError("endpoint_names must not contain duplicates")
+            if unknown := sorted(set(requested) - configured):
+                raise ValueError(f"Unknown configured endpoint: {unknown[0]!r}")
+            self._endpoint_names = frozenset(requested)
 
     def run(
         self,
@@ -95,6 +108,8 @@ class PipelineRunner:
         completed: list[EndpointRunResult] = []
         try:
             for endpoint in self._source.config.endpoints:
+                if self._endpoint_names is not None and endpoint.name not in self._endpoint_names:
+                    continue
                 completed.append(self._run_endpoint(endpoint, run_id, ownership))
         except Exception:
             try:

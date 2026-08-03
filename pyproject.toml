@@ -139,6 +139,7 @@ include = [
   "docs/operator-soak.md",
   "docs/upgrading.md",
   "infra",
+  "graphs",
   "models",
   "pyproject.toml",
   "src",

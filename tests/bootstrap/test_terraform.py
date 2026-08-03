@@ -135,6 +135,41 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
     assert commands[2] == ("terraform", "apply", "dander-bootstrap.tfplan")
 
 
+def test_bootstrap_accepts_empty_models_when_legacy_build_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(
+        args: tuple[str, ...],
+        *,
+        cwd: Path,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    pipelines = _pipelines()
+    pipelines["greenhouse_jobs"]["models"] = []
+    pipelines["greenhouse_jobs"]["build_models"] = False
+
+    TerraformBootstrap(tmp_path).execute(
+        project="unit-project",
+        state_bucket="unit-state",
+        state_prefix="dander/state",
+        bootstrap_service_account="dander-bootstrap@unit-project.iam.gserviceaccount.com",
+        apply=False,
+        require_guarded_free_tier=False,
+        enable_runtime=True,
+        container_image=f"example.invalid/dander@sha256:{'a' * 64}",
+        pipelines=pipelines,
+    )
+
+    assert any(argument.startswith("-var=pipelines=") for argument in commands[1])
+
+
 def test_bootstrap_passes_simulation_first_cost_guard(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

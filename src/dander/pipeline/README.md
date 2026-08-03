@@ -152,8 +152,8 @@ backward-compatible with graphs that predate cursor strategies. `CursorStrategy`
 inert: **no state is read, written, or persisted by the graph model** — it records cursor intent.
 Endpoint execution can honor the equivalent connector cursor through
 `dander.state.watermark.WatermarkStore`; graph-to-runtime cursor binding beyond that connector
-path remains an orchestration concern (see the control-table/idempotency design in
-`steering/00-project-overview.md` / `steering/02-engineering.md`).
+path is implemented when a source node declares `config.connector` and `config.endpoint` that
+match the hosted pipeline's connector YAML.
 
 - `field: str` — the cursor field name the source advances on (e.g. `updated_at`). Referenced by
   name only, never a value. Required and non-empty after stripping (a whitespace-only `field`
@@ -477,13 +477,32 @@ a filesystem path. Saving is model-lossless but may normalize YAML formatting an
 This bridge edits `PipelineGraph`; it does not write `dander.yaml`, run pipelines, resolve secrets,
 or plan/apply Terraform.
 
+## Connector-backed execution
+
+A hosted pipeline may set `graph: graphs/<name>.yaml`, leave `models` empty, and set
+`build_models: false`. Each graph source node binds to the pipeline's existing connector YAML:
+
+```yaml
+type: source
+config:
+  connector: greenhouse_job_board
+  endpoint: jobs
+```
+
+`dander run <pipeline>` then extracts only the bound endpoints through the normal connector,
+watermark, lease, and run-history path. The graph compiler reads those raw BigQuery relations and
+publishes every configured `replace` target through run-scoped staging plus a transactionally
+fenced `DELETE`/`INSERT` finalizer. The same command is used by the existing hosted Cloud Run job,
+so the source-free image is also the deployment artifact.
+
 ## Scope boundary
 
 This package combines declarative modeling with a bounded execution bridge. It does not:
 
 - execute arbitrary expressions, Python code, or legacy edge-level `JoinSpec` joins;
-- submit generated SQL or materialize a BigQuery relation;
-- Read/write BigQuery, call any SaaS API, or move data.
+- execute graph writer modes other than `replace`;
+- execute graph field tests or publish graph metadata to Dataplex;
+- combine multiple connector YAML files in one hosted graph pipeline.
 
 `compile_target` parses allow-listed scalar expressions and emits explicit-column SQL for the
 supported graph subset. `prepare_target_writer` constructs a concrete writer; only a later call to
@@ -504,6 +523,6 @@ DANDER-7 put declarative join semantics on graph edges. The later executable-joi
 recorded in `docs/decisions.md`: executable joins belong to a distinct transform output node,
 while the edge-level shape remains loadable but fails closed during compilation.
 
-DANDER-18 put cursor strategy on the graph node (`Node.cursor`). Endpoint cursor execution and
-watermark persistence now exist, while a general visual-graph-to-runtime cursor binding remains
-outside this package.
+DANDER-18 put cursor strategy on the graph node (`Node.cursor`). Connector endpoint execution and
+watermark persistence now bind through `config.connector`/`config.endpoint`; broader declarative
+request execution remains outside this package.
