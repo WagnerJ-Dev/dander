@@ -2,44 +2,44 @@
 
 ## Finished
 
-- Prepared `0.2.0rc1` from merged `main` as Dander's next alpha capability candidate.
-- Updated only package/scaffold version assertions, lock metadata, release notes, and this handoff.
-- Included the already merged Salesforce Accounts slice and Workday simulator in candidate notes.
-- Built and inspected the wheel/sdist, then installed and scaffolded from both outside the checkout.
+- Published and source-free verified `dander-platform==0.2.0rc1` from protected `main`.
+- Added a concrete read-only Salesforce Accounts connector for the disposable Developer Edition org.
+- Added the retained project's Salesforce pipeline, dedicated identities, secret references, and 11:00 ET schedule in a paused state.
+- Built and validated a local source-free candidate image containing all three retained pipelines.
+- Prepared read-only retained-project plans; no Terraform apply or GCP mutation occurred.
 
 ## Try It
 
 ```bash
-uv run dander --version
-uv build --out-dir /tmp/dander-v020rc1
-uv run python scripts/check_distribution.py /tmp/dander-v020rc1/*.whl /tmp/dander-v020rc1/*.tar.gz
+uv run dander validate --config dander.yaml
+docker run --rm dander-v020rc1-salesforce:local validate
+uv run pytest
 ```
 
 ## Checks
 
-- Full suite: 610 passed; Ruff lint/format, strict mypy, and lock validation passed.
-- Locked dependency audit found no known vulnerabilities.
-- Terraform formatting and both repository roots validated with backends disabled.
-- Wheel/sdist identity and archive inspection passed.
-- Both artifacts installed outside the checkout, reported `0.2.0rc1`, generated valid source-free
-  projects pinned to the candidate, and the generated Terraform root validated.
+- Focused configuration tests: 18 passed; full suite: 610 passed.
+- Ruff lint/format, strict mypy, lock validation, `git diff --check`, and both Terraform roots passed.
+- Local source-free image reports `0.2.0rc1`, runs non-root, imports Dander from site-packages, and validates three pipelines.
+- Retained stage-zero plan: `No changes`.
+- Retained all-paused platform plan: 17 additions, 2 scheduler pauses, 0 deletions.
 
 ## Decisions
 
-- Treat Salesforce as a `0.2.0` capability, preserving the `0.1.x` fixes-only policy.
-- Keep candidate preparation version-only relative to merged `main`; `src/dander` is unchanged.
-- Gate public candidate publication and retained-project GCP applies separately and explicitly.
+- Keep Salesforce paused until its authenticated hosted proof passes.
+- Upgrade the shared image only while Greenhouse and HubSpot schedules are paused.
+- Keep image publication, secret writes, and Terraform apply behind separate explicit approval.
 
 ## Remaining
 
-- Open and merge the candidate PR through protected CI.
-- Obtain explicit approval before tagging or publishing `0.2.0rc1`.
-- Build the immutable source-free image from that exact public candidate.
-- Pause existing schedules, review the additive Salesforce/upgrade plan, then obtain apply approval.
-- Smoke-test Greenhouse, HubSpot, and Salesforce before restoring the first two schedules.
+- Merge the focused hosted-configuration PR through protected CI.
+- Obtain approval to push the exact source-free candidate image and apply the reviewed paused plan.
+- Add the two Salesforce secret versions without printing their values.
+- Smoke-test Greenhouse, HubSpot, and Salesforce, then restore only Greenhouse and HubSpot schedules.
+- Require a final no-drift Terraform plan.
 
 ## Review First
 
-- `CHANGELOG.md`
-- `pyproject.toml`
-- `.github/workflows/ci.yml`
+- `connectors/salesforce.yaml`
+- `dander.yaml`
+- `infra/sandbox.auto.tfvars.example`

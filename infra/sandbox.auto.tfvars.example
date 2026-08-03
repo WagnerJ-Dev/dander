@@ -1,7 +1,11 @@
 enable_scheduled_job    = true
 billing_account_id      = "BILLING_ACCOUNT_ID"
 runtime_container_image = "REGION-docker.pkg.dev/PROJECT/dander/dander@sha256:IMAGE_DIGEST"
-secret_ids              = ["hubspot-private-app-token"]
+secret_ids = [
+  "hubspot-private-app-token",
+  "salesforce-external-client-app-id",
+  "salesforce-external-client-app-private-key",
+]
 
 pipelines = {
   greenhouse_jobs = {
@@ -30,6 +34,22 @@ pipelines = {
     paused                       = true
     secret_env = {
       HUBSPOT_PRIVATE_APP_TOKEN = "hubspot-private-app-token"
+    }
+  }
+  salesforce_accounts = {
+    job_name                     = "dander-salesforce-accounts"
+    runtime_service_account_id   = "dander-runtime-salesforce"
+    scheduler_service_account_id = "dander-scheduler-salesforce"
+    source                       = "salesforce"
+    models                       = ["stg_salesforce__accounts"]
+    build_models                 = true
+    publish_dataplex             = false
+    schedule                     = "0 11 * * *"
+    time_zone                    = "America/New_York"
+    paused                       = true
+    secret_env = {
+      SALESFORCE_EXTERNAL_CLIENT_APP_ID          = "salesforce-external-client-app-id"
+      SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY = "salesforce-external-client-app-private-key"
     }
   }
 }
