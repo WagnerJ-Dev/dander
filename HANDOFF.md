@@ -19,9 +19,9 @@ choose **Save to Dander**.
 
 ## Checks
 
-- `uv run ruff check .` and `uv run ruff format --check .` — passed.
-- `uv run mypy src tests` — passed for 140 source files.
+- Ruff check/format and `uv run mypy src tests` — passed for 140 source files.
 - `uv run pytest` — 626 passed.
+- `pip-audit --strict` — no known vulnerabilities after the two CI-required lock refreshes.
 - Focused graph-service tests — 7 passed.
 - Browser acceptance — save succeeded, stale save returned conflict without overwrite, restart/reopen succeeded.
 
