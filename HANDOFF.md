@@ -2,43 +2,42 @@
 
 ## Finished
 
-- Merged protected PR #39 with the read-only ServiceNow connector, simulator, contract, staging model, documentation, and paused hosted pipeline.
-- Proved OAuth token exchange and a 67-row primitive incident read against the disposable PDI.
-- Proved synthetic create, update-ingest, deterministic replay, and source proof-object cleanup without retaining synthetic data.
-- Passed final independent adversarial review and all five protected CI checks.
-- Prepared `0.2.0rc4` as a release-only change over merged ServiceNow main.
+- Merged protected PR #39 with the read-only ServiceNow connector, simulator, contract, model, documentation, and paused hosted pipeline.
+- Published public `dander-platform==0.2.0rc4` and tag `v0.2.0rc4` after protected PR #40 and five passing CI checks.
+- Built and deployed the public package as a source-free image to all four retained Cloud Run jobs.
+- Proved hosted ServiceNow create, update-ingest, deterministic replay, transforms, four tests, metadata publication, and source cleanup against the disposable PDI.
+- Preserved Greenhouse/HubSpot enabled schedules, Salesforce/ServiceNow paused schedules, all four alerts, and the existing guarded infrastructure.
 
 ## Try It
 
 ```bash
-uv run dander --version
-uv build
-uv run python scripts/check_distribution.py dist/*.whl dist/*.tar.gz
+python -m venv /tmp/dander-rc4
+/tmp/dander-rc4/bin/pip install dander-platform==0.2.0rc4
+/tmp/dander-rc4/bin/dander --version
 ```
 
 ## Checks
 
-- Local full suite: 619 passed; Ruff lint/format and strict mypy passed.
-- Terraform root and stage-zero validation passed; `dander validate` found four additive pipelines.
-- Dependency audit, wheel/sdist inspection, source-free wheel install, and local Linux container checks passed.
-- PR #39 CI: Python, Terraform/security, distribution, container/scan, and secret checks passed.
-- Live PDI replay ended with 67 unique records and no synthetic proof record.
+- Local suite: 619 passed; Ruff lint/format, strict mypy, Terraform validation, dependency audit, distributions, source-free install, and Linux image build passed.
+- PRs #39 and #40: Python, Terraform/security, distribution, container/scan, and secret checks passed.
+- Hosted create/update/replay: three successful runs, each with 68 extracted/affected rows, one model, four assertions, and one metadata asset.
+- Replay: 68 raw and modeled rows with 68 unique IDs; zero active leases and no staging residue. The synthetic PDI incident was deleted and verified absent at source.
+- Final public-package Terraform plan: `No changes.` All jobs use image digest `sha256:381eafcf...0ed0037`.
 
 ## Decisions
 
-- ServiceNow v1 uses stable full reads; unsafe timestamp-watermark offset paging is excluded.
-- The hosted ServiceNow schedule stays paused until manual hosted acceptance passes.
-- `0.2.0rc4` changes release metadata only after the accepted connector merge.
+- ServiceNow v1 uses stable full reads; unsafe timestamp-watermark offset paging remains excluded.
+- ServiceNow stays paused after manual acceptance; enabling its daily noon ET schedule is a separate operator decision.
+- SCD1 replay preserves the last accepted destination row after source proof cleanup; source-side deletion propagation is not claimed.
 
 ## Remaining
 
-- Merge the release PR through protected CI, then tag and publish `v0.2.0rc4`.
-- Build the exact public package into a source-free image.
-- Add ServiceNow credentials to the existing secret containers and apply the reviewed additive paused plan.
-- Run hosted create/update/replay/cleanup acceptance and verify run history, rows, tests, metadata, leases, staging, alerts, existing schedules, and final no drift.
+- Decide whether to enable the paused ServiceNow daily schedule after reviewing this acceptance.
+- Continue the operator soak on the current public candidate and existing enabled Greenhouse/HubSpot schedules.
+- Treat NetSuite as a separate connector task; no NetSuite implementation began here.
 
 ## Review First
 
-- `CHANGELOG.md`
-- `pyproject.toml`
-- `.github/workflows/ci.yml`
+- `src/dander/sources/servicenow.py`
+- `connectors/servicenow.yaml`
+- `docs/servicenow.md`
