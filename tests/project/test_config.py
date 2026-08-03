@@ -51,7 +51,7 @@ def test_repository_manifest_defines_four_additive_hosted_pipelines() -> None:
         "HUBSPOT_PRIVATE_APP_TOKEN": "hubspot-private-app-token"
     }
     assert expanded["salesforce_accounts"]["job_name"] == "dander-salesforce-accounts"
-    assert expanded["salesforce_accounts"]["paused"] is True
+    assert expanded["salesforce_accounts"]["paused"] is False
     assert expanded["salesforce_accounts"]["secret_env"] == {
         "SALESFORCE_EXTERNAL_CLIENT_APP_ID": "salesforce-external-client-app-id",
         "SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY": (
