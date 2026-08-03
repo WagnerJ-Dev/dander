@@ -56,7 +56,7 @@ edges:
 """.strip()
 
 
-def test_repository_manifest_defines_four_additive_hosted_pipelines() -> None:
+def test_repository_manifest_defines_five_additive_hosted_pipelines() -> None:
     project = load_project_config(Path("dander.yaml"))
     project.validate_references(Path.cwd())
 
@@ -73,12 +73,18 @@ def test_repository_manifest_defines_four_additive_hosted_pipelines() -> None:
     expanded = project.terraform_pipelines()
     assert set(expanded) == {
         "greenhouse_jobs",
+        "greenhouse_jobs_graph",
         "hubspot_companies",
         "salesforce_accounts",
         "servicenow_incidents",
     }
     assert expanded["greenhouse_jobs"]["job_name"] == "dander-greenhouse-public"
     assert expanded["greenhouse_jobs"]["secret_env"] == {}
+    assert expanded["greenhouse_jobs_graph"]["job_name"] == "dander-greenhouse-graph"
+    assert expanded["greenhouse_jobs_graph"]["models"] == []
+    assert expanded["greenhouse_jobs_graph"]["build_models"] is False
+    assert expanded["greenhouse_jobs_graph"]["paused"] is True
+    assert expanded["greenhouse_jobs_graph"]["secret_env"] == {}
     assert expanded["hubspot_companies"]["job_name"] == "dander-hubspot-companies"
     assert expanded["hubspot_companies"]["secret_env"] == {
         "HUBSPOT_PRIVATE_APP_TOKEN": "hubspot-private-app-token"

@@ -64,3 +64,16 @@ pipelines:
       job: dander-servicenow-incidents
       runtime_service_account: dander-runtime-servicenow
       scheduler_service_account: dander-scheduler-servicenow
+
+  greenhouse_jobs_graph:
+    source: greenhouse_job_board
+    graph: graphs/greenhouse_jobs.yaml
+    models: []
+    build_models: false
+    schedule: "0 13 * * *"
+    time_zone: America/New_York
+    paused: true
+    resources:
+      job: dander-greenhouse-graph
+      runtime_service_account: dander-runtime-graph
+      scheduler_service_account: dander-scheduler-graph
