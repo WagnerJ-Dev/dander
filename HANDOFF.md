@@ -2,11 +2,11 @@
 
 ## Finished
 
-- Merged protected PR #39 with the read-only ServiceNow connector, simulator, contract, model, documentation, and paused hosted pipeline.
-- Published public `dander-platform==0.2.0rc4` and tag `v0.2.0rc4` after protected PR #40 and five passing CI checks.
-- Built and deployed the public package as a source-free image to all four retained Cloud Run jobs.
-- Proved hosted ServiceNow create, update-ingest, deterministic replay, transforms, four tests, metadata publication, and source cleanup against the disposable PDI.
-- Preserved Greenhouse/HubSpot enabled schedules, Salesforce/ServiceNow paused schedules, all four alerts, and the existing guarded infrastructure.
+- Published and deployed public `dander-platform==0.2.0rc4` as one source-free image across all four retained jobs.
+- Completed hosted ServiceNow create, update-ingest, replay, transforms/tests, metadata, and source cleanup; its schedule remains paused.
+- Merged protected PR #42 to enable the retained Salesforce daily schedule at 11:00 AM ET.
+- Applied an exact one-resource plan changing only the Salesforce scheduler from paused to enabled.
+- Observed the first scheduled Salesforce execution complete successfully and preserved the guarded platform.
 
 ## Try It
 
@@ -18,26 +18,26 @@ python -m venv /tmp/dander-rc4
 
 ## Checks
 
-- Local suite: 619 passed; Ruff lint/format, strict mypy, Terraform validation, dependency audit, distributions, source-free install, and Linux image build passed.
-- PRs #39 and #40: Python, Terraform/security, distribution, container/scan, and secret checks passed.
-- Hosted create/update/replay: three successful runs, each with 68 extracted/affected rows, one model, four assertions, and one metadata asset.
-- Replay: 68 raw and modeled rows with 68 unique IDs; zero active leases and no staging residue. The synthetic PDI incident was deleted and verified absent at source.
-- Final public-package Terraform plan: `No changes.` All jobs use image digest `sha256:381eafcf...0ed0037`.
+- PR #42: all five protected Python, Terraform/security, distribution, container/scan, and secret checks passed.
+- Focused manifest tests: 18 passed; four-pipeline validation and Terraform validation passed.
+- Apply: `0 added, 1 changed, 0 destroyed`; only `dander-salesforce-accounts-daily` changed `paused: true -> false`.
+- Scheduled run `dander-salesforce-accounts-55rzv`: 13 extracted/affected, one model, four assertions, one metadata asset, status succeeded.
+- Salesforce raw/model tables each have 13 unique IDs; zero active leases, no staging residue, and final Terraform plan reports `No changes.`
 
 ## Decisions
 
 - ServiceNow v1 uses stable full reads; unsafe timestamp-watermark offset paging remains excluded.
-- ServiceNow stays paused after manual acceptance; enabling its daily noon ET schedule is a separate operator decision.
-- SCD1 replay preserves the last accepted destination row after source proof cleanup; source-side deletion propagation is not claimed.
+- Salesforce now runs daily at 11:00 AM ET; Greenhouse and HubSpot remain enabled, while ServiceNow remains paused.
+- Live planning uses a fresh public-package scaffold overlaid with the retained manifest, connectors, and models so all four pipelines remain represented.
 
 ## Remaining
 
-- Decide whether to enable the paused ServiceNow daily schedule after reviewing this acceptance.
-- Continue the operator soak on the current public candidate and existing enabled Greenhouse/HubSpot schedules.
+- Continue the operator soak with Greenhouse, HubSpot, and Salesforce enabled.
+- Decide separately whether to enable the accepted ServiceNow noon ET schedule.
 - Treat NetSuite as a separate connector task; no NetSuite implementation began here.
 
 ## Review First
 
-- `src/dander/sources/servicenow.py`
-- `connectors/servicenow.yaml`
-- `docs/servicenow.md`
+- `dander.yaml`
+- `tests/project/test_config.py`
+- `tests/cli/test_init_cli.py`
