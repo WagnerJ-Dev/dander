@@ -2,44 +2,43 @@
 
 ## Finished
 
-- Published and source-free verified `dander-platform==0.2.0rc1` from protected `main`.
-- Added a concrete read-only Salesforce Accounts connector for the disposable Developer Edition org.
-- Added the retained project's Salesforce pipeline, dedicated identities, secret references, and 11:00 ET schedule in a paused state.
-- Built and validated a local source-free candidate image containing all three retained pipelines.
-- Prepared read-only retained-project plans; no Terraform apply or GCP mutation occurred.
+- Deployed the exact source-free `0.2.0rc1` image to the retained proof project with all three schedules paused.
+- Added the paused Salesforce hosted resources and two enabled secret versions; the reviewed apply was 17 added, 4 changed, 0 destroyed.
+- Passed Greenhouse and HubSpot hosted smoke runs on `0.2.0rc1`.
+- Captured Salesforce's `Decimal is not JSON serializable` failure and verified zero rows, no cursor, no lease, and no staging residue.
+- Fixed BigQuery JSON-load encoding for validated decimal and temporal values, including nested data.
 
 ## Try It
 
 ```bash
-uv run dander validate --config dander.yaml
-docker run --rm dander-v020rc1-salesforce:local validate
+uv run pytest tests/writer/test_bigquery_writer.py
 uv run pytest
 ```
 
 ## Checks
 
-- Focused configuration tests: 18 passed; full suite: 610 passed.
-- Ruff lint/format, strict mypy, lock validation, `git diff --check`, and both Terraform roots passed.
-- Local source-free image reports `0.2.0rc1`, runs non-root, imports Dander from site-packages, and validates three pipelines.
-- Retained stage-zero plan: `No changes`.
-- Retained all-paused platform plan: 17 additions, 2 scheduler pauses, 0 deletions.
+- Writer regression suite: 34 passed; full suite: 611 passed.
+- Ruff lint/format, strict mypy, lock validation, and both Terraform roots passed.
+- Retained stage-zero plan before rollout: `No changes`.
+- Immediate all-paused post-apply platform plan: `No changes`.
+- Salesforce failure cleanup queries found 0 raw rows and no watermark, lease, or staging table.
 
 ## Decisions
 
-- Keep Salesforce paused until its authenticated hosted proof passes.
-- Upgrade the shared image only while Greenhouse and HubSpot schedules are paused.
-- Keep image publication, secret writes, and Terraform apply behind separate explicit approval.
+- Keep every scheduler paused until a corrected release candidate completes the hosted smoke suite.
+- Convert typed scalars only at the BigQuery JSON-load boundary; retain source and schema typing.
+- Replace failed `0.2.0rc1` with `0.2.0rc2` before rerunning Salesforce.
 
 ## Remaining
 
-- Merge the focused hosted-configuration PR through protected CI.
-- Obtain approval to push the exact source-free candidate image and apply the reviewed paused plan.
-- Add the two Salesforce secret versions without printing their values.
-- Smoke-test Greenhouse, HubSpot, and Salesforce, then restore only Greenhouse and HubSpot schedules.
-- Require a final no-drift Terraform plan.
+- Merge the focused writer-fix PR through protected CI.
+- Prepare, approve, and publish version-only `0.2.0rc2`.
+- Build and deploy a source-free rc2 image while all schedules remain paused.
+- Rerun Greenhouse, HubSpot, and Salesforce, then replay Salesforce once.
+- Restore Greenhouse and HubSpot schedules and require a final no-drift plan.
 
 ## Review First
 
-- `connectors/salesforce.yaml`
-- `dander.yaml`
-- `infra/sandbox.auto.tfvars.example`
+- `src/dander/writer/bigquery.py`
+- `tests/writer/test_bigquery_writer.py`
+- `HANDOFF.md`

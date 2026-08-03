@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime, time
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -200,6 +202,60 @@ def test_scd1_deduplicates_last_record_and_builds_explicit_merge() -> None:
     assert "target.`label` = source.`label`" in merge
     assert "SELECT *" not in merge
     assert client.deleted == [client.destination]
+
+
+def test_scd1_encodes_typed_scalars_for_bigquery_json_load() -> None:
+    client = _Client()
+    writer = BigQueryScd1Writer(project="unit-project", client=client)
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(
+            WriteField(name="id", data_type="STRING", mode="REQUIRED"),
+            WriteField(name="amount", data_type="NUMERIC"),
+            WriteField(name="observed_at", data_type="TIMESTAMP"),
+            WriteField(
+                name="details",
+                data_type="RECORD",
+                fields=(
+                    WriteField(name="amount", data_type="NUMERIC"),
+                    WriteField(name="dates", data_type="DATE", mode="REPEATED"),
+                    WriteField(name="cutoff", data_type="TIME"),
+                ),
+            ),
+        ),
+    )
+
+    writer.write(
+        [
+            {
+                "id": "one",
+                "amount": Decimal("125.50"),
+                "observed_at": datetime(2026, 8, 3, 2, 30, tzinfo=UTC),
+                "details": {
+                    "amount": Decimal("0.000000001"),
+                    "dates": [date(2026, 8, 2), date(2026, 8, 3)],
+                    "cutoff": time(9, 15),
+                },
+            }
+        ],
+        target,
+    )
+
+    assert client.loaded_rows == [
+        {
+            "id": "one",
+            "amount": "125.50",
+            "observed_at": "2026-08-03T02:30:00+00:00",
+            "details": {
+                "amount": "0.000000001",
+                "dates": ["2026-08-02", "2026-08-03"],
+                "cutoff": "09:15:00",
+            },
+        }
+    ]
 
 
 def test_scd1_finalizer_dml_touches_matching_lease_inside_transaction() -> None:
