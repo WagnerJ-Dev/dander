@@ -1538,6 +1538,9 @@ def _build_auth(
             credential_placement=ClientCredentialPlacement(str(credential_placement)),
         )
     if config.auth_strategy == "oauth2_jwt":
+        audience = config.auth_options.get("audience")
+        if audience is not None and not isinstance(audience, str):
+            raise ClickException("OAuth JWT audience must be a string")
         subject = config.auth_options.get("subject")
         if subject is not None and not isinstance(subject, str):
             raise ClickException("OAuth JWT subject must be a string")
@@ -1547,13 +1550,18 @@ def _build_auth(
         default_expires_in = config.auth_options.get("default_expires_in", 300)
         if isinstance(default_expires_in, bool) or not isinstance(default_expires_in, int):
             raise ClickException("OAuth JWT default_expires_in must be an integer")
+        assertion_lifetime = config.auth_options.get("assertion_lifetime", 3600)
+        if isinstance(assertion_lifetime, bool) or not isinstance(assertion_lifetime, int):
+            raise ClickException("OAuth JWT assertion_lifetime must be an integer")
         return OAuth2JWT(
             secrets,
             issuer_ref=config.auth_refs["issuer"],
             private_key_ref=config.auth_refs["private_key"],
             token_url=str(config.auth_options["token_url"]),
+            audience=audience,
             scope=scope,
             subject=subject,
+            assertion_lifetime=assertion_lifetime,
             default_expires_in=default_expires_in,
         )
     if config.auth_strategy == "oauth1_tba":

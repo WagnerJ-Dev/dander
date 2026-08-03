@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from textwrap import dedent
-from typing import TYPE_CHECKING
 
 import pytest
 
 from dander.transform import TransformProject, TransformProjectError
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _write_model(
@@ -123,3 +120,13 @@ def test_unknown_selected_model_fails(tmp_path: Path) -> None:
 
     with pytest.raises(TransformProjectError, match="Unknown selected models: absent"):
         project.ordered(["absent"])
+
+
+def test_salesforce_accounts_model_loads_and_compiles_raw_relation() -> None:
+    models = Path(__file__).parents[2] / "models"
+    project = TransformProject.load(models, project_id="valid-project-123")
+    model = project.models["stg_salesforce__accounts"]
+
+    assert project.ordered([model.name]) == (model,)
+    assert "`valid-project-123.raw.salesforce_accounts`" in project.compile(model)
+    assert [metric.name for metric in model.metadata.metrics] == ["account_count"]

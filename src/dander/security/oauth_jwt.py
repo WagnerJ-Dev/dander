@@ -42,6 +42,7 @@ class AssertionSigner(Protocol):
         scope: str | None,
         subject: str | None,
         issued_at: int,
+        assertion_lifetime: int,
     ) -> str:
         """Return one signed JWT assertion."""
 
@@ -56,8 +57,10 @@ class OAuth2JWT(AuthStrategy):
         issuer_ref: str,
         private_key_ref: str,
         token_url: str,
+        audience: str | None = None,
         scope: str | None = None,
         subject: str | None = None,
+        assertion_lifetime: int = 3600,
         default_expires_in: int = 300,
         request_token: JwtTokenRequester | None = None,
         sign_assertion: AssertionSigner | None = None,
@@ -67,15 +70,21 @@ class OAuth2JWT(AuthStrategy):
         super().__init__(secrets, private_key_ref)
         if not token_url.startswith("https://"):
             raise ValueError("OAuth JWT token URL must use HTTPS")
+        if audience is not None and not audience.startswith("https://"):
+            raise ValueError("OAuth JWT audience must use HTTPS")
         if scope is not None and not scope.strip():
             raise ValueError("OAuth JWT scope must be non-empty when set")
         if not 60 <= default_expires_in <= 3600:
             raise ValueError("OAuth JWT default expiry must be between 60 and 3600 seconds")
+        if not 60 <= assertion_lifetime <= 3600:
+            raise ValueError("OAuth JWT assertion lifetime must be between 60 and 3600 seconds")
         self._issuer_ref = issuer_ref
         self._private_key_ref = private_key_ref
         self._token_url = token_url
+        self._audience = audience or token_url
         self._scope = scope
         self._subject = subject
+        self._assertion_lifetime = assertion_lifetime
         self._default_expires_in = default_expires_in
         self._request_token = request_token or _post_token
         self._sign_assertion = sign_assertion or _sign_rs256
@@ -103,10 +112,11 @@ class OAuth2JWT(AuthStrategy):
             assertion = self._sign_assertion(
                 issuer=issuer,
                 private_key=private_key,
-                audience=self._token_url,
+                audience=self._audience,
                 scope=self._scope,
                 subject=self._subject,
                 issued_at=int(self._wall_clock()),
+                assertion_lifetime=self._assertion_lifetime,
             )
             response = self._request_token(
                 self._token_url,
@@ -145,13 +155,14 @@ def _sign_rs256(
     scope: str | None,
     subject: str | None,
     issued_at: int,
+    assertion_lifetime: int,
 ) -> str:
     """Sign a standards-shaped JWT assertion with an RSA private key."""
     payload: dict[str, str | int] = {
         "iss": issuer,
         "aud": audience,
         "iat": issued_at,
-        "exp": issued_at + 3600,
+        "exp": issued_at + assertion_lifetime,
     }
     if scope is not None:
         payload["scope"] = scope

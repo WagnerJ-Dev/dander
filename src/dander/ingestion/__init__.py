@@ -12,6 +12,7 @@ from dander.ingestion.enterprise import (
 )
 from dander.ingestion.pagination import (
     CursorPagination,
+    JsonLinkPagination,
     LinkHeaderPagination,
     NoPagination,
     OffsetPagination,
@@ -30,6 +31,7 @@ __all__ = [
     "EnterpriseSource",
     "EnterpriseSourceError",
     "IngestionEngine",
+    "JsonLinkPagination",
     "LinkHeaderPagination",
     "NoPagination",
     "OffsetPagination",

@@ -41,6 +41,7 @@ class PaginationKind(StrEnum):
             body (e.g. ``meta.next_cursor``).
         PAGE_NUMBER: Page-number-style pagination (``?page=...&per_page=...``).
         LINK_HEADER: RFC 5988 ``Link`` response-header pagination (e.g. Greenhouse Harvest).
+        JSON_LINK: Next-page URL read from the JSON response body (e.g. Salesforce Query).
     """
 
     NONE = "none"
@@ -48,6 +49,7 @@ class PaginationKind(StrEnum):
     CURSOR = "cursor"
     PAGE_NUMBER = "page_number"
     LINK_HEADER = "link_header"
+    JSON_LINK = "json_link"
 
 
 class NoPagination(BaseModel):
@@ -144,12 +146,31 @@ class LinkHeaderPagination(BaseModel):
     rel: str = "next"
 
 
+class JsonLinkPagination(BaseModel):
+    """Next-page URL carried inside the JSON response body.
+
+    Salesforce Query and QueryAll return a relative ``nextRecordsUrl`` rather than a cursor that
+    must be copied into a query parameter. Treating that value as a URL keeps provider-owned query
+    locators opaque and lets dlt resolve relative links against the response URL.
+
+    Attributes:
+        kind: Always `PaginationKind.JSON_LINK`; the discriminator for this strategy.
+        next_url_path: Dotted path to the next-page URL. Defaults to ``"next"``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    kind: Literal[PaginationKind.JSON_LINK] = PaginationKind.JSON_LINK
+    next_url_path: str = "next"
+
+
 PaginationStrategy = Annotated[
     NoPagination
     | OffsetPagination
     | CursorPagination
     | PageNumberPagination
-    | LinkHeaderPagination,
+    | LinkHeaderPagination
+    | JsonLinkPagination,
     Field(discriminator="kind"),
 ]
 """The pagination-strategy type alias. Application code (and `Endpoint.pagination`) depends on

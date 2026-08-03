@@ -70,6 +70,7 @@ def test_oauth2_jwt_signs_exchanges_and_caches_without_exposing_key() -> None:
         scope: str | None,
         subject: str | None,
         issued_at: int,
+        assertion_lifetime: int,
     ) -> str:
         signing_calls.append(
             {
@@ -79,6 +80,7 @@ def test_oauth2_jwt_signs_exchanges_and_caches_without_exposing_key() -> None:
                 "scope": scope,
                 "subject": subject,
                 "issued_at": issued_at,
+                "assertion_lifetime": assertion_lifetime,
             }
         )
         return "synthetic-signed-assertion"
@@ -110,6 +112,7 @@ def test_oauth2_jwt_signs_exchanges_and_caches_without_exposing_key() -> None:
             "scope": "records.read",
             "subject": "delegated@example.test",
             "issued_at": 1_800_000_000,
+            "assertion_lifetime": 3600,
         }
     ]
     assert server.calls[0]["data"] == {
@@ -130,8 +133,9 @@ def test_oauth2_jwt_refresh_and_errors_are_credential_free() -> None:
         scope: str | None,
         subject: str | None,
         issued_at: int,
+        assertion_lifetime: int,
     ) -> str:
-        del issuer, private_key, audience, scope, subject, issued_at
+        del issuer, private_key, audience, scope, subject, issued_at, assertion_lifetime
         return "assertion"
 
     strategy = OAuth2JWT(
@@ -162,8 +166,9 @@ def test_oauth2_jwt_accepts_provider_response_without_expiry() -> None:
         scope: str | None,
         subject: str | None,
         issued_at: int,
+        assertion_lifetime: int,
     ) -> str:
-        del issuer, private_key, audience, scope, subject, issued_at
+        del issuer, private_key, audience, scope, subject, issued_at, assertion_lifetime
         return "assertion"
 
     strategy = OAuth2JWT(
@@ -195,7 +200,9 @@ def test_oauth2_jwt_default_signer_emits_expected_claims() -> None:
         issuer_ref="issuer",
         private_key_ref="key",
         token_url="https://auth.example.test/token",
+        audience="https://auth.example.test",
         scope="records.read",
+        assertion_lifetime=120,
         request_token=server,
         wall_clock=lambda: 1_800_000_000.0,
     )
@@ -207,8 +214,8 @@ def test_oauth2_jwt_default_signer_emits_expected_claims() -> None:
     padding = "=" * (-len(encoded_claims) % 4)
     claims = json.loads(urlsafe_b64decode(encoded_claims + padding))
     assert claims == {
-        "aud": "https://auth.example.test/token",
-        "exp": 1_800_003_600,
+        "aud": "https://auth.example.test",
+        "exp": 1_800_000_120,
         "iat": 1_800_000_000,
         "iss": "service@example.test",
         "scope": "records.read",
@@ -267,6 +274,8 @@ def test_oauth1_tba_builds_deterministic_rfc5849_header() -> None:
             "auth_refs": {"issuer": "issuer-ref", "private_key": "key-ref"},
             "auth_options": {
                 "token_url": "https://auth.example.test/token",
+                "audience": "https://auth.example.test",
+                "assertion_lifetime": 120,
                 "scope": "records.read",
             },
         },
@@ -327,6 +336,8 @@ def test_cli_auth_factory_dispatches_enterprise_strategies() -> None:
             "auth_refs": {"issuer": "issuer-ref", "private_key": "key-ref"},
             "auth_options": {
                 "token_url": "https://auth.example.test/token",
+                "audience": "https://auth.example.test",
+                "assertion_lifetime": 120,
                 "subject": "user@example.test",
             },
         }
@@ -346,5 +357,30 @@ def test_cli_auth_factory_dispatches_enterprise_strategies() -> None:
         }
     )
 
-    assert isinstance(_build_auth(jwt_config, store), OAuth2JWT)
+    jwt_auth = _build_auth(jwt_config, store)
+    assert isinstance(jwt_auth, OAuth2JWT)
+    assert jwt_auth._audience == "https://auth.example.test"
+    assert jwt_auth._assertion_lifetime == 120
     assert isinstance(_build_auth(tba_config, store), OAuth1TBA)
+
+
+@pytest.mark.parametrize(
+    "auth_options",
+    [
+        {"token_url": "https://auth.example.test/token", "audience": "http://invalid.test"},
+        {"token_url": "https://auth.example.test/token", "assertion_lifetime": 59},
+    ],
+)
+def test_source_config_rejects_invalid_jwt_assertion_options(
+    auth_options: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError):
+        SourceConfig.model_validate(
+            {
+                "name": "salesforce",
+                "base_url": "https://example.test",
+                "auth_strategy": "oauth2_jwt",
+                "auth_refs": {"issuer": "issuer-ref", "private_key": "key-ref"},
+                "auth_options": auth_options,
+            }
+        )

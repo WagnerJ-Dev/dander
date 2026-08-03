@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from dander.ingestion.pagination import (
     CursorPagination,
+    JsonLinkPagination,
     LinkHeaderPagination,
     NoPagination,
     OffsetPagination,
@@ -54,8 +55,19 @@ def test_each_kind_parses_with_its_params() -> None:
     assert link.header_name == "X-Link"
     assert link.rel == "nxt"
 
+    json_link = JsonLinkPagination.model_validate(
+        {"kind": "json_link", "next_url_path": "paging.nextRecordsUrl"}
+    )
+    assert json_link.next_url_path == "paging.nextRecordsUrl"
 
-_BareCoercionTarget = NoPagination | OffsetPagination | PageNumberPagination | LinkHeaderPagination
+
+_BareCoercionTarget = (
+    NoPagination
+    | OffsetPagination
+    | PageNumberPagination
+    | LinkHeaderPagination
+    | JsonLinkPagination
+)
 
 
 @pytest.mark.parametrize(
@@ -65,6 +77,7 @@ _BareCoercionTarget = NoPagination | OffsetPagination | PageNumberPagination | L
         ("offset", OffsetPagination),
         ("page_number", PageNumberPagination),
         ("link_header", LinkHeaderPagination),
+        ("json_link", JsonLinkPagination),
     ],
 )
 def test_bare_string_coercion_on_endpoint(
@@ -136,6 +149,11 @@ def _sample_source_config() -> SourceConfig:
                 pagination=PageNumberPagination(page_param="page", size_param="per_page"),
             ),
             Endpoint(name="link_ep", path="/link", pagination="link_header"),
+            Endpoint(
+                name="json_link_ep",
+                path="/json-link",
+                pagination=JsonLinkPagination(next_url_path="nextRecordsUrl"),
+            ),
         ],
     )
 

@@ -11,6 +11,10 @@ Set `engine: workday_raas` in connector YAML to select the hand-rolled path. Its
 sleeper are injected seams, so the full behavior is testable without a tenant or credential.
 `discover()` reports declarations only and never samples employee rows.
 
+Standard REST pagination includes offset, page number, JSON cursor, RFC 5988 Link header, and a
+JSON-carried next-page URL. The last form exists for APIs such as Salesforce Query/QueryAll, whose
+opaque `nextRecordsUrl` must be followed as a URL rather than copied into a query parameter.
+
 Enterprise casts currently cover `BOOL`, `DATE`, `FLOAT64`, `INT64`, `NUMERIC`, `STRING`, and
 timezone-aware `TIMESTAMP`. Cast errors name only the endpoint/field/type contract, never values.
 Automatic nested-record schema evolution remains separate work.
