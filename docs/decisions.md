@@ -339,3 +339,15 @@
   deployed-only fields fail before loading.
 - Direct connector execution without a declaration remains temporarily compatible and emits a
   deprecation warning. Raw schema declarations do not project into the metadata spine in v0.1.
+
+## 2026-08-02 — Salesforce starts as one standard REST vertical slice
+
+- Salesforce Accounts use the existing dlt-backed source and OAuth2 JWT strategy. A distinct JWT
+  audience and configurable assertion lifetime are required because Salesforce validates the
+  authorization-server URL and a short-lived assertion independently from its token endpoint.
+- QueryAll pagination follows Salesforce's opaque `nextRecordsUrl` as a JSON-carried URL. The
+  provider `attributes` envelope is declared explicitly so strict raw-schema normalization cannot
+  fail after otherwise successful extraction.
+- The first slice fully rereads Accounts and publishes through idempotent SCD1 while recording a
+  monotonic `SystemModstamp`. Parameterized incremental SOQL and Bulk API remain later scale work,
+  not prerequisites for validating the authenticated product path.

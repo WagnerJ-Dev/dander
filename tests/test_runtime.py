@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from dander.ingestion import load_source_config
 from dander.ingestion.source import Endpoint, RawField, Source, SourceConfig
 from dander.runtime import PipelineRunner, RawSchemaError, WatermarkConflictError
 from dander.state import LeaseLostError, RunHistoryStore, RunStage, RunStatus, WatermarkStore
@@ -284,6 +286,83 @@ def test_runner_normalizes_sparse_nested_records_from_declared_schema() -> None:
     assert writer.target is not None
     assert writer.target.schema[0].mode == "REQUIRED"
     assert writer.target.schema[1].fields[1].name == "active"
+
+
+def test_salesforce_query_record_envelope_satisfies_declared_runtime_schema() -> None:
+    config = load_source_config(
+        Path(__file__).parents[1] / "connectors" / "salesforce_jwt.example.yaml"
+    )
+
+    class _SalesforceSource(Source):
+        def discover(self) -> Mapping[str, Any]:
+            return {}
+
+        def extract(
+            self,
+            endpoint: str,
+            *,
+            since: str | None = None,
+        ) -> Iterator[Mapping[str, Any]]:
+            assert endpoint == "accounts"
+            assert since is None
+            yield {
+                "attributes": {
+                    "type": "Account",
+                    "url": "/services/data/v67.0/sobjects/Account/001TEST",
+                },
+                "Id": "001TEST",
+                "Name": "Dander Synthetic Account",
+                "CreatedDate": "2026-08-02T12:00:00.000+0000",
+                "LastModifiedDate": "2026-08-02T12:01:00.000+0000",
+                "SystemModstamp": "2026-08-02T12:01:00.000+0000",
+                "IsDeleted": False,
+            }
+
+    class _SalesforceWatermarks(WatermarkStore):
+        committed: str | None = None
+
+        def get(self, source: str, entity: str) -> str | None:
+            assert (source, entity) == ("salesforce", "accounts")
+            return self.committed
+
+        def set(self, source: str, entity: str, cursor: str) -> None:
+            assert (source, entity) == ("salesforce", "accounts")
+            self.committed = cursor
+
+        def compare_and_set(
+            self,
+            source: str,
+            entity: str,
+            *,
+            expected: str | None,
+            cursor: str,
+            fence: FencingToken | None = None,
+        ) -> bool:
+            del fence
+            if self.get(source, entity) != expected:
+                return False
+            self.set(source, entity, cursor)
+            return True
+
+    writer = _CapturingWriter()
+    watermarks = _SalesforceWatermarks()
+    result = PipelineRunner(
+        source=_SalesforceSource(config),
+        writer=writer,
+        watermarks=watermarks,
+        project="unit-project",
+        dataset="raw",
+    ).run()
+
+    assert result.endpoints[0].extracted == 1
+    assert writer.target is not None
+    assert writer.target.table == "salesforce_accounts"
+    assert writer.rows[0]["attributes"] == {
+        "type": "Account",
+        "url": "/services/data/v67.0/sobjects/Account/001TEST",
+    }
+    assert writer.rows[0]["AnnualRevenue"] is None
+    assert watermarks.committed == "2026-08-02T12:01:00.000+0000"
 
 
 def test_runner_propagates_declared_schema_for_empty_endpoint() -> None:

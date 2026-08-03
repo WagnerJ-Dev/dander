@@ -7,7 +7,7 @@ from secrets import token_urlsafe
 from typing import TYPE_CHECKING, Any
 
 from dlt.sources.helpers.rest_client.auth import AuthConfigBase
-from dlt.sources.helpers.rest_client.paginators import HeaderLinkPaginator
+from dlt.sources.helpers.rest_client.paginators import HeaderLinkPaginator, JSONLinkPaginator
 from requests import Request, Response, Session
 
 from dander.ingestion.config import load_source_config
@@ -156,6 +156,41 @@ def test_marketo_template_maps_provider_auth_pagination_and_rate_limit() -> None
     assert isinstance(endpoint, dict)
     assert endpoint["data_selector"] == "result"
     assert isinstance(rest_config["client"]["session"], Session)
+
+
+def test_salesforce_template_maps_queryall_json_links_schema_and_jwt_contract() -> None:
+    connector_path = Path(__file__).parents[2] / "connectors" / "salesforce_jwt.example.yaml"
+    config = load_source_config(connector_path)
+
+    assert config.auth_options == {
+        "token_url": "https://login.salesforce.com/services/oauth2/token",
+        "audience": "https://login.salesforce.com",
+        "subject": "integration-user@example.com",
+        "assertion_lifetime": 120,
+        "default_expires_in": 300,
+    }
+    endpoint = config.endpoints[0]
+    assert endpoint.path == "/queryAll"
+    assert endpoint.data_selector == "records"
+    assert endpoint.incremental_cursor == "SystemModstamp"
+    assert endpoint.cursor_param == ""
+    assert {field.name for field in endpoint.raw_schema} >= {
+        "attributes",
+        "Id",
+        "Name",
+        "SystemModstamp",
+        "IsDeleted",
+    }
+    rest_config = DltRestSource(
+        config,
+        _Auth(_Secrets(), "DANDER_TEST_REFERENCE"),
+    ).build_rest_config("accounts", since="2026-08-01T00:00:00Z")
+    resource = rest_config["resources"][0]
+    assert isinstance(resource, dict)
+    salesforce_endpoint = resource["endpoint"]
+    assert isinstance(salesforce_endpoint, dict)
+    assert isinstance(salesforce_endpoint["paginator"], JSONLinkPaginator)
+    assert salesforce_endpoint["params"] == endpoint.query_params
 
 
 class _FakeDltSource:

@@ -1,0 +1,65 @@
+model: stg_salesforce__accounts
+description: Salesforce Accounts normalized from the read-only QueryAll extraction contract.
+owner: data-eng
+materialization: incremental
+dataset: staging
+source_system: salesforce
+sensitivity: confidential
+unique_key: [account_id]
+incremental_cursor: system_modified_at
+
+columns:
+  - name: account_id
+    type: STRING
+    description: Stable Salesforce Account identifier.
+  - name: account_name
+    type: STRING
+    description: Salesforce Account display name.
+  - name: account_type
+    type: STRING
+    description: Salesforce Account type when assigned.
+  - name: industry
+    type: STRING
+    description: Salesforce Account industry when assigned.
+  - name: annual_revenue
+    type: NUMERIC
+    description: Reported annual revenue when present.
+  - name: number_of_employees
+    type: INT64
+    description: Reported employee count when present.
+  - name: billing_city
+    type: STRING
+    description: Billing city when present.
+  - name: billing_state
+    type: STRING
+    description: Billing state or region when present.
+  - name: billing_country
+    type: STRING
+    description: Billing country when present.
+  - name: created_at
+    type: TIMESTAMP
+    description: Salesforce record creation timestamp.
+  - name: last_modified_at
+    type: TIMESTAMP
+    description: User-facing Salesforce modification timestamp.
+  - name: system_modified_at
+    type: TIMESTAMP
+    description: Salesforce system modification watermark.
+  - name: is_deleted
+    type: BOOL
+    description: Whether Salesforce has soft-deleted the Account.
+
+tests:
+  - column: account_id
+    not_null: true
+    unique: true
+  - column: account_name
+    not_null: true
+  - column: is_deleted
+    accepted_values: [true, false]
+
+metrics:
+  - name: account_count
+    description: Number of Salesforce Accounts represented, including soft-deleted records.
+    aggregation: count_distinct
+    field: account_id

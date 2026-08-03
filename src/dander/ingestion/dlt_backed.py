@@ -20,6 +20,7 @@ from dlt.sources.helpers.rest_client.auth import AuthConfigBase
 from dlt.sources.helpers.rest_client.paginators import (
     BasePaginator,
     HeaderLinkPaginator,
+    JSONLinkPaginator,
     JSONResponseCursorPaginator,
     OffsetPaginator,
     PageNumberPaginator,
@@ -30,6 +31,7 @@ from requests import PreparedRequest, RequestException, Response, Session
 
 from dander.ingestion.pagination import (
     CursorPagination,
+    JsonLinkPagination,
     LinkHeaderPagination,
     NoPagination,
     OffsetPagination,
@@ -279,6 +281,8 @@ class DltRestSource(Source):
                     "dlt link-header pagination requires the standard Link header"
                 )
             return HeaderLinkPaginator(links_next_key=pagination.rel)
+        if isinstance(pagination, JsonLinkPagination):
+            return JSONLinkPaginator(next_url_path=pagination.next_url_path)
         if isinstance(pagination, OffsetPagination):
             return OffsetPaginator(
                 limit=pagination.page_size,

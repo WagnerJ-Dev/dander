@@ -217,12 +217,15 @@ credential or employee row is stored in this repository.
 
 ### Enterprise authentication templates
 
-`connectors/salesforce_jwt.example.yaml` demonstrates OAuth2 JWT bearer authentication with an
-RSA-key reference, optional delegated subject, and a conservative token cache for providers that
-omit `expires_in`. `connectors/netsuite.example.yaml` demonstrates OAuth1 TBA with four credential
-references and HMAC-SHA256 request signing. Copy either template to a local connector and replace
-only account/endpoint identifiers and secret reference names; do not place credential values in
-YAML.
+`connectors/salesforce_jwt.example.yaml` is a complete read-only Accounts QueryAll slice: OAuth2
+JWT bearer authentication, Salesforce's distinct authorization-server audience, a short assertion,
+opaque `nextRecordsUrl` pagination, a declared raw schema, and soft-delete visibility. The first
+slice deliberately performs a full query and relies on idempotent SCD1 publication; server-filtered
+SOQL and Bulk API are later scale work. See [`docs/salesforce.md`](docs/salesforce.md).
+
+`connectors/netsuite.example.yaml` demonstrates OAuth1 TBA with four credential references and
+HMAC-SHA256 request signing. Copy either template to a local connector and replace only
+account/endpoint identifiers and secret reference names; do not place credential values in YAML.
 
 ### Strict $0 BigQuery Sandbox
 

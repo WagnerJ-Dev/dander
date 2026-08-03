@@ -318,11 +318,25 @@ class SourceConfig(BaseModel):
             if missing:
                 raise ValueError("oauth2_jwt requires auth_refs for " + ", ".join(sorted(missing)))
             token_url = self.auth_options.get("token_url")
+            audience = self.auth_options.get("audience")
             scope = self.auth_options.get("scope")
             if not isinstance(token_url, str) or not token_url.startswith("https://"):
                 raise ValueError("oauth2_jwt requires an HTTPS auth_options.token_url")
             if scope is not None and (not isinstance(scope, str) or not scope.strip()):
                 raise ValueError("oauth2_jwt auth_options.scope must be non-empty when set")
+            if audience is not None and (
+                not isinstance(audience, str) or not audience.startswith("https://")
+            ):
+                raise ValueError("oauth2_jwt auth_options.audience must use HTTPS")
+            assertion_lifetime = self.auth_options.get("assertion_lifetime", 3600)
+            if (
+                isinstance(assertion_lifetime, bool)
+                or not isinstance(assertion_lifetime, int)
+                or not 60 <= assertion_lifetime <= 3600
+            ):
+                raise ValueError(
+                    "oauth2_jwt auth_options.assertion_lifetime must be an integer from 60 to 3600"
+                )
             default_expires_in = self.auth_options.get("default_expires_in", 300)
             if (
                 isinstance(default_expires_in, bool)

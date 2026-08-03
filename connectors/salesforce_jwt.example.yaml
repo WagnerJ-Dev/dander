@@ -1,19 +1,80 @@
-# Template only. The connected-app issuer and RSA key are references, never literals. Salesforce
-# JWT bearer responses may omit expires_in, so Dander uses the conservative cache period below.
+# Read-only Salesforce Accounts template. Replace YOUR_DOMAIN and the JWT subject with values from
+# your Salesforce org. The issuer and RSA private key are secret references, never literal values.
 name: salesforce
 engine: dlt
-base_url: https://YOUR_DOMAIN.my.salesforce.com/services/data/v61.0
+base_url: https://YOUR_DOMAIN.my.salesforce.com/services/data/v67.0
 auth_strategy: oauth2_jwt
 auth_refs:
-  issuer: SALESFORCE_CONNECTED_APP_CLIENT_ID
-  private_key: SALESFORCE_CONNECTED_APP_PRIVATE_KEY
+  issuer: SALESFORCE_EXTERNAL_CLIENT_APP_ID
+  private_key: SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY
 auth_options:
   token_url: https://login.salesforce.com/services/oauth2/token
+  # Salesforce validates aud against the authorization server, not the token endpoint.
+  audience: https://login.salesforce.com
   subject: integration-user@example.com
+  assertion_lifetime: 120
+  # Salesforce token responses can omit expires_in.
   default_expires_in: 300
+rate_limit:
+  requests_per_second: 5
+  burst: 2
+  backoff: exponential
+  max_retries: 4
+
 endpoints:
-  # Credential smoke-test endpoint. Add object/query resources only after choosing their fields
-  # and pagination contract for your org.
-  - name: organization_limits
-    path: /limits
-    pagination: none
+  - name: accounts
+    path: /queryAll
+    pagination:
+      kind: json_link
+      next_url_path: nextRecordsUrl
+    data_selector: records
+    query_params:
+      q: >-
+        SELECT Id, Name, Type, Industry, AnnualRevenue, NumberOfEmployees,
+        BillingCity, BillingState, BillingCountry, CreatedDate, LastModifiedDate,
+        SystemModstamp, IsDeleted FROM Account ORDER BY SystemModstamp ASC, Id ASC
+    primary_key: [Id]
+    incremental_cursor: SystemModstamp
+    # QueryAll has no standalone timestamp parameter: this initial slice records a watermark but
+    # deliberately rereads the bounded endpoint so hosted SCD1 publication remains idempotent.
+    cursor_param: ""
+    raw_schema:
+      - name: attributes
+        type: RECORD
+        fields:
+          - name: type
+            type: STRING
+          - name: url
+            type: STRING
+      - name: Id
+        type: STRING
+        mode: REQUIRED
+      - name: Name
+        type: STRING
+        mode: REQUIRED
+      - name: Type
+        type: STRING
+      - name: Industry
+        type: STRING
+      - name: AnnualRevenue
+        type: NUMERIC
+      - name: NumberOfEmployees
+        type: INT64
+      - name: BillingCity
+        type: STRING
+      - name: BillingState
+        type: STRING
+      - name: BillingCountry
+        type: STRING
+      - name: CreatedDate
+        type: TIMESTAMP
+        mode: REQUIRED
+      - name: LastModifiedDate
+        type: TIMESTAMP
+        mode: REQUIRED
+      - name: SystemModstamp
+        type: TIMESTAMP
+        mode: REQUIRED
+      - name: IsDeleted
+        type: BOOL
+        mode: REQUIRED
