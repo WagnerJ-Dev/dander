@@ -36,3 +36,17 @@ pipelines:
       job: dander-hubspot-companies
       runtime_service_account: dander-runtime-hubspot
       scheduler_service_account: dander-scheduler-hubspot
+
+  salesforce_accounts:
+    source: salesforce
+    models: [stg_salesforce__accounts]
+    schedule: "0 11 * * *"
+    time_zone: America/New_York
+    paused: true
+    secrets:
+      SALESFORCE_EXTERNAL_CLIENT_APP_ID: salesforce-external-client-app-id
+      SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY: salesforce-external-client-app-private-key
+    resources:
+      job: dander-salesforce-accounts
+      runtime_service_account: dander-runtime-salesforce
+      scheduler_service_account: dander-scheduler-salesforce

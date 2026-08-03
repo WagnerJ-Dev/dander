@@ -23,7 +23,7 @@ endpoints:
 """.strip()
 
 
-def test_repository_manifest_defines_additive_greenhouse_and_hubspot() -> None:
+def test_repository_manifest_defines_three_additive_hosted_pipelines() -> None:
     project = load_project_config(Path("dander.yaml"))
     project.validate_references(Path.cwd())
 
@@ -38,12 +38,20 @@ def test_repository_manifest_defines_additive_greenhouse_and_hubspot() -> None:
     }
     assert project.platform.safety.require_guarded_free_tier is True
     expanded = project.terraform_pipelines()
-    assert set(expanded) == {"greenhouse_jobs", "hubspot_companies"}
+    assert set(expanded) == {"greenhouse_jobs", "hubspot_companies", "salesforce_accounts"}
     assert expanded["greenhouse_jobs"]["job_name"] == "dander-greenhouse-public"
     assert expanded["greenhouse_jobs"]["secret_env"] == {}
     assert expanded["hubspot_companies"]["job_name"] == "dander-hubspot-companies"
     assert expanded["hubspot_companies"]["secret_env"] == {
         "HUBSPOT_PRIVATE_APP_TOKEN": "hubspot-private-app-token"
+    }
+    assert expanded["salesforce_accounts"]["job_name"] == "dander-salesforce-accounts"
+    assert expanded["salesforce_accounts"]["paused"] is True
+    assert expanded["salesforce_accounts"]["secret_env"] == {
+        "SALESFORCE_EXTERNAL_CLIENT_APP_ID": "salesforce-external-client-app-id",
+        "SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY": (
+            "salesforce-external-client-app-private-key"
+        ),
     }
 
 
