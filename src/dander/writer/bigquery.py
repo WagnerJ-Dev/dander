@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+from datetime import date, datetime, time
+from decimal import Decimal
 from itertools import islice
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import uuid4
@@ -16,7 +19,7 @@ from dander.schema import BIGQUERY_FIELD_MODES, BIGQUERY_FIELD_TYPES, normalize_
 from dander.writer.base import SchemaEvolution, WriteField, WriteMode, WritePattern, WriteTarget
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Sequence
 
     from dander.concurrency import FencingToken
 
@@ -771,12 +774,29 @@ def _load_rows_in_chunks(
             else bigquery.WriteDisposition.WRITE_APPEND
         )
         client.load_table_from_json(
-            rows[offset : offset + max_batch_rows],
+            [_json_load_row(row) for row in rows[offset : offset + max_batch_rows]],
             destination,
             job_config=_load_config(disposition, schema),
         ).result()
         if offset == 0 and expire:
             client.query(_expire_staging_sql(destination)).result()
+
+
+def _json_load_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: _json_load_value(value) for key, value in row.items()}
+
+
+def _json_load_value(value: object) -> object:
+    """Encode validated Python scalars for BigQuery's JSON load client."""
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {key: _json_load_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_load_value(item) for item in value]
+    return value
 
 
 def _expire_staging_sql(staging_id: str) -> str:
