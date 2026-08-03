@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -362,7 +363,10 @@ def test_salesforce_query_record_envelope_satisfies_declared_runtime_schema() ->
         "url": "/services/data/v67.0/sobjects/Account/001TEST",
     }
     assert writer.rows[0]["AnnualRevenue"] is None
-    assert watermarks.committed == "2026-08-02T12:01:00.000+0000"
+    assert writer.rows[0]["CreatedDate"] == datetime(2026, 8, 2, 12, tzinfo=UTC)
+    assert writer.rows[0]["LastModifiedDate"] == datetime(2026, 8, 2, 12, 1, tzinfo=UTC)
+    assert writer.rows[0]["SystemModstamp"] == datetime(2026, 8, 2, 12, 1, tzinfo=UTC)
+    assert watermarks.committed == "2026-08-02T12:01:00+00:00"
 
 
 def test_runner_propagates_declared_schema_for_empty_endpoint() -> None:

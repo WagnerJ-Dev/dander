@@ -292,7 +292,7 @@ class _RecordObservation:
                 f"Endpoint {self._endpoint.name!r} record {index} has no scalar "
                 f"cursor field {cursor_field!r}"
             )
-        cursor = str(value)
+        cursor = value.isoformat() if isinstance(value, datetime) else str(value)
         self.maximum_cursor = (
             max(self.maximum_cursor, cursor) if self.maximum_cursor is not None else cursor
         )
@@ -432,7 +432,7 @@ def _normalize_scalar(value: object, *, data_type: str, path: str) -> object:
             )
             if not isinstance(parsed_timestamp, datetime) or parsed_timestamp.tzinfo is None:
                 raise TypeError
-            return value
+            return parsed_timestamp
     except (InvalidOperation, OverflowError, TypeError, ValueError):
         raise RawSchemaError(f"Invalid {data_type} field at {path}") from None
     raise RawSchemaError(f"Unsupported declared field type at {path}")
