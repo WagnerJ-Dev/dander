@@ -4,6 +4,13 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: `0.1.x` contains fixes only, and the next product capability
 will be `0.2.0`.
 
+## 0.2.0rc2 — 2026-08-02 (alpha)
+
+### Fixed
+
+- Encode validated decimal and temporal values for BigQuery JSON load jobs, including values in
+  nested records and repeated fields, without changing source or schema typing.
+
 ## 0.2.0rc1 — 2026-08-02 (alpha)
 
 ### Added
