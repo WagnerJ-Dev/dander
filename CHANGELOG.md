@@ -4,6 +4,15 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: `0.1.x` contains fixes only, and the next product capability
 will be `0.2.0`.
 
+## 0.2.0rc4 — 2026-08-03 (alpha)
+
+### Added
+
+- Add a real-instance-proven, read-only ServiceNow incidents connector using OAuth client
+  credentials, declared raw fields, primitive internal values, and stable full-read pagination.
+- Add a stateful ServiceNow simulator, realistic multi-page fixtures, a narrow OpenAPI contract,
+  named failure scenarios, a staging model, and a paused hosted pipeline definition.
+
 ## 0.2.0rc3 — 2026-08-03 (alpha)
 
 ### Fixed
