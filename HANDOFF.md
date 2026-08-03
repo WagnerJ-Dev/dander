@@ -2,43 +2,43 @@
 
 ## Finished
 
-- Prepared `0.2.0rc2` from repaired protected `main` after the bounded rc1 Salesforce failure.
-- Updated only release metadata, candidate assertions, release notes, and this handoff.
-- Preserved the merged BigQuery JSON scalar fix without further runtime changes.
-- Built and inspected the wheel/sdist, then installed and scaffolded from both outside the checkout.
+- Published `0.2.0rc2` from protected `main` and verified the public wheel and source distribution outside the checkout.
+- Built and applied the public source-free rc2 image to all three retained Cloud Run jobs; all schedules remain paused.
+- Confirmed the rc2 Salesforce run failed safely because BigQuery rejected Salesforce's valid `+0000` timestamp offset.
+- Fixed declared TIMESTAMP normalization to emit typed, canonical values and canonical ISO 8601 watermarks.
+- Added regression assertions using the exact Salesforce timestamp format that failed live.
 
 ## Try It
 
 ```bash
-uv run dander --version
-uv build --out-dir /tmp/dander-v020rc2
-uv run python scripts/check_distribution.py /tmp/dander-v020rc2/*.whl /tmp/dander-v020rc2/*.tar.gz
+uv run pytest tests/test_runtime.py tests/writer/test_bigquery_writer.py -q
+uv run pytest
 ```
 
 ## Checks
 
+- Focused runtime/writer suite: 60 passed.
 - Full suite: 611 passed; Ruff lint/format, strict mypy, and lock validation passed.
 - Locked dependency audit found no known vulnerabilities.
-- Terraform formatting and both repository roots validated with backends disabled.
-- Wheel/sdist identity and archive inspection passed.
-- Both artifacts installed outside the checkout, reported `0.2.0rc2`, generated valid source-free projects pinned to rc2, and the generated Terraform root validated.
+- Wheel/sdist inspection, external install/scaffold, and both backend-disabled Terraform validations passed.
+- Failed live run left zero Salesforce rows, no watermark, a released lease, and no staging table.
 
 ## Decisions
 
-- Keep candidate preparation version-only relative to repaired `main`; `src/dander` is unchanged.
-- Keep all retained schedules paused until rc2 completes Greenhouse, HubSpot, and Salesforce proofs.
-- Gate public publication and the retained-project image apply separately and explicitly.
+- Treat rc2 as failed acceptance; do not promote it.
+- Keep the timestamp repair provider-agnostic and limited to the existing raw-schema boundary.
+- Require separate approval before publishing the corrected candidate.
 
 ## Remaining
 
-- Merge the candidate PR through protected CI.
-- Obtain explicit approval before tagging or publishing `0.2.0rc2`.
-- Build and deploy the exact public source-free rc2 image.
-- Rerun Greenhouse, HubSpot, and Salesforce, then replay Salesforce once.
-- Restore Greenhouse and HubSpot schedules and require a final no-drift plan.
+- Merge the focused timestamp fix through protected CI.
+- Prepare and obtain approval for `0.2.0rc3`.
+- Deploy the public rc3 source-free image and complete Salesforce ingestion plus replay.
+- Reverify rows, transforms/tests, watermark monotonicity, cleanup, and Terraform drift.
+- Restore retained scheduler state only after candidate acceptance is complete.
 
 ## Review First
 
-- `CHANGELOG.md`
-- `pyproject.toml`
-- `.github/workflows/ci.yml`
+- `src/dander/runtime.py`
+- `tests/test_runtime.py`
+- `HANDOFF.md`
