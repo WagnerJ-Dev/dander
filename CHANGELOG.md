@@ -4,6 +4,14 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: `0.1.x` contains fixes only, and the next product capability
 will be `0.2.0`.
 
+## 0.2.0rc3 — 2026-08-03 (alpha)
+
+### Fixed
+
+- Canonicalize valid timezone-aware declared timestamps before JSON loading so provider offsets
+  such as Salesforce's `+0000` form reach BigQuery as typed values with `+00:00` offsets.
+- Store timestamp watermarks in canonical ISO 8601 form after normalization.
+
 ## 0.2.0rc2 — 2026-08-02 (alpha)
 
 ### Fixed
