@@ -2,48 +2,44 @@
 
 ## Finished
 
-- Added a read-only Salesforce Accounts connector using External Client App JWT authentication,
-  QueryAll, opaque response-link pagination, a declared raw schema, and `SystemModstamp` watermark.
-- Added the `stg_salesforce__accounts` model and its contract/tests.
-- Extended the shared declarative REST layer with JSON-link pagination and configurable JWT
-  audience/assertion lifetime while preserving existing provider defaults.
-- Documented External Client App setup, secret references, current full-reread/SCD1 boundary, and
-  later scale options.
-- Proved the connector twice against the disposable Salesforce Developer Edition org.
+- Prepared `0.2.0rc1` from merged `main` as Dander's next alpha capability candidate.
+- Updated only package/scaffold version assertions, lock metadata, release notes, and this handoff.
+- Included the already merged Salesforce Accounts slice and Workday simulator in candidate notes.
+- Built and inspected the wheel/sdist, then installed and scaffolded from both outside the checkout.
 
 ## Try It
 
 ```bash
-cp connectors/salesforce_jwt.example.yaml connectors/salesforce.yaml
-# After editing the connector, validate configuration only:
-uv run dander run salesforce --dry-run --sandbox --project YOUR_NO_BILLING_GCP_PROJECT
-# For real authentication/extraction, follow docs/salesforce.md and omit --dry-run.
+uv run dander --version
+uv build --out-dir /tmp/dander-v020rc1
+uv run python scripts/check_distribution.py /tmp/dander-v020rc1/*.whl /tmp/dander-v020rc1/*.tar.gz
 ```
 
 ## Checks
 
-- Live JWT proof: 13 Accounts; duplicate-free replay, retained record envelope, and stable watermark.
-- Full suite: 610 passed; focused Salesforce tests: 69 passed.
-- Ruff lint/format and strict mypy passed.
-- Locked dependency audit: no known vulnerabilities.
-- Terraform formatting and both backend-disabled validations passed; no apply or GCP mutation ran.
-- Wheel/sdist inspection, Docker build, container CLI, and packaged Salesforce template checks
-  passed.
+- Full suite: 610 passed; Ruff lint/format, strict mypy, and lock validation passed.
+- Locked dependency audit found no known vulnerabilities.
+- Terraform formatting and both repository roots validated with backends disabled.
+- Wheel/sdist identity and archive inspection passed.
+- Both artifacts installed outside the checkout, reported `0.2.0rc1`, generated valid source-free
+  projects pinned to the candidate, and the generated Terraform root validated.
 
 ## Decisions
 
-- Accounts are the first complete Salesforce slice; source writes are out of scope.
-- QueryAll fully rereads this bounded initial slice; hosted SCD1 publication keeps replay idempotent.
-- External Client App JWT uses the `api` and required `refresh_token/offline_access` scopes, but
-  Dander neither receives nor stores refresh tokens.
+- Treat Salesforce as a `0.2.0` capability, preserving the `0.1.x` fixes-only policy.
+- Keep candidate preparation version-only relative to merged `main`; `src/dander` is unchanged.
+- Gate public candidate publication and retained-project GCP applies separately and explicitly.
 
 ## Remaining
 
-- Add the connector to a hosted manifest and apply only under separate GCP approval.
-- Add timestamp-filtered SOQL or Bulk API 2.0 only when Salesforce volume requires it.
+- Open and merge the candidate PR through protected CI.
+- Obtain explicit approval before tagging or publishing `0.2.0rc1`.
+- Build the immutable source-free image from that exact public candidate.
+- Pause existing schedules, review the additive Salesforce/upgrade plan, then obtain apply approval.
+- Smoke-test Greenhouse, HubSpot, and Salesforce before restoring the first two schedules.
 
 ## Review First
 
-- `connectors/salesforce_jwt.example.yaml`
-- `src/dander/security/oauth_jwt.py` and `src/dander/ingestion/pagination.py`
-- `tests/test_runtime.py` and `models/staging/stg_salesforce__accounts.yml`
+- `CHANGELOG.md`
+- `pyproject.toml`
+- `.github/workflows/ci.yml`

@@ -4,6 +4,23 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: `0.1.x` contains fixes only, and the next product capability
 will be `0.2.0`.
 
+## 0.2.0rc1 — 2026-08-02 (alpha)
+
+### Added
+
+- Add a complete read-only Salesforce Accounts slice using External Client App JWT authentication,
+  QueryAll response-link pagination, declared raw schema, idempotent SCD1 publication, transforms,
+  tests, and governed metadata.
+- Add a stateful Workday RaaS simulator with realistic pagination and named authentication,
+  throttling, permission, and malformed-record scenarios.
+
+### Changed
+
+- Allow OAuth2 JWT connectors to declare a provider-specific authorization-server audience and
+  assertion lifetime while preserving existing provider defaults.
+- Support opaque next-page URLs carried in JSON response bodies through the shared declarative REST
+  connector contract.
+
 ## 0.1.1 — 2026-08-02 (alpha)
 
 ### Fixed
