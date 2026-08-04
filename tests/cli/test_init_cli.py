@@ -59,11 +59,15 @@ def test_init_passes_optional_runtime_inputs(
     assert isinstance(pipelines, dict)
     assert set(pipelines) == {
         "greenhouse_jobs",
+        "greenhouse_jobs_graph",
         "hubspot_companies",
         "salesforce_accounts",
         "servicenow_incidents",
     }
     assert pipelines["greenhouse_jobs"]["paused"] is False
+    assert pipelines["greenhouse_jobs_graph"]["paused"] is True
+    assert pipelines["greenhouse_jobs_graph"]["models"] == []
+    assert pipelines["greenhouse_jobs_graph"]["build_models"] is False
     assert pipelines["hubspot_companies"]["paused"] is False
     assert pipelines["salesforce_accounts"]["paused"] is False
     assert pipelines["servicenow_incidents"]["paused"] is True
