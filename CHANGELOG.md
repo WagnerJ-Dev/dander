@@ -4,6 +4,27 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: `0.1.x` contains fixes only, and the next product capability
 will be `0.2.0`.
 
+## 0.2.0 — 2026-08-04 (alpha)
+
+### Added
+
+- Add read-only Salesforce Accounts and ServiceNow incidents connectors, including typed
+  authentication, declared schemas, simulators, transforms, tests, and hosted pipeline definitions.
+- Add stateful Workday and ServiceNow simulators with realistic pagination and named authentication,
+  throttling, permission, and malformed-record scenarios.
+- Add strict local PipelineGraph persistence for Druff with explicit open/save, revision conflict
+  protection, atomic replacement, and lossless canonical graph validation.
+- Add the first connector-backed PipelineGraph runtime and a separate paused Greenhouse graph job.
+
+### Acceptance
+
+- The public `0.2.0rc5` package installed source-free and its generated image ran the retained
+  Greenhouse graph successfully twice.
+- Both graph executions published 21 unique rows matching the raw source exactly, recorded complete
+  run-ledger entries, released their leases, and removed completed staging.
+- Final stage-zero and platform Terraform plans reported no changes. The `0.2.0` runtime is unchanged
+  from the accepted candidate.
+
 ## 0.2.0rc5 — 2026-08-03 (alpha)
 
 ### Added

@@ -2,11 +2,11 @@
 
 ## Finished
 
-- Merged the Dander graph write-back, executable runtime bridge, and paused deployment configuration through protected main.
-- Merged Druff's canonical write-back and real connector bindings into its main branch.
-- Preserved connector YAML as the authority for auth, requests, pagination, raw schemas, and cursors.
-- Prepared `0.2.0rc5` as an eight-file release-only change over merged Dander main.
-- Kept every live GCP resource, Terraform state, schedule, and retained dataset unchanged.
+- Published and deployed the source-free `0.2.0rc5` graph runtime candidate.
+- Ran the retained Greenhouse graph twice through the paused Cloud Run job.
+- Verified 21 unique target rows matching raw data exactly after both executions.
+- Verified successful run history, released leases, completed-staging cleanup, and unchanged schedules.
+- Prepared the version-only `0.2.0` promotion with no `src/dander` or infrastructure changes.
 
 ## Try It
 
@@ -18,25 +18,25 @@ uv run python scripts/check_distribution.py dist/*.whl dist/*.tar.gz
 
 ## Checks
 
-- Runtime implementation: 636 tests passed; Ruff lint/format, strict mypy, and Terraform validation passed.
-- Dander PRs #44, #45, and #46 passed protected Python, Terraform, secret, distribution, and container checks.
-- Source-free wheel install, project generation, graph dry-run, Linux container build, and image scan passed.
-- Druff: 550 unit tests, 6 Chromium tests, lint, typecheck, formatting, and production build passed.
-- Independent adversarial reviews of the runtime and paused deployment configuration passed.
+- Both live graph executions succeeded; 21 target IDs remained unique and raw/target differences were zero.
+- Ruff lint/format, strict mypy, and all 636 Python tests passed.
+- Both Terraform roots validated; retained stage-zero and platform plans each reported `No changes.`
+- Wheel/sdist checks, source-free installs, generated projects, generated Terraform, dependency audit, and local container checks passed.
+- Release pre-review approved the eight-file patch and required exact-merge post-CI before tagging.
 
 ## Decisions
 
-- `0.2.0rc5` is the first public candidate containing the graph runtime; `rc4` must not be used for this proof.
-- Graph execution supports one connector with bound endpoints and `replace` targets; unsupported behavior fails closed.
-- The retained graph job stays paused and requires a separately reviewed Terraform apply.
+- Final `0.2.0` changes only release metadata, assertions, notes, and this handoff.
+- The accepted `0.2.0rc5` runtime must remain byte-for-byte unchanged under `src/dander`.
+- Druff operational controls begin only after final publication, as separate post-release work.
 
 ## Remaining
 
-- Merge the release PR and wait for all five CI jobs on its exact main merge commit.
-- Tag and publish `v0.2.0rc5` through the protected PyPI environment.
-- Build and push the exact public candidate in a generated source-free project.
-- Review stage-zero and platform Terraform plans, then stop for apply approval.
-- After approval, execute the paused graph job and verify rows, state, cleanup, existing schedules, and final no drift.
+- Run local release validation and prove the accepted runtime tree is unchanged.
+- Merge the protected release PR and wait for all five main CI jobs on the exact merge commit.
+- Tag and publish `v0.2.0`, then verify a clean public source-free install.
+- Implement the narrow Dander validate/run/status API for one bound deployed graph.
+- Implement and publish the matching Druff controls without deployment automation.
 
 ## Review First
 
