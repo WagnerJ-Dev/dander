@@ -2,42 +2,42 @@
 
 ## Finished
 
-- Published and deployed public `dander-platform==0.2.0rc4` as one source-free image across all four retained jobs.
-- Completed hosted ServiceNow create, update-ingest, replay, transforms/tests, metadata, and source cleanup; its schedule remains paused.
-- Merged protected PR #42 to enable the retained Salesforce daily schedule at 11:00 AM ET.
-- Applied an exact one-resource plan changing only the Salesforce scheduler from paused to enabled.
-- Observed the first scheduled Salesforce execution complete successfully and preserved the guarded platform.
+- Added `dander graph serve --file <graph.yaml>` for one explicit local PipelineGraph file.
+- Added canonical GET/conditional-PUT persistence with ETags, validation, atomic replacement, and stale-write rejection.
+- Rejects unknown graph fields instead of silently deleting data from a newer graph contract.
+- Restricted browser access to an exact configured origin and loopback binding.
+- Documented the local visual-editor contract and its intentional execution/deployment boundary.
 
 ## Try It
 
 ```bash
-python -m venv /tmp/dander-rc4
-/tmp/dander-rc4/bin/pip install dander-platform==0.2.0rc4
-/tmp/dander-rc4/bin/dander --version
+uv run dander graph serve --file path/to/pipeline.yaml
 ```
+
+Then open Druff at `http://localhost:3000`, choose **Open from Dander**, edit, and
+choose **Save to Dander**.
 
 ## Checks
 
-- PR #42: all five protected Python, Terraform/security, distribution, container/scan, and secret checks passed.
-- Focused manifest tests: 18 passed; four-pipeline validation and Terraform validation passed.
-- Apply: `0 added, 1 changed, 0 destroyed`; only `dander-salesforce-accounts-daily` changed `paused: true -> false`.
-- Scheduled run `dander-salesforce-accounts-55rzv`: 13 extracted/affected, one model, four assertions, one metadata asset, status succeeded.
-- Salesforce raw/model tables each have 13 unique IDs; zero active leases, no staging residue, and final Terraform plan reports `No changes.`
+- Ruff check/format and `uv run mypy src tests` — passed for 140 source files.
+- `uv run pytest` — 626 passed.
+- `pip-audit --strict` — no known vulnerabilities after the two CI-required lock refreshes.
+- Focused graph-service tests — 7 passed.
+- Browser acceptance — save succeeded, stale save returned conflict without overwrite, restart/reopen succeeded.
 
 ## Decisions
 
-- ServiceNow v1 uses stable full reads; unsafe timestamp-watermark offset paging remains excluded.
-- Salesforce now runs daily at 11:00 AM ET; Greenhouse and HubSpot remain enabled, while ServiceNow remains paused.
-- Live planning uses a fresh public-package scaffold overlaid with the retained manifest, connectors, and models so all four pipelines remain represented.
+- `PipelineGraph` remains canonical; Pydantic 2.12+ rejects unknown fields before the service can normalize them.
+- Persistence serves exactly one operator-selected YAML/JSON file with explicit Open/Save.
+- This slice stops at local write-back; execution and deployment remain outside the API.
 
 ## Remaining
 
-- Continue the operator soak with Greenhouse, HubSpot, and Salesforce enabled.
-- Decide separately whether to enable the accepted ServiceNow noon ET schedule.
-- Treat NetSuite as a separate connector task; no NetSuite implementation began here.
+- Review and merge the Dander graph-service PR before treating Druff write-back as generally available.
+- Keep the service local-only unless a later authenticated remote design is approved.
 
 ## Review First
 
-- `dander.yaml`
-- `tests/project/test_config.py`
-- `tests/cli/test_init_cli.py`
+- `src/dander/pipeline/graph_service.py`
+- `tests/pipeline/test_graph_service.py`
+- `src/dander/cli/main.py`

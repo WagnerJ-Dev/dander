@@ -20,6 +20,7 @@ code is right and this doc has drifted — please fix it.
 |---|---|
 | `dander.pipeline.graph` | The model: `Node`, `NodeField`, `Edge`, `FieldMapping`, `Transformation`, `JoinSpec`, `CursorStrategy`, `PipelineGraph`, and YAML/JSON load/dump. Pure value objects — no validation logic beyond Pydantic's own boundary constraints. |
 | `dander.pipeline.graph_ops` | The correctness layer: structural `validate`, `topological_order`, `AdjacencyIndex`, and field-wiring `validate_field_wiring`. Pure functions of a `PipelineGraph` — nothing is persisted onto the model. |
+| `dander.pipeline.graph_service` | Loopback-only, single-file bridge for visual editors. Dander validates conditional saves and atomically replaces only the graph file selected at startup. |
 | `dander.pipeline.node_config` | The discriminated, per-node-type `Node.config` models — `NodeType`, `NodeConfig`, `SourceNodeConfig`, `TransformNodeConfig`, `TargetNodeConfig` — and the routing function `Node` delegates to. See *Typed per-node-type config* below. |
 | `dander.pipeline.compiler` | Safe compilation of executable linear/two-input graphs to explicit BigQuery SQL, plus side-effect-free target-writer preparation. |
 | `dander.pipeline.request_spec` | `SourceNodeConfig`'s declarative request/payload spec — `HttpMethod`, `RequestSpec` — and the secret/field-reference grammar its header/param/body values must follow. See *Source request/payload spec* below. |
@@ -458,6 +459,23 @@ On-disk / alias keys to know, so both serializations are covered:
 | `JoinKeyPair.left` / `.right` | `left` / `right` | Plain keys, no aliasing. |
 | `Edge.join` | `join` | Omitted entirely (not `null`) when `Edge.join is None`, so join-less edges round-trip byte-identical to pre-join graphs. |
 | `Node.cursor` | `cursor` | Omitted entirely (not `null`) when `Node.cursor is None`, so cursor-less nodes round-trip byte-identical to pre-DANDER-18 graphs. |
+
+## Local visual-editor write-back
+
+Expose exactly one existing graph file to Druff from the project/operator terminal:
+
+```bash
+dander graph serve --file /absolute/path/to/pipeline.yaml
+```
+
+The service binds to `127.0.0.1:8765` and accepts only the configured browser origin
+(`http://localhost:3000` by default). `GET /v1/graph` returns the validated model and an ETag;
+`PUT /v1/graph` requires that ETag, revalidates the complete graph, and atomically replaces the
+configured file. A stale ETag or invalid graph leaves the file unchanged. The browser never sends
+a filesystem path. Saving is model-lossless but may normalize YAML formatting and comments.
+
+This bridge edits `PipelineGraph`; it does not write `dander.yaml`, run pipelines, resolve secrets,
+or plan/apply Terraform.
 
 ## Scope boundary
 

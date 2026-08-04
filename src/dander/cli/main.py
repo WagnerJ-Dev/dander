@@ -50,6 +50,7 @@ from dander.ingestion import (
     WorkdayRaasSource,
     load_source_config,
 )
+from dander.pipeline.graph_service import GraphDocumentError, serve_graph_file
 from dander.project import (
     PlatformRuntimeSpec,
     PlatformSafetySpec,
@@ -99,8 +100,10 @@ app = typer.Typer(
 )
 verify_app = typer.Typer(help="Verify deployed resources with read-only checks.")
 metadata_app = typer.Typer(help="Inspect the durable metadata spine and run ledger.")
+graph_app = typer.Typer(help="Open validated pipeline graphs to local visual editors.")
 app.add_typer(verify_app, name="verify")
 app.add_typer(metadata_app, name="metadata")
+app.add_typer(graph_app, name="graph")
 console = Console()
 _SOURCE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _DEFAULT_CONNECTORS_DIR = Path("connectors")
@@ -161,6 +164,32 @@ def validate_project(
         raise ClickException(str(error)) from error
     summary = f"Validated {len(manifest.pipelines)} additive pipeline(s) from {project_config}."
     console.print(f"[green]{summary}[/green]")
+
+
+@graph_app.command("serve")
+def serve_graph(
+    graph_file: Path = typer.Option(..., "--file", help="Existing PipelineGraph YAML/JSON file."),  # noqa: B008
+    origin: str = typer.Option(
+        "http://localhost:3000",
+        "--origin",
+        help="Exact Druff browser origin allowed to read and save the graph.",
+    ),
+    port: int = typer.Option(8765, "--port", min=1, max=65535),
+) -> None:
+    """Serve one graph file to Druff on localhost with validated, conflict-safe saves."""
+    try:
+        console.print(f"Serving [bold]{graph_file.resolve()}[/bold]")
+        console.print(f"Druff API: http://127.0.0.1:{port}/v1/graph (origin: {origin})")
+        console.print(
+            "Press Ctrl-C to stop. YAML formatting and comments may be normalized on save."
+        )
+        serve_graph_file(graph_file, origin=origin, port=port)
+    except GraphDocumentError as error:
+        raise ClickException(str(error)) from error
+    except OSError as error:
+        raise ClickException(f"Could not start graph service: {error}") from error
+    except KeyboardInterrupt:
+        console.print("\nStopped graph service.")
 
 
 @app.command()
