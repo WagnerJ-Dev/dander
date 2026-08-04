@@ -2,44 +2,42 @@
 
 ## Finished
 
-- Published and deployed the source-free `0.2.0rc5` graph runtime candidate.
-- Ran the retained Greenhouse graph twice through the paused Cloud Run job.
-- Verified 21 unique target rows matching raw data exactly after both executions.
-- Verified successful run history, released leases, completed-staging cleanup, and unchanged schedules.
-- Prepared the version-only `0.2.0` promotion with no `src/dander` or infrastructure changes.
+- Added an opt-in loopback API that validates one graph against its manifest-bound hosted pipeline.
+- Added fixed-target submission for that pipeline's already-deployed Cloud Run job.
+- Added compact status for the latest Cloud Run execution and Dander run-ledger result.
+- Rejected stale graph revisions and overlapping/in-flight submissions.
+- Kept status history reads non-mutating and preserved document-only Druff behavior by default.
 
 ## Try It
 
 ```bash
-uv run dander --version
-uv build
-uv run python scripts/check_distribution.py dist/*.whl dist/*.tar.gz
+uv run dander graph serve --file graphs/greenhouse_jobs.yaml --config dander.yaml \
+  --pipeline greenhouse_jobs_graph --project dander-proof-harrison-20260801
 ```
 
 ## Checks
 
-- Both live graph executions succeeded; 21 target IDs remained unique and raw/target differences were zero.
-- Ruff lint/format, strict mypy, and all 636 Python tests passed.
-- Both Terraform roots validated; retained stage-zero and platform plans each reported `No changes.`
-- Wheel/sdist checks, source-free installs, generated projects, generated Terraform, dependency audit, and local container checks passed.
-- Release pre-review approved the eight-file patch and required exact-merge post-CI before tagging.
+- Ruff lint/format and strict mypy passed.
+- All 646 Python tests passed; the focused graph-service group contains 28 passing tests.
+- Both Terraform roots initialized without backends and validated successfully.
+- Wheel/sdist inspection, source-free wheel install, dependency audit, and local container checks passed.
+- No Terraform plan/apply or live GCP mutation occurred in this change.
 
 ## Decisions
 
-- Final `0.2.0` changes only release metadata, assertions, notes, and this handoff.
-- The accepted `0.2.0rc5` runtime must remain byte-for-byte unchanged under `src/dander`.
-- Druff operational controls begin only after final publication, as separate post-release work.
+- The operator fixes project, pipeline, graph, region, and job at service startup; the browser cannot select them.
+- Run submission uses argument-only `gcloud`, and status never creates or alters the run-history table.
+- The bridge runs an existing deployment only; it does not deploy graph edits or modify schedules.
 
 ## Remaining
 
-- Run local release validation and prove the accepted runtime tree is unchanged.
-- Merge the protected release PR and wait for all five main CI jobs on the exact merge commit.
-- Tag and publish `v0.2.0`, then verify a clean public source-free install.
-- Implement the narrow Dander validate/run/status API for one bound deployed graph.
-- Implement and publish the matching Druff controls without deployment automation.
+- Merge this focused Dander API through protected CI.
+- Add the matching Validate, Run deployed job, and Refresh controls to Druff.
+- Exercise the complete UI path against the paused retained graph job.
+- Reconfirm data idempotency, cleanup, lease release, run history, and Terraform no-drift.
 
 ## Review First
 
-- `CHANGELOG.md`
-- `pyproject.toml`
-- `.github/workflows/ci.yml`
+- `src/dander/pipeline/graph_operations.py`
+- `src/dander/pipeline/graph_service.py`
+- `tests/pipeline/test_graph_operations.py`

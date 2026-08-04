@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from dander.state import RunStage, RunStatus, SqliteRunHistoryStore
+from dander.state import BigQueryRunHistoryStore, RunStage, RunStatus, SqliteRunHistoryStore
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from google.cloud import bigquery
 
 
 def test_sqlite_run_history_persists_terminal_aggregates(tmp_path: Path) -> None:
@@ -76,3 +79,39 @@ def test_sqlite_run_history_reads_active_run(tmp_path: Path) -> None:
     assert record.status is RunStatus.RUNNING
     assert record.stage is RunStage.INGEST
     assert record.finished_at is None
+
+
+class _QueryJob:
+    def result(self) -> tuple[object, ...]:
+        return ()
+
+
+@dataclass
+class _BigQueryClient:
+    queries: list[str] = field(default_factory=list)
+
+    def query(
+        self,
+        query: str,
+        *,
+        job_config: bigquery.QueryJobConfig | None = None,
+    ) -> _QueryJob:
+        del job_config
+        self.queries.append(query)
+        return _QueryJob()
+
+
+def test_bigquery_history_can_read_without_creating_or_altering_tables() -> None:
+    client = _BigQueryClient()
+    store = BigQueryRunHistoryStore(
+        project="proof-project",
+        dataset="dander_meta",
+        client=client,
+        initialize_on_read=False,
+    )
+
+    assert store.recent(limit=1, pipeline_id="graph_records") == ()
+    assert len(client.queries) == 1
+    assert client.queries[0].startswith("SELECT ")
+    assert "CREATE" not in client.queries[0]
+    assert "ALTER" not in client.queries[0]

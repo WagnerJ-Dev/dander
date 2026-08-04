@@ -50,6 +50,11 @@ from dander.ingestion import (
     WorkdayRaasSource,
     load_source_config,
 )
+from dander.pipeline.graph_operations import (
+    GraphOperationBinding,
+    GraphOperationError,
+    GraphOperations,
+)
 from dander.pipeline.graph_service import GraphDocumentError, serve_graph_file
 from dander.pipeline.runtime import (
     BigQueryGraphRunner,
@@ -182,16 +187,48 @@ def serve_graph(
         help="Exact Druff browser origin allowed to read and save the graph.",
     ),
     port: int = typer.Option(8765, "--port", min=1, max=65535),
+    project_config: Path = typer.Option(  # noqa: B008
+        _DEFAULT_PROJECT_CONFIG,
+        "--config",
+        help="Dander project manifest used only when execution controls are enabled.",
+    ),
+    pipeline: str = typer.Option(
+        "",
+        "--pipeline",
+        help="Graph pipeline to bind to its already-deployed Cloud Run job.",
+    ),
+    project: str = typer.Option(
+        "",
+        "--project",
+        help="GCP project containing the already-deployed graph job.",
+    ),
 ) -> None:
-    """Serve one graph file to Druff on localhost with validated, conflict-safe saves."""
+    """Serve one graph file to Druff, optionally bound to one already-deployed job."""
     try:
+        if bool(pipeline) != bool(project):
+            raise GraphOperationError("--pipeline and --project must be supplied together")
+        operations = None
+        if pipeline:
+            binding = GraphOperationBinding.from_project(
+                graph_file=graph_file,
+                project_config=project_config,
+                pipeline_id=pipeline,
+                project=project,
+            )
+            operations = GraphOperations(binding)
         console.print(f"Serving [bold]{graph_file.resolve()}[/bold]")
         console.print(f"Druff API: http://127.0.0.1:{port}/v1/graph (origin: {origin})")
+        if operations is not None:
+            console.print(
+                "Operations: "
+                f"{operations.binding.pipeline_id} -> {operations.binding.job_name} "
+                f"({operations.binding.project}/{operations.binding.region})"
+            )
         console.print(
             "Press Ctrl-C to stop. YAML formatting and comments may be normalized on save."
         )
-        serve_graph_file(graph_file, origin=origin, port=port)
-    except GraphDocumentError as error:
+        serve_graph_file(graph_file, origin=origin, port=port, operations=operations)
+    except (GraphDocumentError, GraphOperationError) as error:
         raise ClickException(str(error)) from error
     except OSError as error:
         raise ClickException(f"Could not start graph service: {error}") from error

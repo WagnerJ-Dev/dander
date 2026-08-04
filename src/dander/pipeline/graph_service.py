@@ -27,9 +27,19 @@ from dander.pipeline.graph import (
     dump_graph_to_json,
     dump_graph_to_yaml,
 )
+from dander.pipeline.graph_operations import (
+    GraphOperationConflictError,
+    GraphOperationRevisionError,
+    GraphOperations,
+    GraphOperationUnavailableError,
+    GraphOperationValidationError,
+)
 from dander.pipeline.graph_ops import validate_field_wiring
 
 GRAPH_API_PATH = "/v1/graph"
+GRAPH_STATUS_API_PATH = "/v1/graph/status"
+GRAPH_VALIDATE_API_PATH = "/v1/graph/validate"
+GRAPH_RUN_API_PATH = "/v1/graph/run"
 MAX_GRAPH_DOCUMENT_BYTES = 5 * 1024 * 1024
 
 
@@ -144,6 +154,7 @@ def create_graph_server(
     *,
     origin: str = "http://localhost:3000",
     port: int = 8765,
+    operations: GraphOperations | None = None,
 ) -> ThreadingHTTPServer:
     """Create a loopback-only graph server without starting its blocking event loop."""
     store = GraphDocumentStore(graph_file)
@@ -151,10 +162,12 @@ def create_graph_server(
     store.load()
     store_for_handler = store
     origin_for_handler = origin
+    operations_for_handler = operations
 
     class BoundGraphRequestHandler(_GraphRequestHandler):
         store = store_for_handler
         allowed_origin = origin_for_handler
+        operations = operations_for_handler
 
     return ThreadingHTTPServer(("127.0.0.1", port), BoundGraphRequestHandler)
 
@@ -164,9 +177,10 @@ def serve_graph_file(
     *,
     origin: str = "http://localhost:3000",
     port: int = 8765,
+    operations: GraphOperations | None = None,
 ) -> None:
     """Serve one graph file on loopback until interrupted."""
-    server = create_graph_server(graph_file, origin=origin, port=port)
+    server = create_graph_server(graph_file, origin=origin, port=port, operations=operations)
     try:
         server.serve_forever()
     finally:
@@ -179,9 +193,12 @@ class _GraphRequestHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     store: ClassVar[GraphDocumentStore]
     allowed_origin: ClassVar[str]
+    operations: ClassVar[GraphOperations | None]
 
     def do_OPTIONS(self) -> None:  # noqa: N802
-        if not self._request_is_allowed():
+        if not self._request_is_allowed(
+            {GRAPH_API_PATH, GRAPH_STATUS_API_PATH, GRAPH_VALIDATE_API_PATH, GRAPH_RUN_API_PATH}
+        ):
             return
         self.send_response(HTTPStatus.NO_CONTENT)
         self._send_cors_headers()
@@ -189,7 +206,10 @@ class _GraphRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
-        if not self._request_is_allowed():
+        if not self._request_is_allowed({GRAPH_API_PATH, GRAPH_STATUS_API_PATH}):
+            return
+        if self.path == GRAPH_STATUS_API_PATH:
+            self._get_status()
             return
         try:
             document = self.store.load()
@@ -206,8 +226,58 @@ class _GraphRequestHandler(BaseHTTPRequestHandler):
             revision=document.revision,
         )
 
+    def do_POST(self) -> None:  # noqa: N802
+        if not self._request_is_allowed({GRAPH_VALIDATE_API_PATH, GRAPH_RUN_API_PATH}):
+            return
+        if self.operations is None:
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "error": (
+                        "Execution controls are disabled. Restart Dander with a project and "
+                        "pipeline binding."
+                    )
+                },
+            )
+            return
+        expected_revision = _parse_if_match(self.headers.get("If-Match"))
+        if expected_revision is None:
+            self._send_json(
+                HTTPStatus.PRECONDITION_REQUIRED,
+                {"error": "Graph operations require the ETag returned by the last open."},
+            )
+            return
+        try:
+            if self.path == GRAPH_VALIDATE_API_PATH:
+                result = self.operations.validate(
+                    self.store,
+                    expected_revision=expected_revision,
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    result,
+                    revision=expected_revision,
+                )
+            else:
+                execution = self.operations.trigger(
+                    self.store,
+                    expected_revision=expected_revision,
+                )
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    {"execution": execution.as_dict()},
+                )
+        except GraphOperationRevisionError as error:
+            self._send_json(HTTPStatus.PRECONDITION_FAILED, {"error": str(error)})
+        except GraphOperationConflictError as error:
+            self._send_json(HTTPStatus.CONFLICT, {"error": str(error)})
+        except (GraphDocumentValidationError, GraphOperationValidationError) as error:
+            self._send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(error)})
+        except GraphOperationUnavailableError as error:
+            self._send_json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
+
     def do_PUT(self) -> None:  # noqa: N802
-        if not self._request_is_allowed():
+        if not self._request_is_allowed({GRAPH_API_PATH}):
             return
         if self.headers.get_content_type() != "application/json":
             self._send_json(
@@ -261,8 +331,19 @@ class _GraphRequestHandler(BaseHTTPRequestHandler):
             revision=document.revision,
         )
 
-    def _request_is_allowed(self) -> bool:
-        if self.path != GRAPH_API_PATH:
+    def _get_status(self) -> None:
+        if self.operations is None:
+            self._send_json(HTTPStatus.OK, {"enabled": False})
+            return
+        try:
+            self._send_json(HTTPStatus.OK, self.operations.status(self.store))
+        except (GraphDocumentValidationError, GraphOperationValidationError) as error:
+            self._send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(error)})
+        except GraphOperationUnavailableError as error:
+            self._send_json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
+
+    def _request_is_allowed(self, paths: set[str]) -> bool:
+        if self.path not in paths:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found."}, include_cors=False)
             return False
         if self.headers.get("Origin") != self.allowed_origin:
@@ -301,7 +382,7 @@ class _GraphRequestHandler(BaseHTTPRequestHandler):
 
     def _send_cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", self.allowed_origin)
-        self.send_header("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, If-Match")
         self.send_header("Access-Control-Expose-Headers", "ETag")
         self.send_header("Vary", "Origin")

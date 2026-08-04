@@ -125,13 +125,21 @@ class _Row(Protocol):
 class BigQueryRunHistoryStore(RunHistoryStore):
     """Persist run lifecycle summaries in a clustered BigQuery control table."""
 
-    def __init__(self, *, project: str, dataset: str, client: _Client | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        project: str,
+        dataset: str,
+        client: _Client | None = None,
+        initialize_on_read: bool = True,
+    ) -> None:
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", project):
             raise ValueError(f"Invalid BigQuery project: {project!r}")
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", dataset):
             raise ValueError(f"Invalid BigQuery dataset: {dataset!r}")
         self._table = f"{project}.{dataset}._dander_runs"
         self._client = client or cast("_Client", bigquery.Client(project=project))
+        self._initialize_on_read = initialize_on_read
         self._ready = False
 
     def start(self, run_id: str, source: str, *, pipeline_id: str | None = None) -> None:
@@ -284,7 +292,8 @@ class BigQueryRunHistoryStore(RunHistoryStore):
     ) -> tuple[RunRecord, ...]:
         if not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
-        self._ensure_table()
+        if self._initialize_on_read:
+            self._ensure_table()
         parameters = [bigquery.ScalarQueryParameter("limit", "INT64", limit)]
         where = ""
         if pipeline_id is not None:
