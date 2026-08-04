@@ -4,6 +4,18 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: `0.1.x` contains fixes only, and the next product capability
 will be `0.2.0`.
 
+## 0.2.0rc5 — 2026-08-03 (alpha)
+
+### Added
+
+- Add strict local PipelineGraph persistence for Druff with explicit open/save, revision conflict
+  protection, atomic replacement, and lossless canonical graph validation.
+- Add the first connector-backed PipelineGraph runtime: bind existing connector endpoints, execute
+  inside Dander's run-history and lease lifecycle, and publish replace targets through expiring
+  staging plus a transactionally fenced BigQuery finalizer.
+- Package an inactive Greenhouse graph example and add a separate paused retained-project job for
+  source-free hosted acceptance without changing existing pipeline definitions.
+
 ## 0.2.0rc4 — 2026-08-03 (alpha)
 
 ### Added
