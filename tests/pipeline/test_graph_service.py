@@ -6,15 +6,23 @@ import http.client
 import json
 import threading
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 import yaml
 
 from dander.pipeline import Node, PipelineGraph, dump_graph_to_yaml, load_graph_from_yaml
 from dander.pipeline.graph import NodeVisual, Position
+from dander.pipeline.graph_operations import (
+    CloudRunExecution,
+    GraphOperationConflictError,
+    GraphOperations,
+)
 from dander.pipeline.graph_service import (
     GRAPH_API_PATH,
+    GRAPH_RUN_API_PATH,
+    GRAPH_STATUS_API_PATH,
+    GRAPH_VALIDATE_API_PATH,
     GraphDocumentConflictError,
     GraphDocumentStore,
     GraphDocumentValidationError,
@@ -122,8 +130,12 @@ def test_store_rejects_unknown_nested_field_without_changing_file(tmp_path: Path
 
 
 @contextmanager
-def _running_server(path: Path) -> Iterator[tuple[str, int]]:
-    server = create_graph_server(path, origin=ORIGIN, port=0)
+def _running_server(
+    path: Path,
+    *,
+    operations: GraphOperations | None = None,
+) -> Iterator[tuple[str, int]]:
+    server = create_graph_server(path, origin=ORIGIN, port=0, operations=operations)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -139,13 +151,14 @@ def _request(
     address: tuple[str, int],
     method: str,
     *,
+    path: str = GRAPH_API_PATH,
     payload: object | None = None,
     headers: dict[str, str] | None = None,
 ) -> tuple[int, dict[str, Any], dict[str, str]]:
     connection = http.client.HTTPConnection(*address, timeout=5)
     body = None if payload is None else json.dumps(payload)
     request_headers = {"Origin": ORIGIN, **(headers or {})}
-    connection.request(method, GRAPH_API_PATH, body=body, headers=request_headers)
+    connection.request(method, path, body=body, headers=request_headers)
     response = connection.getresponse()
     response_body = json.loads(response.read())
     response_headers = {name.lower(): value for name, value in response.getheaders()}
@@ -206,3 +219,114 @@ def test_http_rejects_wrong_origin_and_stale_save(tmp_path: Path) -> None:
     assert status == 412
     assert "changed" in error["error"]
     assert headers["etag"] == f'"{GraphDocumentStore(path).load().revision}"'
+
+
+class _Operations:
+    def __init__(self) -> None:
+        self.validated: list[str] = []
+        self.triggered: list[str] = []
+        self.conflict = False
+
+    def validate(
+        self,
+        _store: GraphDocumentStore,
+        *,
+        expected_revision: str,
+    ) -> dict[str, object]:
+        self.validated.append(expected_revision)
+        return {"valid": True, "revision": expected_revision}
+
+    def trigger(
+        self,
+        _store: GraphDocumentStore,
+        *,
+        expected_revision: str,
+    ) -> CloudRunExecution:
+        self.triggered.append(expected_revision)
+        if self.conflict:
+            raise GraphOperationConflictError("A deployed execution is already active.")
+        return CloudRunExecution(name="dander-graph-records-abcde", state="starting")
+
+    def status(self, store: GraphDocumentStore) -> dict[str, object]:
+        return {
+            "enabled": True,
+            "revision": store.load().revision,
+            "execution": None,
+            "run": None,
+        }
+
+
+def test_http_operations_are_disabled_without_an_operator_binding(tmp_path: Path) -> None:
+    graph_file = tmp_path / "pipeline.yaml"
+    _write_graph(graph_file)
+
+    with _running_server(graph_file) as address:
+        status, body, _ = _request(address, "GET", path=GRAPH_STATUS_API_PATH)
+        run_status, run_body, _ = _request(address, "POST", path=GRAPH_RUN_API_PATH)
+
+    assert status == 200
+    assert body == {"enabled": False}
+    assert run_status == 409
+    assert "disabled" in run_body["error"]
+
+
+def test_http_validate_and_run_require_and_forward_the_open_revision(tmp_path: Path) -> None:
+    graph_file = tmp_path / "pipeline.yaml"
+    _write_graph(graph_file)
+    operations = _Operations()
+
+    with _running_server(
+        graph_file,
+        operations=cast("GraphOperations", operations),
+    ) as address:
+        _, _, graph_headers = _request(address, "GET")
+        missing_status, missing_body, _ = _request(
+            address,
+            "POST",
+            path=GRAPH_VALIDATE_API_PATH,
+        )
+        validate_status, validate_body, validate_headers = _request(
+            address,
+            "POST",
+            path=GRAPH_VALIDATE_API_PATH,
+            headers={"If-Match": graph_headers["etag"]},
+        )
+        run_status, run_body, _ = _request(
+            address,
+            "POST",
+            path=GRAPH_RUN_API_PATH,
+            headers={"If-Match": graph_headers["etag"]},
+        )
+
+    revision = graph_headers["etag"].strip('"')
+    assert missing_status == 428
+    assert "ETag" in missing_body["error"]
+    assert validate_status == 200
+    assert validate_body == {"valid": True, "revision": revision}
+    assert validate_headers["etag"] == graph_headers["etag"]
+    assert run_status == 202
+    assert run_body["execution"]["state"] == "starting"
+    assert operations.validated == [revision]
+    assert operations.triggered == [revision]
+
+
+def test_http_run_maps_active_execution_to_conflict(tmp_path: Path) -> None:
+    graph_file = tmp_path / "pipeline.yaml"
+    _write_graph(graph_file)
+    operations = _Operations()
+    operations.conflict = True
+
+    with _running_server(
+        graph_file,
+        operations=cast("GraphOperations", operations),
+    ) as address:
+        _, _, graph_headers = _request(address, "GET")
+        status, body, _ = _request(
+            address,
+            "POST",
+            path=GRAPH_RUN_API_PATH,
+            headers={"If-Match": graph_headers["etag"]},
+        )
+
+    assert status == 409
+    assert "already active" in body["error"]

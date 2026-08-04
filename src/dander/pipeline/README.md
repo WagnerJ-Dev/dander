@@ -20,7 +20,7 @@ code is right and this doc has drifted — please fix it.
 |---|---|
 | `dander.pipeline.graph` | The model: `Node`, `NodeField`, `Edge`, `FieldMapping`, `Transformation`, `JoinSpec`, `CursorStrategy`, `PipelineGraph`, and YAML/JSON load/dump. Pure value objects — no validation logic beyond Pydantic's own boundary constraints. |
 | `dander.pipeline.graph_ops` | The correctness layer: structural `validate`, `topological_order`, `AdjacencyIndex`, and field-wiring `validate_field_wiring`. Pure functions of a `PipelineGraph` — nothing is persisted onto the model. |
-| `dander.pipeline.graph_service` | Loopback-only, single-file bridge for visual editors. Dander validates conditional saves and atomically replaces only the graph file selected at startup. |
+| `dander.pipeline.graph_service` | Loopback-only, single-file bridge for visual editors. Dander validates conditional saves and can bind that exact graph to one already-deployed Cloud Run job selected at startup. |
 | `dander.pipeline.node_config` | The discriminated, per-node-type `Node.config` models — `NodeType`, `NodeConfig`, `SourceNodeConfig`, `TransformNodeConfig`, `TargetNodeConfig` — and the routing function `Node` delegates to. See *Typed per-node-type config* below. |
 | `dander.pipeline.compiler` | Safe compilation of executable linear/two-input graphs to explicit BigQuery SQL, plus side-effect-free target-writer preparation. |
 | `dander.pipeline.request_spec` | `SourceNodeConfig`'s declarative request/payload spec — `HttpMethod`, `RequestSpec` — and the secret/field-reference grammar its header/param/body values must follow. See *Source request/payload spec* below. |
@@ -474,8 +474,25 @@ The service binds to `127.0.0.1:8765` and accepts only the configured browser or
 configured file. A stale ETag or invalid graph leaves the file unchanged. The browser never sends
 a filesystem path. Saving is model-lossless but may normalize YAML formatting and comments.
 
-This bridge edits `PipelineGraph`; it does not write `dander.yaml`, run pipelines, resolve secrets,
-or plan/apply Terraform.
+To validate that graph against one manifest pipeline, manually run its already-deployed Cloud Run
+job, and read the latest execution plus Dander run-ledger result, bind the operator service at
+startup:
+
+```bash
+dander graph serve \
+  --file /absolute/path/to/graphs/greenhouse_jobs.yaml \
+  --config /absolute/path/to/dander.yaml \
+  --pipeline greenhouse_jobs_graph \
+  --project my-gcp-project
+```
+
+The project, region, job name, pipeline, graph path, and revision are fixed by the operator and the
+validated manifest; the browser cannot replace them. Run submission uses the installed `gcloud`
+identity and is rejected while another execution is active. Status reads the existing run ledger
+without creating or altering it.
+
+This bridge edits `PipelineGraph` and can execute only the bound, already-deployed job. It does not
+write `dander.yaml`, resolve secrets, deploy changes, enable schedules, or plan/apply Terraform.
 
 ## Connector-backed execution
 

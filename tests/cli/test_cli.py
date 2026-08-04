@@ -189,3 +189,21 @@ def test_billing_modes_are_mutually_exclusive() -> None:
     assert result.exit_code == 1
     assert result.exception is not None
     assert "mutually exclusive" in str(result.exception)
+
+
+def test_graph_operations_require_project_and_pipeline_together(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "graph",
+            "serve",
+            "--file",
+            str(tmp_path / "graph.yaml"),
+            "--pipeline",
+            "graph_records",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.exception is not None
+    assert "--pipeline and --project must be supplied together" in str(result.exception)
