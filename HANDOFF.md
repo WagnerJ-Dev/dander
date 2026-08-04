@@ -2,45 +2,44 @@
 
 ## Finished
 
-- Added a strict executable `PipelineGraph` bridge for existing connector YAML and endpoint bindings.
-- Runs graph-selected ingestion and replace-mode BigQuery targets inside the existing history, lease, and heartbeat lifecycle.
-- Publishes graph targets through run-scoped staging with creation-time expiry and transactionally fenced replacement.
-- Added a source-free Greenhouse graph example to generated projects and container/package assets.
-- Prepared a separate paused `greenhouse_jobs_graph` deployment entry without changing the four
-  existing pipeline definitions or any live GCP resource.
+- Merged the Dander graph write-back, executable runtime bridge, and paused deployment configuration through protected main.
+- Merged Druff's canonical write-back and real connector bindings into its main branch.
+- Preserved connector YAML as the authority for auth, requests, pagination, raw schemas, and cursors.
+- Prepared `0.2.0rc5` as an eight-file release-only change over merged Dander main.
+- Kept every live GCP resource, Terraform state, schedule, and retained dataset unchanged.
 
 ## Try It
 
 ```bash
-uv run dander validate
-uv run dander run greenhouse_jobs_graph --dry-run --project unit-project
+uv run dander --version
+uv build
+uv run python scripts/check_distribution.py dist/*.whl dist/*.tar.gz
 ```
-
-Set a pipeline's `graph` to `graphs/greenhouse_jobs.yaml`, with `models: []` and
-`build_models: false`, to activate graph execution for that pipeline.
 
 ## Checks
 
-- `uv run pytest` — 636 passed.
-- Ruff check/format and `uv run mypy src tests` — passed; 142 source files type-checked.
-- `terraform fmt -check -recursive infra` and generated-project `terraform validate` — passed.
-- Wheel/sdist build, clean external wheel install, source-free scaffold validation, and container build/dry-run — passed.
-- Retained five-pipeline manifest validation and graph deployment dry-run — passed.
+- Runtime implementation: 636 tests passed; Ruff lint/format, strict mypy, and Terraform validation passed.
+- Dander PRs #44, #45, and #46 passed protected Python, Terraform, secret, distribution, and container checks.
+- Source-free wheel install, project generation, graph dry-run, Linux container build, and image scan passed.
+- Druff: 550 unit tests, 6 Chromium tests, lint, typecheck, formatting, and production build passed.
+- Independent adversarial reviews of the runtime and paused deployment configuration passed.
 
 ## Decisions
 
-- Connector YAML remains authoritative for credentials, requests, pagination, raw schema, and cursor behavior.
-- The first runtime slice supports one connector, one or more bound endpoints, compiled transforms, and `replace` targets only.
-- Unsupported graph behavior fails before extraction; graph metadata publication remains deferred.
+- `0.2.0rc5` is the first public candidate containing the graph runtime; `rc4` must not be used for this proof.
+- Graph execution supports one connector with bound endpoints and `replace` targets; unsupported behavior fails closed.
+- The retained graph job stays paused and requires a separately reviewed Terraform apply.
 
 ## Remaining
 
-- Review and merge the graph service, runtime bridge, and paused deployment configuration in order.
-- Require explicit approval before pushing an image, running a live plan, or deploying the graph pipeline in GCP.
-- Extend executable write modes and metadata projection only as separate product work.
+- Merge the release PR and wait for all five CI jobs on its exact main merge commit.
+- Tag and publish `v0.2.0rc5` through the protected PyPI environment.
+- Build and push the exact public candidate in a generated source-free project.
+- Review stage-zero and platform Terraform plans, then stop for apply approval.
+- After approval, execute the paused graph job and verify rows, state, cleanup, existing schedules, and final no drift.
 
 ## Review First
 
-- `src/dander/pipeline/runtime.py`
-- `src/dander/cli/main.py`
-- `tests/pipeline/test_runtime_bridge.py`
+- `CHANGELOG.md`
+- `pyproject.toml`
+- `.github/workflows/ci.yml`
