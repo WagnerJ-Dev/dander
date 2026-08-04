@@ -1,0 +1,59 @@
+name: greenhouse_jobs_graph
+nodes:
+  - id: greenhouse_jobs
+    type: source
+    name: Greenhouse jobs
+    config:
+      connector: greenhouse_job_board
+      endpoint: jobs
+    fields:
+      - name: id
+        type: INT64
+        nullable: false
+      - name: title
+        type: STRING
+      - name: company_name
+        type: STRING
+      - name: updated_at
+        type: TIMESTAMP
+    visual:
+      position:
+        x: 80
+        y: 120
+  - id: curated_jobs
+    type: target
+    name: Curated jobs
+    config:
+      writer:
+        write_mode: replace
+        destination:
+          dataset: staging
+          table: graph_greenhouse_jobs
+          business_key: []
+    fields:
+      - name: id
+        type: INT64
+        nullable: false
+      - name: title
+        type: STRING
+      - name: company_name
+        type: STRING
+      - name: updated_at
+        type: TIMESTAMP
+    visual:
+      position:
+        x: 420
+        y: 120
+edges:
+  - from: greenhouse_jobs
+    to: curated_jobs
+    mappings:
+      - source: id
+        target: id
+      - source: title
+        target: title
+      - source: company_name
+        target: company_name
+      - source: updated_at
+        target: updated_at
+

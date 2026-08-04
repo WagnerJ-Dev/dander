@@ -22,6 +22,39 @@ endpoints:
         mode: REQUIRED
 """.strip()
 
+_VALID_GRAPH = """
+name: records
+nodes:
+  - id: records
+    type: source
+    name: Records
+    config:
+      connector: source
+      endpoint: records
+    fields:
+      - name: id
+        type: STRING
+  - id: target
+    type: target
+    name: Target
+    config:
+      writer:
+        write_mode: replace
+        destination:
+          dataset: staging
+          table: graph_records
+          business_key: []
+    fields:
+      - name: id
+        type: STRING
+edges:
+  - from: records
+    to: target
+    mappings:
+      - source: id
+        target: id
+""".strip()
+
 
 def test_repository_manifest_defines_four_additive_hosted_pipelines() -> None:
     project = load_project_config(Path("dander.yaml"))
@@ -109,6 +142,55 @@ def test_missing_model_is_reported_by_pipeline_structure_only(tmp_path: Path) ->
     project = load_project_config(config)
     with pytest.raises(ProjectConfigError, match="Pipeline 'example'.*missing model 'missing'"):
         project.validate_references(tmp_path)
+
+
+def test_graph_pipeline_validates_without_legacy_models(tmp_path: Path) -> None:
+    (tmp_path / "connectors").mkdir()
+    (tmp_path / "models").mkdir()
+    (tmp_path / "graphs").mkdir()
+    (tmp_path / "connectors" / "source.yaml").write_text(
+        _VALID_CONNECTOR,
+        encoding="utf-8",
+    )
+    (tmp_path / "graphs" / "records.yaml").write_text(_VALID_GRAPH, encoding="utf-8")
+    config = tmp_path / "dander.yaml"
+    config.write_text(
+        """
+version: 1
+pipelines:
+  graph_records:
+    source: source
+    graph: graphs/records.yaml
+    models: []
+    build_models: false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    project = load_project_config(config)
+    project.validate_references(tmp_path)
+
+    expanded = project.terraform_pipelines()["graph_records"]
+    assert expanded["models"] == []
+    assert expanded["build_models"] is False
+
+
+def test_graph_pipeline_rejects_legacy_model_execution(tmp_path: Path) -> None:
+    config = tmp_path / "dander.yaml"
+    config.write_text(
+        """
+version: 1
+pipelines:
+  graph_records:
+    source: source
+    graph: graphs/records.yaml
+    models: [legacy_model]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectConfigError, match="pipelines.graph_records"):
+        load_project_config(config)
 
 
 def test_hosted_pipeline_requires_raw_schema_for_every_endpoint(tmp_path: Path) -> None:

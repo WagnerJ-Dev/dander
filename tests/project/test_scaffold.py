@@ -27,6 +27,7 @@ def test_scaffold_creates_complete_paused_project(tmp_path: Path) -> None:
         ".gitignore",
         "Dockerfile",
         "connectors/greenhouse_job_board.yaml",
+        "graphs/greenhouse_jobs.yaml",
         "infra/main.tf",
         "infra/bootstrap-admin/main.tf",
         "models/staging/stg_greenhouse__jobs.sql",

@@ -69,6 +69,51 @@ def test_dry_run_reports_configured_writer_batch_rows() -> None:
     assert "Writer batch rows: 2048" in result.output
 
 
+def test_graph_pipeline_dry_run_binds_connector_endpoint_and_target(tmp_path: Path) -> None:
+    graphs = tmp_path / "graphs"
+    graphs.mkdir()
+    (graphs / "greenhouse_jobs.yaml").write_text(
+        (_REPO_ROOT / "graphs" / "greenhouse_jobs.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    config = tmp_path / "dander.yaml"
+    config.write_text(
+        """
+version: 1
+pipelines:
+  graph_greenhouse:
+    source: greenhouse_job_board
+    graph: graphs/greenhouse_jobs.yaml
+    models: []
+    build_models: false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "graph_greenhouse",
+            "--dry-run",
+            "--project",
+            "unit-project",
+            "--config",
+            str(config),
+            "--connectors-dir",
+            str(_REPO_ROOT / "connectors"),
+            "--models-dir",
+            str(_REPO_ROOT / "models"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "greenhouse_job_board_jobs" in result.output
+    assert "PipelineGraph targets" in result.output
+    assert "unit-project.staging.graph_greenhouse_jobs" in result.output
+    assert "REPLACE" in result.output
+
+
 def test_harvest_v3_dry_run_validates_without_credentials() -> None:
     result = CliRunner().invoke(
         app,

@@ -10,6 +10,8 @@
 !src/**
 !connectors/
 !connectors/**
+!graphs/
+!graphs/**
 !models/
 !models/**
 !infra/

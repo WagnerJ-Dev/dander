@@ -10,6 +10,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir "dander-platform==${DANDER_VERSION}"
 
 COPY connectors ./connectors
+COPY graphs ./graphs
 COPY models ./models
 COPY dander.yaml ./dander.yaml
 

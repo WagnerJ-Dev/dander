@@ -3,5 +3,7 @@
 !dander.yaml
 !connectors/
 !connectors/**
+!graphs/
+!graphs/**
 !models/
 !models/**

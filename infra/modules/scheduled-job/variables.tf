@@ -114,7 +114,7 @@ variable "pipelines" {
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", pipeline.runtime_service_account_id)) &&
       can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", pipeline.scheduler_service_account_id)) &&
       can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", pipeline.source)) &&
-      length(pipeline.models) > 0 &&
+      (!pipeline.build_models || length(pipeline.models) > 0) &&
       alltrue([for model in pipeline.models : can(regex("^[A-Za-z_][A-Za-z0-9_-]*$", model))]) &&
       length(trimspace(pipeline.schedule)) > 0 &&
       length(trimspace(pipeline.time_zone)) > 0 &&
@@ -124,7 +124,7 @@ variable "pipelines" {
         can(regex("^[A-Za-z][A-Za-z0-9_-]{0,254}$", secret_id))
       ])
     ])
-    error_message = "Every pipeline must use safe ids, a non-empty model selection and schedule, and valid secret bindings."
+    error_message = "Every pipeline must use safe ids, models when builds are enabled, a non-empty schedule, and valid secret bindings."
   }
 }
 

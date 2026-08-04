@@ -22,7 +22,10 @@ an unattended production system containing business-critical data.
 ## Publication and concurrency
 
 - BigQuery DML finalizers are transactionally fenced. Cloud replace publication is not advertised
-  as transactionally fenced.
+  as transactionally fenced for the direct record writer. PipelineGraph replacement uses a
+  separate staged, transactionally fenced DML finalizer.
+- Executable PipelineGraphs currently support one connector YAML per hosted pipeline and
+  `replace` targets only. Graph field tests and graph-to-Dataplex publication fail closed.
 - A crashed sandbox staging table relies on configured expiration for cleanup. Handled failures
   remove their staging table immediately.
 - Run history stores non-sensitive stage and aggregate counts, not exception text or source rows.
