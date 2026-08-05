@@ -22,6 +22,11 @@ for the complete installation, provisioning, manual-run, and schedule-enablement
 the [upgrade guide](https://github.com/harrisonoconnorhover/dander/blob/main/docs/upgrading.md)
 before changing the pinned `DANDER_VERSION` in this project's Dockerfile.
 
+To host Druff's compiled interface with this platform, also pass its immutable image as
+`--druff-container-image`. Repeat that input on later full-platform plans to retain the service.
+The public UI stores no graph or credentials; start `dander graph serve --origin HTTPS_DRUFF_URL`
+from this project when you want the browser to open, save, or run one operator-bound graph.
+
 `graphs/greenhouse_jobs.yaml` is an inactive Druff-compatible example. To make a pipeline execute
 that graph instead of SQL models, set its manifest entry to:
 

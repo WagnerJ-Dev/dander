@@ -110,6 +110,17 @@ variable "runtime_container_image" {
   default     = ""
 }
 
+variable "druff_container_image" {
+  type        = string
+  description = "Optional immutable Druff UI image; empty disables the hosted interface."
+  default     = ""
+
+  validation {
+    condition     = var.druff_container_image == "" || can(regex("@sha256:[0-9a-f]{64}$", var.druff_container_image))
+    error_message = "druff_container_image must be empty or an immutable image reference ending in @sha256:<64 lowercase hex characters>."
+  }
+}
+
 variable "pipelines" {
   description = "Expanded hosted pipeline definitions keyed by stable Dander pipeline id."
   type = map(object({

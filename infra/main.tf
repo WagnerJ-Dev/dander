@@ -30,6 +30,17 @@ module "scheduled_job" {
   depends_on = [module.bigquery]
 }
 
+module "druff" {
+  count  = var.druff_container_image == "" ? 0 : 1
+  source = "./modules/druff"
+
+  project_id      = var.project_id
+  region          = var.region
+  container_image = var.druff_container_image
+
+  depends_on = [module.scheduled_job]
+}
+
 locals {
   pipeline_secret_ids = toset(flatten([
     for pipeline in values(var.pipelines) : values(pipeline.secret_env)
@@ -72,6 +83,13 @@ check "github_wif_requires_runtime" {
   assert {
     condition     = var.github_repository == "" || var.enable_scheduled_job
     error_message = "github_repository requires enable_scheduled_job=true."
+  }
+}
+
+check "druff_requires_runtime" {
+  assert {
+    condition     = var.druff_container_image == "" || var.enable_scheduled_job
+    error_message = "druff_container_image requires enable_scheduled_job=true."
   }
 }
 

@@ -150,6 +150,8 @@ pipelines:
             "--enable-deployment-preview",
             "--failure-alert-email",
             "",
+            "--druff-container-image",
+            f"example.invalid/project/repository/druff@sha256:{'b' * 64}",
             "--secret-id",
             "operator-secret",
             "--no-cost-guard",
@@ -162,6 +164,9 @@ pipelines:
     assert previewer is not None
     assert previewer.settings.state_bucket == "unit-project-dander-state"
     assert previewer.settings.failure_alert_email == ""
+    assert previewer.settings.druff_container_image == (
+        f"example.invalid/project/repository/druff@sha256:{'b' * 64}"
+    )
     assert previewer.settings.secret_ids == ("operator-secret",)
     assert captured["connector_plugins"] == ()
     assert "never applies it" in result.output

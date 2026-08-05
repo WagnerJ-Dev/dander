@@ -41,6 +41,8 @@ def test_init_passes_optional_runtime_inputs(
             "ABCDEF-123456-ABCDEF",
             "--container-image",
             f"example.invalid/project/repository/image@sha256:{'a' * 64}",
+            "--druff-container-image",
+            f"example.invalid/project/repository/druff@sha256:{'b' * 64}",
             "--secret-id",
             "api-token",
             "--github-repository",
@@ -55,6 +57,9 @@ def test_init_passes_optional_runtime_inputs(
 
     assert result.exit_code == 0, result.output
     assert captured["enable_runtime"] is True
+    assert captured["druff_container_image"] == (
+        f"example.invalid/project/repository/druff@sha256:{'b' * 64}"
+    )
     pipelines = captured["pipelines"]
     assert isinstance(pipelines, dict)
     assert set(pipelines) == {
@@ -170,6 +175,30 @@ def test_live_cost_guard_is_named_in_apply_confirmation(
     )
 
     assert "LIVE automatic billing detachment" in result.output
+
+
+def test_public_druff_is_named_in_apply_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_execute(self: object, **kwargs: object) -> Path:
+        raise AssertionError("must not execute")
+
+    monkeypatch.setattr("dander.cli.main.TerraformBootstrap.execute", fake_execute)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            "--project",
+            "unit-project",
+            "--druff-container-image",
+            f"example.invalid/project/repository/druff@sha256:{'b' * 64}",
+            "--apply",
+        ],
+        input="n\n",
+    )
+
+    assert "including a public Druff interface" in result.output
 
 
 def test_init_apply_bootstraps_state_identity_image_and_platform(

@@ -403,6 +403,37 @@ simulation mode. Live billing detachment requires the additional `--live-cost-gu
 called out in the apply confirmation. Function deployment uses billable Cloud Build, Cloud Run,
 Storage, and Artifact Registry services; free allowances do not make this a hard $0 guarantee.
 
+### Optional hosted Druff interface
+
+Dander can provision Druff's compiled interface beside the hosted pipelines without exposing a
+graph or execution API to the internet. Build and push Druff's production Dockerfile, resolve its
+immutable digest, and include it in every full-platform plan that should retain the interface:
+
+```bash
+uv run dander init \
+  --project my-gcp-project \
+  --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DANDER_DIGEST \
+  --druff-container-image us-central1-docker.pkg.dev/my-gcp-project/dander/druff@sha256:DRUFF_DIGEST
+```
+
+Terraform creates a public, scale-to-zero Cloud Run service with a dedicated service account that
+has no project roles. The hosted page contains no connector credentials, graphs, or cloud control
+plane. Public requests can still create Cloud Run usage and charges; the one-instance ceiling limits
+capacity but is not a spending cap. From the operator's project checkout, connect it to one local
+graph explicitly:
+
+```bash
+dander graph serve \
+  --file /absolute/path/to/graph.yaml \
+  --origin https://DANDER-DRUFF-CLOUD-RUN-URL
+```
+
+The browser may ask for local-network access before contacting `127.0.0.1`. Dander still owns the
+graph file, validation, save conflicts, and any operator-bound execution. Omitting
+`--druff-container-image` from a later full-platform plan deliberately plans removal of the hosted
+interface; pass the same digest to retain it. A deployment preview started from Druff likewise
+needs that flag so its full-platform plan preserves the service.
+
 ### Additive hosted pipelines
 
 The tracked `dander.yaml` runs Greenhouse and HubSpot as separate pipelines. Each pipeline receives

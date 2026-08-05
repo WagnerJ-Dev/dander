@@ -148,7 +148,10 @@ def test_preview_builds_source_free_snapshot_and_isolates_exact_plan(tmp_path: P
 
     preview = GraphDeploymentPreviewer(
         binding,
-        _settings(secret_ids=("operator-secret", "source-token")),
+        _settings(
+            secret_ids=("operator-secret", "source-token"),
+            druff_container_image=f"example.invalid/druff@sha256:{'b' * 64}",
+        ),
         image_publisher_factory=lambda root: _Publisher(root, observations),
         terraform_planner_factory=lambda root: _Planner(root, observations),
         plan_renderer=lambda path, root: (
@@ -165,6 +168,9 @@ def test_preview_builds_source_free_snapshot_and_isolates_exact_plan(tmp_path: P
     assert observations["plan_kwargs"]["apply"] is False
     assert observations["plan_kwargs"]["secret_ids"] == ("operator-secret", "source-token")
     assert observations["plan_kwargs"]["container_image"] == preview.candidate_image
+    assert observations["plan_kwargs"]["druff_container_image"] == (
+        f"example.invalid/druff@sha256:{'b' * 64}"
+    )
     assert preview.plan_summary == "Plan: 0 to add, 1 to change, 0 to destroy."
     assert preview.affected_jobs == ("dander-graph-records",)
     assert not observations["image_root"].exists()

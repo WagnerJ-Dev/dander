@@ -35,3 +35,11 @@ output "cost_guard" {
     simulated     = var.cost_guard_simulate
   } : null
 }
+
+output "druff" {
+  description = "Hosted Druff UI details when an immutable image is configured."
+  value = var.druff_container_image == "" ? null : {
+    service_name = module.druff[0].service_name
+    url          = module.druff[0].url
+  }
+}

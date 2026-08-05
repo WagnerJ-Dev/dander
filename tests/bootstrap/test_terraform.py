@@ -100,6 +100,9 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
         require_guarded_free_tier=False,
         enable_runtime=True,
         container_image=f"us-east1-docker.pkg.dev/unit-project/dander/dander@sha256:{digest}",
+        druff_container_image=(
+            f"us-east1-docker.pkg.dev/unit-project/dander/druff@sha256:{'b' * 64}"
+        ),
         pipelines=_pipelines(paused=False, publish_dataplex=True),
         failure_alert_email="operator@example.invalid",
         secret_ids=("greenhouse-client-secret", "greenhouse-client-id"),
@@ -120,6 +123,10 @@ def test_bootstrap_passes_complete_runtime_as_literal_arguments(
     assert "-var=runtime_timeout_seconds=900" in plan
     assert "-var=runtime_max_retries=3" in plan
     assert "-var=runtime_batch_rows=2048" in plan
+    assert (
+        f"-var=druff_container_image=us-east1-docker.pkg.dev/unit-project/dander/druff"
+        f"@sha256:{'b' * 64}"
+    ) in plan
     assert "-var=require_guarded_free_tier=false" in plan
     assert "-var=billing_account_id=" in plan
     pipeline_argument = next(
@@ -269,6 +276,13 @@ def test_apply_saved_plan_does_not_replan(
         ({"runtime_timeout_seconds": 0}, "runtime_timeout_seconds"),
         ({"runtime_max_retries": 11}, "runtime_max_retries"),
         ({"runtime_batch_rows": 100_001}, "runtime_batch_rows"),
+        ({"druff_container_image": "example.invalid/druff:latest"}, "immutable"),
+        (
+            {
+                "druff_container_image": f"example.invalid/druff@sha256:{'b' * 64}",
+            },
+            "enable-runtime",
+        ),
         (
             {
                 "enable_runtime": True,
