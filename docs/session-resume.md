@@ -1,54 +1,53 @@
-# Session Resume — 2026-08-01
+# Session Resume — 2026-08-05
 
 Read `HANDOFF.md`, `docs/decisions.md`, `docs/spec-alignment.md`, and
 `docs/release-audit.md` before changing code or cloud resources.
 
-## Git state
+## Public releases
 
-- Repository: `/Users/harrison/Documents/dander`.
-- `v0.1.0rc1` was published from `f4affecaad5aa479e58153a55e43405c7ccd6551` through PyPI trusted
-  publishing. A clean public install, scaffold, Dander validation, and generated Terraform
-  validation passed.
-- PR #10 merged the tracked HubSpot schedule and operator-private Cloud Monitoring failure
-  delivery; PR #11 finalized this handoff. Their feature branches were removed locally and from
-  GitHub.
+- Dander `0.5.1` is the newest supported package. It corrects the curated connector catalog and
+  does not change the `0.5.0` runtime.
+- Salesforce and ServiceNow connector plugins are public at `0.2.0` and require Dander `0.5.x`.
+- Druff's fork contains Josh's reconciled graph-client ancestry and the later persistence,
+  execution, catalog, operation-authoring, and deployment-preview work.
 
-## Live project
+## Retained project
 
-- Project `dander-proof-harrison-20260801`, region `us-central1`, remote states
-  `dander/state` and `dander/bootstrap-admin/state` in
-  `dander-proof-harrison-20260801-dander-state`.
-- Greenhouse is enabled at 09:00 ET; HubSpot is enabled at 10:00 ET. Both jobs retain immutable
-  digest `sha256:538f1af2…9fbd4`, which predates the public candidate. Candidate acceptance must
-  deploy a source-free image built from PyPI before the 30-day operator trial. The simulation-only
-  USD 5 cost guard is unchanged.
-- Secret `hubspot-private-app-token` has enabled version 1 and is accessible only to
-  `dander-runtime-hubspot`. The test app intentionally keeps company read/write scopes.
-- One synthetic company, `dander-integration-sandbox.invalid`, is retained so the current writer
-  can bootstrap the nested raw table from a non-empty first batch.
+- Project `dander-proof-harrison-20260801`, region `us-central1`, remote states `dander/state` and
+  `dander/bootstrap-admin/state` in `dander-proof-harrison-20260801-dander-state`.
+- The source-free runtime is pinned to Dander `0.5.0` with Salesforce and ServiceNow plugins
+  `0.2.0`, at immutable digest `sha256:3220623bf82a81d625db9e611c305694204e25ae312c06a8e8b1ea883bfd8995`.
+  Dander `0.5.1` does not require a runtime rollout because its only change is catalog metadata.
+- Greenhouse, HubSpot, Salesforce, and ServiceNow are enabled daily at 09:00, 10:00, 11:00, and
+  12:00 America/New_York. The executable Greenhouse graph remains paused at 13:00.
+- The simulation-only managed cost guard, alerts, secrets, datasets, cursors, leases, and retained
+  proof data remain in place.
 
-## HubSpot proof
+## Druff
 
-- Empty-account canary failed before transformation because zero extraction did not create
-  `raw.hubspot_test_companies`; no credential failure occurred.
-- Recovery execution `dander-hubspot-companies-ltzhd` / run
-  `46f74635ca26442ab5a7ad4ea92660e7` and replay `-5vvwd` / run
-  `53cd93774a8a42929374d51753e76b43` succeeded.
-- Each successful run extracted/affected one row, built one model, passed three assertions, and
-  published one schema-v2 asset. Raw/staging remain one row; stable hash is
-  `e9f22b28edd5cea6dca4211f6fb82166407761c3e6c980056e1d2f15072f4350`.
+- The source-free Druff image is pinned to
+  `sha256:a5e255d6adcdc920f65fa485f14480d0667db0aa8c179e30507425638bb3871c`.
+- The public static interface is <https://dander-druff-yos2b3gbca-uc.a.run.app>. Its dedicated
+  service account has no project roles and its Cloud Run service is limited to one instance.
+- Interactive open/save, validation, execution, status, and deployment preview still require an
+  operator-started `dander graph serve` loopback service with the exact hosted origin allowed.
 
-## Alerting and reconciliation
+## Latest operating evidence
 
-- Email channel `6736670643697224971` is enabled. Alert policies `6338652023037311338`
-  (Greenhouse) and `3086813104792953319` (HubSpot) each filter exact-job failed executions.
-- Controlled no-data-mutation execution `dander-hubspot-companies-mnfxq` failed after one retry and
-  opened incident `0.oaxg8wnfqgc7`; HubSpot/BigQuery state stayed unchanged.
-- Both administrative and platform Terraform follow-up plans returned `No changes`.
+- On 2026-08-05, scheduled executions `dander-greenhouse-public-m2pz2`,
+  `dander-hubspot-companies-cmdbz`, `dander-salesforce-accounts-jljwj`, and
+  `dander-servicenow-incidents-6g72x` all completed successfully.
+- The latest manual executable-graph run, `dander-greenhouse-graph-7gn9z`, completed successfully
+  on 2026-08-04; its schedule remains intentionally paused.
+- The most recent reviewed platform plan reported `0` add, `0` change, and `0` destroy across
+  `111` no-op resources after Druff deployment.
+- Continue the 30-day operating record in GitHub issue #26. The next normal scheduled runs are the
+  remaining observation point for the reconciled stable image.
 
 ## Safety boundaries
 
-- Repeat `--failure-alert-email` on every future `dander init` reconciliation; the recipient is
-  deliberately absent from public `dander.yaml`.
-- Do not delete the seed, rotate or expose the token, change scopes, make the cost guard live,
-  publish Dataplex, or alter schedules without explicit approval.
+- Repeat private operator inputs, including the failure-alert recipient and guarded billing
+  account, on every full reconciliation; they are deliberately absent from public `dander.yaml`.
+- Do not rotate or expose provider credentials, make the cost guard live, publish Dataplex, change
+  schedules, alter retained data, or apply Terraform without explicit approval.
+- NetSuite remains simulator-validated only. Workday has no real-tenant acceptance claim.

@@ -2,9 +2,9 @@
 
 ## Validation status
 
-This connector is **simulator-validated, not NetSuite-validated**. It is a candidate for a future
-`0.3.0` capability after one narrow real-tenant acceptance; it is not part of Dander's public
-`0.2.0` support surface.
+This connector is **simulator-validated, not NetSuite-validated**. It remains outside Dander's
+current public support surface until one narrow real-tenant acceptance confirms the provider
+contract and current OAuth2 setup.
 
 The implementation follows Oracle's documented SuiteTalk REST Query Service rather than the
 record-collection API. Oracle documents that record collections return only IDs and HATEOAS links,
