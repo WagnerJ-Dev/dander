@@ -81,15 +81,15 @@ CURATED_CONNECTORS = (
         display_name="Salesforce",
         description="Bounded Salesforce Bulk API 2.0 Accounts ingestion with replay cursors.",
         distribution="dander-connector-salesforce",
-        version="0.1.1",
-        dander_specifier=">=0.4.0,<0.6",
+        version="0.2.0",
+        dander_specifier=">=0.5.0,<0.6",
         support_status="first-party-alpha",
         validation_status="provider-validated",
         documentation_url=(
             "https://github.com/harrisonoconnorhover/"
             "dander-connector-salesforce#dander-salesforce-connector"
         ),
-        pypi_url="https://pypi.org/project/dander-connector-salesforce/0.1.1/",
+        pypi_url="https://pypi.org/project/dander-connector-salesforce/0.2.0/",
         repository_url=("https://github.com/harrisonoconnorhover/dander-connector-salesforce"),
     ),
     CatalogConnector(
@@ -97,15 +97,15 @@ CURATED_CONNECTORS = (
         display_name="ServiceNow",
         description="Read-only ServiceNow Table API incident ingestion with stable paging.",
         distribution="dander-connector-servicenow",
-        version="0.1.1",
-        dander_specifier=">=0.4.0,<0.6",
+        version="0.2.0",
+        dander_specifier=">=0.5.0,<0.6",
         support_status="first-party-alpha",
         validation_status="provider-validated",
         documentation_url=(
             "https://github.com/harrisonoconnorhover/"
             "dander-connector-servicenow#dander-servicenow-connector"
         ),
-        pypi_url="https://pypi.org/project/dander-connector-servicenow/0.1.1/",
+        pypi_url="https://pypi.org/project/dander-connector-servicenow/0.2.0/",
         repository_url=("https://github.com/harrisonoconnorhover/dander-connector-servicenow"),
     ),
 )
