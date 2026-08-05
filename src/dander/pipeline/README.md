@@ -515,6 +515,10 @@ dander graph serve \
   --secret-id OPTIONAL_EXTRA_MANAGED_SECRET
 ```
 
+If the platform also hosts Druff, pass its current immutable image with
+`--druff-container-image`; the temporary full-platform plan will then preserve the UI service.
+Omitting it explicitly previews removing that optional service.
+
 **Build candidate & plan** is separate from Save. It snapshots the exact saved ETag, builds and
 pushes a source-free image from the public `dander-platform` version, and renders the full-manifest
 Terraform plan. All cloud/plan inputs are fixed by the operator; the browser cannot replace them.

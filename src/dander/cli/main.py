@@ -330,6 +330,11 @@ def serve_graph(
     bootstrap_service_account: str = typer.Option("", "--bootstrap-service-account"),
     billing_account_id: str = typer.Option("", "--billing-account"),
     failure_alert_email: str | None = typer.Option(None, "--failure-alert-email"),
+    druff_container_image: str = typer.Option(
+        "",
+        "--druff-container-image",
+        help="Preserve the hosted Druff image in full-platform deployment previews.",
+    ),
     secret_ids: list[str] | None = typer.Option(  # noqa: B008
         None,
         "--secret-id",
@@ -377,6 +382,7 @@ def serve_graph(
                         or f"dander-bootstrap@{project}.iam.gserviceaccount.com",
                         billing_account_id=billing_account_id,
                         failure_alert_email=failure_alert_email,
+                        druff_container_image=druff_container_image,
                         secret_ids=tuple(secret_ids or ()),
                         github_repository=github_repository,
                         github_ref=github_ref,
@@ -503,6 +509,14 @@ def init(
         "--container-image",
         help="Immutable Artifact Registry image reference ending in @sha256 digest.",
     ),
+    druff_container_image: str = typer.Option(
+        "",
+        "--druff-container-image",
+        help=(
+            "Provision the optional public Druff UI from an immutable image ending in "
+            "@sha256 digest."
+        ),
+    ),
     config: Path = typer.Option(  # noqa: B008
         _DEFAULT_PROJECT_CONFIG,
         "--config",
@@ -601,6 +615,8 @@ def init(
         f"Build/update the complete Dander platform in GCP project {project!r} "
         f"using state bucket {resolved_state_bucket!r}?"
     )
+    if druff_container_image:
+        confirmation = f"{confirmation[:-1]} including a public Druff interface?"
     if live_cost_guard:
         confirmation = f"{confirmation[:-1]} with LIVE automatic billing detachment enabled?"
     if apply and not typer.confirm(
@@ -674,6 +690,7 @@ def init(
         enable_runtime=enable_runtime,
         billing_account_id=resolved_billing_account_id,
         container_image=container_image,
+        druff_container_image=druff_container_image,
         pipelines=pipelines,
         failure_alert_email=failure_alert_email,
         secret_ids=tuple(secret_ids or ()),
@@ -763,6 +780,7 @@ def _execute_platform_bootstrap(
     enable_runtime: bool,
     billing_account_id: str,
     container_image: str,
+    druff_container_image: str,
     pipelines: dict[str, dict[str, object]],
     failure_alert_email: str,
     secret_ids: tuple[str, ...],
@@ -792,6 +810,7 @@ def _execute_platform_bootstrap(
             enable_runtime=enable_runtime,
             billing_account_id=billing_account_id,
             container_image=container_image,
+            druff_container_image=druff_container_image,
             pipelines=pipelines,
             failure_alert_email=failure_alert_email,
             secret_ids=tuple(secret_ids or ()),
@@ -920,6 +939,7 @@ def init_platform_plan(
         enable_runtime=False,
         billing_account_id="",
         container_image="",
+        druff_container_image="",
         pipelines={},
         failure_alert_email="",
         secret_ids=(),

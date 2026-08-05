@@ -61,6 +61,7 @@ class TerraformBootstrap:
         enable_runtime: bool = False,
         billing_account_id: str = "",
         container_image: str = "",
+        druff_container_image: str = "",
         pipelines: Mapping[str, Mapping[str, object]] | None = None,
         failure_alert_email: str = "",
         secret_ids: tuple[str, ...] = (),
@@ -90,6 +91,7 @@ class TerraformBootstrap:
             enable_runtime: Whether to provision the scheduled Cloud Run slice.
             billing_account_id: Billing account used by the managed guard and runtime safety check.
             container_image: Immutable runtime image reference including a sha256 digest.
+            druff_container_image: Optional immutable Druff UI image. Empty disables hosting.
             pipelines: Expanded additive hosted-pipeline definitions from ``dander.yaml``.
             failure_alert_email: Operator email receiving hosted-pipeline failure notifications.
             secret_ids: Secret Manager container ids to create without values.
@@ -149,6 +151,14 @@ class TerraformBootstrap:
             raise TerraformBootstrapError("--container-image requires --enable-runtime")
         elif expanded_pipelines:
             raise TerraformBootstrapError("Pipeline definitions require --enable-runtime")
+        if druff_container_image:
+            if not _IMMUTABLE_IMAGE.fullmatch(druff_container_image):
+                raise TerraformBootstrapError(
+                    "Druff hosting requires an immutable --druff-container-image "
+                    "with @sha256 digest"
+                )
+            if not enable_runtime:
+                raise TerraformBootstrapError("--druff-container-image requires --enable-runtime")
         _validate_pipelines(expanded_pipelines)
         if failure_alert_email and not enable_runtime:
             raise TerraformBootstrapError("--failure-alert-email requires --enable-runtime")
@@ -223,6 +233,7 @@ class TerraformBootstrap:
             f"-var=enable_scheduled_job={str(enable_runtime).lower()}",
             f"-var=billing_account_id={billing_account_id}",
             f"-var=runtime_container_image={container_image}",
+            f"-var=druff_container_image={druff_container_image}",
             f"-var=pipelines={dumps(expanded_pipelines, sort_keys=True, separators=(',', ':'))}",
             f"-var=failure_alert_email={failure_alert_email}",
             f"-var=secret_ids={dumps(sorted(set(secret_ids)), separators=(',', ':'))}",

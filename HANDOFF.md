@@ -2,43 +2,45 @@
 
 ## Finished
 
-- Published runtime-identical Salesforce and ServiceNow `0.1.1` packages compatible with Dander
-  `0.4.x` and `0.5.x`.
-- Added a static curated catalog for those two provider-validated first-party alpha connectors.
-- Added `dander plugins search` with exact public package pins and compatibility/support status.
-- Added `GET /v1/plugin-catalog` while leaving installed runtime discovery unchanged.
-- Derived installed markers only from validated, manifest-declared plugins.
+- Added optional immutable Druff image input to normal initialization and full-platform previews.
+- Added a public, scale-to-zero Cloud Run UI beside the hosted runtime with a dedicated no-role
+  service account and one Terraform owner for Cloud Run API enablement.
+- Kept graph persistence, connector data, credentials, and execution on Dander's loopback service.
+- Packaged the new Terraform module into generated source-free projects.
+- Documented exact image retention, public usage, and local-network behavior.
 
 ## Try It
 
 ```bash
-uv run dander plugins search
-uv run dander plugins search incident
+uv run dander init --project PROJECT --container-image DANDER_DIGEST \
+  --druff-container-image DRUFF_DIGEST
+uv run dander graph serve --file /path/to/graph.yaml --origin HTTPS_DRUFF_URL
 ```
 
 ## Checks
 
-- Full suite: 713 tests passed; Ruff lint/format and strict mypy across 162 source files passed.
-- Focused catalog/CLI/graph-service suite: 23 tests passed.
+- Full suite: 717 tests passed; Ruff and strict mypy across 163 source files passed.
 - Dependency audit found no known vulnerabilities.
-- Terraform formatting, backend-disabled initialization, and both module validations passed.
-- Wheel and sdist built in a clean directory and passed distribution inspection.
-- Local Linux container build, CLI startup, and unprivileged runtime-user check passed.
+- Terraform format/init/validation passed for the platform, stage zero, and packaged project.
+- Wheel and sdist inspection plus two outside-checkout installs/scaffolds passed.
+- Dander container build/start/non-root checks passed; Docker Scout found 0 fixed high/critical issues.
 
 ## Decisions
 
-- Keep discovery static and package-backed; no marketplace service or runtime PyPI query.
-- Keep package installation and manifest changes explicit operator actions.
-- Preserve `/v1/connectors` as active runtime metadata and use `/v1/plugin-catalog` for discovery.
+- Host only Druff's compiled browser shell; never publish Dander's unauthenticated graph API.
+- Use one explicit digest input rather than adding a manifest mode or UI backend.
+- Preserve the image in Druff-triggered full-platform previews to prevent accidental removal plans.
 
 ## Remaining
 
-- Merge the Dander PR through protected CI before opening the dependent Druff PR.
-- Merge the Druff PR only after the accepted Dander API contract is on `main`.
-- Do not version, publish, deploy, or change the retained GCP project in this slice.
+- Pass protected CI in both repositories; final adversarial review is already clean.
+- Merge Druff first, then Dander.
+- Push the immutable Druff image to the disposable proof project.
+- Apply only the reviewed Druff additions and verify the hosted-to-local bridge.
+- Confirm paused schedules and a final no-drift Terraform plan; never touch the retained project.
 
 ## Review First
 
-- `src/dander/plugins/catalog.py`
-- `src/dander/pipeline/graph_service.py`
-- `tests/plugins/test_catalog.py`
+- `infra/modules/druff/main.tf`
+- `src/dander/bootstrap/terraform.py`
+- `src/dander/pipeline/graph_deployment.py`

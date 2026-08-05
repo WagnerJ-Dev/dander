@@ -55,6 +55,7 @@ class GraphDeploymentSettings:
     bootstrap_service_account: str
     billing_account_id: str
     failure_alert_email: str
+    druff_container_image: str = ""
     secret_ids: tuple[str, ...] = ()
     state_prefix: str = "dander/state"
     github_repository: str = ""
@@ -104,6 +105,7 @@ class _TerraformPlanner(Protocol):
         enable_runtime: bool = False,
         billing_account_id: str = "",
         container_image: str = "",
+        druff_container_image: str = "",
         pipelines: Mapping[str, Mapping[str, object]] | None = None,
         failure_alert_email: str = "",
         secret_ids: tuple[str, ...] = (),
@@ -221,6 +223,7 @@ class GraphDeploymentPreviewer:
                     enable_runtime=True,
                     billing_account_id=(self.settings.billing_account_id if cost_guard else ""),
                     container_image=candidate_image,
+                    druff_container_image=self.settings.druff_container_image,
                     pipelines=manifest.terraform_pipelines(),
                     failure_alert_email=self.settings.failure_alert_email,
                     secret_ids=tuple(

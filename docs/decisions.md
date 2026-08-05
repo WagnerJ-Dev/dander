@@ -442,3 +442,13 @@
   unrelated globally installed packages stay inactive and are not represented as project-installed.
 - Druff may search and copy exact setup instructions, but it does not install packages, rewrite the
   manifest, or introduce a second plugin runtime.
+
+## 2026-08-05 — Hosted Druff remains a public shell over a local control plane
+
+- Dander may provision Druff's compiled source-free image as an optional scale-to-zero Cloud Run
+  service, selected only by an explicit immutable image input rather than a new manifest mode.
+- The hosted service receives a dedicated identity with no project roles and hosts no graph,
+  secret, connector configuration, or execution API. Dander's exact-origin loopback service remains
+  the only persistence and operational authority.
+- Every full-platform plan, including Druff-triggered deployment previews, must repeat the current
+  immutable Druff image to retain the service; omission visibly plans its removal.
