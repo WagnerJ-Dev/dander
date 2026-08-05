@@ -42,16 +42,19 @@ from dander.catalog import (
     SemanticRegistryPublisher,
     SqliteMetadataStore,
 )
+from dander.cli.run_command import (
+    RunOptions,
+    build_auth,
+    build_source_adapter,
+    execute_run,
+)
 from dander.core.config import Settings
 from dander.evidence import EvidenceBundle, EvidenceManifest, ProofEvidence, ProofStatus
-from dander.executor import PipelineExecutor
 from dander.ingestion import (
     ConnectorConfigError,
     ConnectorOperation,
-    Endpoint,
     EnterpriseSourceError,
     InvalidConnectorCapabilityResultError,
-    Source,
     SourceCapabilities,
     SourceConfig,
     UnsupportedConnectorOperationError,
@@ -67,16 +70,8 @@ from dander.pipeline.graph_operations import (
     GraphOperations,
 )
 from dander.pipeline.graph_service import GraphDocumentError, serve_graph_file
-from dander.pipeline.runtime import (
-    BigQueryGraphRunner,
-    GraphExecutionPlan,
-    GraphRuntimeError,
-    load_graph_for_execution,
-    plan_graph_execution,
-)
 from dander.plugins import (
     ConnectorPluginError,
-    ConnectorPluginRegistry,
     PluginScaffoldError,
     load_connector_plugins,
     scaffold_connector_plugin,
@@ -91,30 +86,16 @@ from dander.project import (
     load_project_config,
     scaffold_project,
 )
-from dander.runtime import PipelineRunner
-from dander.sandbox import GuardedFreeTierVerifier, SandboxDataset, SandboxSafetyError
+from dander.sandbox import GuardedFreeTierVerifier, SandboxSafetyError
 from dander.security import (
-    ApiKeyBasic,
-    ApiKeyBearer,
-    AuthStrategy,
-    ClientCredentialPlacement,
     DefaultSecretStore,
-    EnvironmentSecretStore,
-    NoAuth,
-    OAuth1TBA,
-    OAuth2ClientCredentials,
-    OAuth2JWT,
     OAuthTokenError,
     SecretResolutionError,
 )
 from dander.state import (
-    BigQueryLeaseStore,
     BigQueryRunHistoryStore,
-    BigQueryWatermarkStore,
     RunHistoryStore,
-    SqliteLeaseStore,
     SqliteRunHistoryStore,
-    SqliteWatermarkStore,
 )
 from dander.transform import (
     BigQueryTransformRunner,
@@ -122,7 +103,6 @@ from dander.transform import (
     TransformProjectError,
     TransformRunError,
 )
-from dander.writer import BigQueryReplaceWriter, BigQueryScd1Writer, SchemaEvolution
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -151,6 +131,10 @@ _DEFAULT_MODELS_DIR = Path("models")
 _DEFAULT_CATALOG_PATH = Path(".dander/catalog.json")
 _DEFAULT_BOOTSTRAP_ADMIN_DIR = Path("infra/bootstrap-admin")
 _DEFAULT_PROJECT_CONFIG = Path("dander.yaml")
+
+# Preserve the existing private imports used by connector tests and downstream development tools.
+_build_auth = build_auth
+_build_source_adapter = build_source_adapter
 
 
 def _show_version(value: bool) -> None:
@@ -1270,212 +1254,28 @@ def run(
     dataplex_location: str = typer.Option("us", "--dataplex-location"),
 ) -> None:
     """Run ingestion, then optionally build transforms and publish the metadata spine."""
-    source = pipeline_or_source
-    pipeline_id = pipeline_or_source
-    project_pipeline = False
-    graph_file: Path | None = None
-    plugin_registry: ConnectorPluginRegistry | None = None
-    if project_config.is_file():
-        try:
-            manifest = load_project_config(project_config)
-            plugin_registry = load_connector_plugins(manifest.plugins)
-            pipeline = manifest.pipelines.get(pipeline_or_source)
-            if pipeline is not None:
-                project_pipeline = True
-                manifest.validate_references(
-                    project_config.resolve().parent,
-                    connectors_dir=connectors_dir,
-                    models_dir=models_dir,
-                    plugin_registry=plugin_registry,
-                )
-                source = pipeline.source
-                if pipeline.graph is not None:
-                    graph_file = project_config.resolve().parent / pipeline.graph
-                elif selected_models is None:
-                    selected_models = list(pipeline.models)
-                build_models = build_models or pipeline.build_models
-                publish_dataplex = publish_dataplex or pipeline.publish_dataplex
-        except (ConnectorPluginError, ProjectConfigError) as error:
-            raise ClickException(str(error)) from error
-    if not _SOURCE_NAME.fullmatch(source):
-        raise typer.BadParameter("Source names may contain only letters, numbers, '_' and '-'")
-
-    config = load_source_config(connectors_dir / f"{source}.yaml")
-    if config.name != source:
-        raise ClickException(f"Connector file declares source {config.name!r}, expected {source!r}")
-    try:
-        plugin_registry = plugin_registry or load_connector_plugins({})
-        plugin_registry.require_engine(config.engine)
-    except ConnectorPluginError as error:
-        raise ClickException(str(error)) from error
-    settings = Settings()
-    resolved_project = project or settings.gcp_project_id
-    resolved_dataset = dataset or settings.bq_dataset_raw
-    if sandbox and guarded_free_tier:
-        raise ClickException("--sandbox and --guarded-free-tier are mutually exclusive")
-
-    graph_plan: GraphExecutionPlan | None = None
-    if graph_file is not None:
-        if build_models or selected_models is not None:
-            raise ClickException("Graph pipelines do not accept --build-models or --select-model")
-        if catalog_output is not None or publish_dataplex:
-            raise ClickException("Graph metadata publication is not supported yet")
-        try:
-            graph = load_graph_for_execution(graph_file)
-            graph_plan = plan_graph_execution(
-                graph,
-                config,
-                project=resolved_project or "dander-dry-run",
-                dataset=resolved_dataset,
-            )
-        except GraphRuntimeError as error:
-            raise ClickException(str(error)) from error
-
-    if dry_run:
-        _print_plan(
-            config.name,
-            resolved_project,
-            resolved_dataset,
-            _selected_endpoints(config, graph_plan),
+    execute_run(
+        RunOptions(
+            pipeline_or_source=pipeline_or_source,
+            project=project,
+            dataset=dataset,
+            connectors_dir=connectors_dir,
+            project_config=project_config,
+            dry_run=dry_run,
             sandbox=sandbox,
             guarded_free_tier=guarded_free_tier,
             batch_rows=batch_rows,
-        )
-        if graph_plan is not None:
-            _print_graph_plan(graph_plan, project=resolved_project)
-        return
-    if not resolved_project:
-        raise ClickException("GCP project is required via --project or GCP_PROJECT_ID")
-
-    if sandbox:
-        try:
-            SandboxDataset().prepare(resolved_project, resolved_dataset)
-        except SandboxSafetyError as error:
-            raise ClickException(str(error)) from error
-    elif guarded_free_tier:
-        try:
-            GuardedFreeTierVerifier().require_guarded(
-                resolved_project,
-                budget_name=budget_name,
-            )
-        except SandboxSafetyError as error:
-            raise ClickException(str(error)) from error
-
-    secrets = EnvironmentSecretStore() if sandbox else DefaultSecretStore()
-    auth = _build_auth(config, secrets)
-    try:
-        source_adapter = _build_source_adapter(config, auth, plugin_registry=plugin_registry)
-    except ConnectorPluginError as error:
-        raise ClickException(str(error)) from error
-    control_dataset = settings.bq_dataset_metadata if project_pipeline else resolved_dataset
-    history = (
-        SqliteRunHistoryStore(state_path)
-        if sandbox
-        else BigQueryRunHistoryStore(
-            project=resolved_project,
-            dataset=control_dataset,
-        )
-    )
-    leases = (
-        SqliteLeaseStore(state_path)
-        if sandbox
-        else BigQueryLeaseStore(
-            project=resolved_project,
-            dataset=control_dataset,
-        )
-    )
-    metadata_store = None
-    if project_pipeline and graph_plan is None:
-        metadata_store = (
-            SqliteMetadataStore(state_path)
-            if sandbox
-            else BigQueryMetadataStore(
-                project=resolved_project,
-                dataset=settings.bq_dataset_metadata,
-            )
-        )
-    dataplex_publisher = (
-        DataplexCatalogPublisher(project=resolved_project, location=dataplex_location)
-        if publish_dataplex
-        else None
-    )
-    ingestion_runner = PipelineRunner(
-        source=source_adapter,
-        writer=(
-            BigQueryReplaceWriter(project=resolved_project, max_batch_rows=batch_rows)
-            if sandbox
-            else BigQueryScd1Writer(
-                project=resolved_project,
-                max_batch_rows=batch_rows,
-                schema_evolution=(
-                    SchemaEvolution.ADDITIVE if project_pipeline else SchemaEvolution.STRICT
-                ),
-            )
+            budget_name=budget_name,
+            state_path=state_path,
+            build_models=build_models,
+            models_dir=models_dir,
+            selected_models=selected_models,
+            catalog_output=catalog_output,
+            publish_dataplex=publish_dataplex,
+            dataplex_location=dataplex_location,
         ),
-        watermarks=(
-            SqliteWatermarkStore(state_path)
-            if sandbox
-            else BigQueryWatermarkStore(
-                project=resolved_project,
-                dataset=resolved_dataset,
-            )
-        ),
-        project=resolved_project,
-        dataset=resolved_dataset,
-        resume_from_watermark=not sandbox,
-        batch_rows=batch_rows,
-        endpoint_names=(graph_plan.bindings.endpoint_names if graph_plan is not None else None),
+        console=console,
     )
-    try:
-        result = PipelineExecutor(
-            pipeline_id=pipeline_id,
-            source_config=config,
-            ingestion=ingestion_runner,
-            history=history,
-            project=resolved_project,
-            models_dir=graph_file.parent if graph_file is not None else models_dir,
-            selected_models=None if graph_plan is not None else selected_models,
-            build_models=graph_plan is not None or build_models,
-            transform_runner=(
-                BigQueryGraphRunner(plan=graph_plan, project=resolved_project)
-                if graph_plan is not None
-                else BigQueryTransformRunner(project=resolved_project)
-                if build_models
-                else None
-            ),
-            metadata_store=metadata_store,
-            registry_output=catalog_output,
-            dataplex_publisher=dataplex_publisher,
-            leases=leases,
-        ).execute()
-    except (
-        CatalogPublishError,
-        SemanticRegistryError,
-        TransformProjectError,
-        TransformRunError,
-        GraphRuntimeError,
-    ) as error:
-        raise ClickException(str(error)) from error
-
-    if result.skipped:
-        console.print(f"Dander run {result.run_id} skipped: pipeline already active.")
-        return
-
-    table = Table(title=f"Dander run {result.run_id}")
-    table.add_column("Endpoint")
-    table.add_column("Extracted", justify="right")
-    table.add_column("Affected", justify="right")
-    table.add_column("Cursor committed")
-    for endpoint in result.ingestion.endpoints:
-        table.add_row(
-            endpoint.endpoint,
-            str(endpoint.extracted),
-            str(endpoint.affected),
-            "yes" if endpoint.committed_cursor is not None else "no",
-        )
-    console.print(table)
-    if graph_plan is not None:
-        console.print(f"Graph targets: {', '.join(result.models)}")
 
 
 def _run_post_ingestion(
@@ -1898,17 +1698,6 @@ def _print_transform_result(action: str, models: Sequence[str], assertions: int)
     console.print(f"[green]{summary}[/green]")
 
 
-def _build_source_adapter(
-    config: SourceConfig,
-    auth: AuthStrategy,
-    *,
-    plugin_registry: ConnectorPluginRegistry | None = None,
-) -> Source:
-    """Select the extraction implementation declared by the connector."""
-    registry = plugin_registry or load_connector_plugins({})
-    return registry.build_source(config, auth)
-
-
 def _load_connector_capabilities(
     source_or_pipeline: str,
     *,
@@ -1938,130 +1727,6 @@ def _load_connector_capabilities(
         return config, registry.build_capabilities(config, auth)
     except (ConnectorConfigError, ConnectorPluginError, ProjectConfigError) as error:
         raise ClickException(str(error)) from error
-
-
-def _build_auth(
-    config: SourceConfig,
-    secrets: DefaultSecretStore | EnvironmentSecretStore,
-) -> AuthStrategy:
-    """Construct a supported authentication strategy from validated connector metadata."""
-    if config.auth_strategy == "none":
-        return NoAuth()
-    if config.auth_strategy == "api_key_basic":
-        if config.auth_ref is None:
-            raise ClickException("api_key_basic connector is missing auth_ref")
-        return ApiKeyBasic(secrets, config.auth_ref)
-    if config.auth_strategy == "api_key_bearer":
-        if config.auth_ref is None:
-            raise ClickException("api_key_bearer connector is missing auth_ref")
-        return ApiKeyBearer(secrets, config.auth_ref)
-    if config.auth_strategy == "oauth2_client_credentials":
-        token_url = config.auth_options["token_url"]
-        subject = config.auth_options.get("subject")
-        credential_placement = config.auth_options.get("credential_placement", "basic")
-        if not isinstance(token_url, str):
-            raise ClickException("OAuth token_url must be a string")
-        if subject is not None and (isinstance(subject, bool) or not isinstance(subject, int)):
-            raise ClickException("OAuth subject must be an integer Greenhouse user id")
-        return OAuth2ClientCredentials(
-            secrets,
-            client_id_ref=config.auth_refs["client_id"],
-            client_secret_ref=config.auth_refs["client_secret"],
-            token_url=token_url,
-            subject=subject,
-            credential_placement=ClientCredentialPlacement(str(credential_placement)),
-        )
-    if config.auth_strategy == "oauth2_jwt":
-        audience = config.auth_options.get("audience")
-        if audience is not None and not isinstance(audience, str):
-            raise ClickException("OAuth JWT audience must be a string")
-        subject = config.auth_options.get("subject")
-        if subject is not None and not isinstance(subject, str):
-            raise ClickException("OAuth JWT subject must be a string")
-        scope = config.auth_options.get("scope")
-        if scope is not None and not isinstance(scope, str):
-            raise ClickException("OAuth JWT scope must be a string")
-        default_expires_in = config.auth_options.get("default_expires_in", 300)
-        if isinstance(default_expires_in, bool) or not isinstance(default_expires_in, int):
-            raise ClickException("OAuth JWT default_expires_in must be an integer")
-        assertion_lifetime = config.auth_options.get("assertion_lifetime", 3600)
-        if isinstance(assertion_lifetime, bool) or not isinstance(assertion_lifetime, int):
-            raise ClickException("OAuth JWT assertion_lifetime must be an integer")
-        return OAuth2JWT(
-            secrets,
-            issuer_ref=config.auth_refs["issuer"],
-            private_key_ref=config.auth_refs["private_key"],
-            token_url=str(config.auth_options["token_url"]),
-            audience=audience,
-            scope=scope,
-            subject=subject,
-            assertion_lifetime=assertion_lifetime,
-            default_expires_in=default_expires_in,
-        )
-    if config.auth_strategy == "oauth1_tba":
-        return OAuth1TBA(
-            secrets,
-            account_id=str(config.auth_options["account_id"]),
-            consumer_key_ref=config.auth_refs["consumer_key"],
-            consumer_secret_ref=config.auth_refs["consumer_secret"],
-            token_id_ref=config.auth_refs["token_id"],
-            token_secret_ref=config.auth_refs["token_secret"],
-        )
-    raise ClickException(f"Unsupported auth strategy: {config.auth_strategy!r}")
-
-
-def _print_plan(
-    source: str,
-    project: str,
-    dataset: str,
-    endpoints: Sequence[Endpoint],
-    *,
-    sandbox: bool = False,
-    guarded_free_tier: bool = False,
-    batch_rows: int = 10_000,
-) -> None:
-    """Render a credential-free execution plan."""
-    table = Table(title=f"Dander dry run: {source}")
-    table.add_column("Endpoint")
-    table.add_column("Target")
-    table.add_column("Mode")
-    for endpoint in endpoints:
-        name = endpoint.name
-        if sandbox:
-            mode = "REPLACE (sandbox)"
-        elif guarded_free_tier:
-            mode = "SCD1 (guarded billing)"
-        else:
-            mode = "SCD1"
-        table.add_row(str(name), f"{project or '<unset>'}.{dataset}.{source}_{name}", mode)
-    console.print(table)
-    console.print(f"Writer batch rows: {batch_rows}")
-
-
-def _selected_endpoints(
-    config: SourceConfig,
-    graph_plan: GraphExecutionPlan | None,
-) -> list[Endpoint]:
-    if graph_plan is None:
-        return list(config.endpoints)
-    selected = set(graph_plan.bindings.endpoint_names)
-    return [endpoint for endpoint in config.endpoints if endpoint.name in selected]
-
-
-def _print_graph_plan(plan: GraphExecutionPlan, *, project: str) -> None:
-    """Render the compiled target portion of a credential-free graph plan."""
-    table = Table(title="PipelineGraph targets")
-    table.add_column("Node")
-    table.add_column("Target")
-    table.add_column("Mode")
-    for target in plan.targets:
-        target_project = project or "<runtime-project>"
-        table.add_row(
-            target.node_id,
-            f"{target_project}.{target.target.dataset}.{target.target.table}",
-            target.write_mode.value.upper(),
-        )
-    console.print(table)
 
 
 if __name__ == "__main__":

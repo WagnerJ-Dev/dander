@@ -2,41 +2,42 @@
 
 ## Finished
 
-- Updated public install and upgrade examples to the supported Dander `0.5.1` release.
-- Reconciled the README, limitations, live-proof guide, release audit, alignment ledger, and
-  session snapshot with the five-pipeline manifest and current plugin/Druff architecture.
-- Verified the retained project's four daily schedules, paused graph schedule, latest successful
-  executions, published packages, and clean post-Druff Terraform record.
+- Isolated the work on `codex/thin-run-cli`; the original `main` checkout remains untouched.
+- Replaced the 264-line `dander run` body with a typed options object and a thin delegate.
+- Split run resolution, graph planning, safety checks, dependency construction, execution, and
+  rendering into focused functions without changing command flags or output.
+- Preserved existing private auth/source helper imports through compatibility aliases.
+- Added one non-network hosted composition test for project, store, writer, and transform wiring.
 
 ## Try It
 
 ```bash
-uv tool install dander-platform==0.5.1
-dander --version
+uv run dander run greenhouse_jobs --dry-run --project unit-project
+uv run pytest tests/cli/test_run_command.py
 ```
 
 ## Checks
 
-- Ruff, formatting, strict mypy, and the full Dander test suite passed.
-- All local Markdown links across Dander, Druff, Salesforce, and ServiceNow resolve.
-- `git diff --check` passed in all four repositories.
-- Read-only GCP inspection confirmed four enabled schedules, one paused graph schedule, and a
-  successful latest execution for every retained pipeline.
+- Ruff, formatting, and strict mypy passed across the repository.
+- Full suite passed: `748 passed`.
+- Legacy, project, and graph dry-run output plus `dander run --help` matched `main` exactly.
+- Dependency audit and both Terraform configurations passed validation.
+- Wheel/sdist inspection and outside-checkout installs passed; the local container built and ran
+  as UID `65532` with its expected proof assets.
 
 ## Decisions
 
-- Keep this cleanup documentation-only: no runtime, version, Terraform, schedule, or GCP changes.
-- Treat dated operational records as snapshots and distinguish deployed resources from workflows
-  that directly exercise only a subset of them.
+- Keep Typer option declarations in `main.py`; the new module never imports `main.py`.
+- Preserve runtime behavior, package version, Terraform, and deployed resources unchanged.
+- Add only the one missing non-dry composition test rather than expanding test scope generally.
 
 ## Remaining
 
-- Continue the 30-day operator soak in GitHub issue #26 and observe the next normal scheduled runs.
-- PyPI's immutable `0.5.1` long description receives these README corrections only in a separately
-  approved future patch release.
+- Protected GitHub CI must repeat Linux package/container checks and security scans.
+- Merge only after review; no deployment or release is part of this branch.
 
 ## Review First
 
-- `README.md`
-- `docs/session-resume.md`
-- `docs/release-audit.md`
+- `src/dander/cli/run_command.py`
+- `src/dander/cli/main.py`
+- `tests/cli/test_run_command.py`
