@@ -137,6 +137,7 @@ include = [
   "connectors",
   "dander.yaml",
   "docs/getting-started.md",
+  "docs/connector-plugins.md",
   "docs/known-limitations.md",
   "docs/netsuite-simulator.md",
   "docs/operator-soak.md",
@@ -162,6 +163,7 @@ exclude = [
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+extend-exclude = ["src/dander/templates/plugin"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH", "ANN"]
@@ -171,6 +173,7 @@ python_version = "3.12"
 strict = true
 files = ["src", "tests"]
 plugins = ["pydantic.mypy"]
+exclude = ["^src/dander/templates/plugin/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

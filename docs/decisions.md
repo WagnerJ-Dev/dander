@@ -423,3 +423,13 @@
   execution, and publication.
 - The live proof must use published Dander and plugin candidates. Functional discovery or plugin
   changes after `0.4.0rc1` therefore require `0.4.0rc2` before isolated acceptance.
+
+## 2026-08-05 — Plugin authoring stays package-native
+
+- A Dander scaffold creates one ordinary Python distribution with an API-v1 entry point, generic
+  REST starting point, conformance test, and inert GitHub workflows. It does not create accounts,
+  repositories, credentials, or marketplace records.
+- Public conformance checks reuse the runtime registry's validator. Source construction is tested
+  only when both a connector configuration and authentication strategy are supplied.
+- PyPI remains the package store. Curated discovery and support claims stay separate from package
+  execution, and the authoring slice targets the next Dander release after accepted `0.4.0`.

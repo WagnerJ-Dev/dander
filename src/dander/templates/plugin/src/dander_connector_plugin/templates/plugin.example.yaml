@@ -1,0 +1,14 @@
+# Placeholder public REST contract. Replace every provider-specific value before publishing.
+name: __PLUGIN_ID__
+engine: __ENGINE__
+base_url: https://api.example.com/v1
+auth_strategy: none
+
+endpoints:
+  - name: records
+    path: /records
+    data_selector: records
+    pagination: none
+    primary_key: [id]
+    raw_schema:
+      - {name: id, type: STRING, mode: REQUIRED}

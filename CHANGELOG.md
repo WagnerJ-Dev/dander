@@ -4,6 +4,15 @@ Release notes for Dander are kept here and copied into the matching GitHub Relea
 semantic versioning while it is alpha: released minor lines receive fixes only, and new product
 capabilities enter through the next minor release.
 
+## Unreleased
+
+### Added
+
+- Add an atomic `dander plugins scaffold` command that creates a generic REST connector package,
+  API-v1 conformance test, example declaration, and inert CI/trusted-publishing workflows.
+- Expose reusable plugin declaration, installed-entry-point, and optional source-factory checks.
+- Document the smallest supported path from scaffold through simulator and real-account acceptance.
+
 ## 0.4.0 — 2026-08-04 (alpha)
 
 ### Added
