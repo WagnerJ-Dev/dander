@@ -1,6 +1,6 @@
 # Known limitations
 
-Dander `0.2.x` is alpha and proves a focused GCP-native vertical slice. It is not yet suitable for
+Dander `0.5.x` is alpha and proves a focused GCP-native vertical slice. It is not yet suitable for
 an unattended production system containing business-critical data.
 
 ## Ingestion and schemas
@@ -16,9 +16,12 @@ an unattended production system containing business-critical data.
 - ServiceNow incidents extraction performs a stably ordered full endpoint read. It does not use a
   timestamp watermark with offset paging because that combination can skip moving records.
 - Source hard deletes are not propagated by the first ServiceNow incidents slice.
+- The supported Salesforce and ServiceNow plugins each expose one read-only object slice. They do
+  not provide provider write-back or broad object/table coverage.
 - NetSuite customers are simulator-validated only. The first SuiteQL slice performs a full read,
   is capped by NetSuite's 100,000-result SuiteQL REST limit, and has not passed tenant-specific
-  role, field-availability, or authentication acceptance. It is not supported in public `0.2.0`.
+  role, field-availability, or authentication acceptance. It is not in the current public support
+  surface.
 - Greenhouse Job Board extraction is a full refresh but does not delete jobs that disappear from
   the public board.
 
@@ -33,6 +36,9 @@ an unattended production system containing business-critical data.
   remove their staging table immediately.
 - Run history stores non-sensitive stage and aggregate counts, not exception text or source rows.
   Use the Cloud Run execution logs for diagnosis.
+- Druff is a public static interface, not a hosted control plane. Saving, validation, execution,
+  status, and deployment preview require an operator-started Dander loopback service. Druff does
+  not write `dander.yaml` or apply Terraform.
 
 ## Platform and cost
 
@@ -42,11 +48,11 @@ an unattended production system containing business-critical data.
   Cloud charges can be delayed, and enabled GCP services may be billable.
 - The starter requires Python 3.12, Terraform 1.9 or newer, Docker Buildx, Google Cloud CLI, and an
   authenticated administrator.
-- Dataplex and Storage Write remain optional paths and are not part of the supported `0.2.x`
-  operator trial.
+- Dataplex and Storage Write remain optional paths and are not exercised by the retained operator
+  trial.
 
 ## Support boundary
 
-`0.2.x` receives fixes only. New connectors, commands, subsystems, manifest capabilities, and
-broader writer orchestration enter through `0.3.0` or a later minor. Only the latest patch in the
+`0.5.x` receives fixes only. New connectors, commands, subsystems, manifest capabilities, and
+broader writer orchestration enter through `0.6.0` or a later minor. Only the latest patch in the
 current public `0.x` minor is supported; see [SECURITY.md](../SECURITY.md).

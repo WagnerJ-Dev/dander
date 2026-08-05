@@ -63,7 +63,7 @@ The Python distribution is named `dander-platform` because the `dander` name on 
 different project. The import package and command remain `dander`:
 
 ```bash
-uv tool install dander-platform==0.2.0
+uv tool install dander-platform==0.5.1
 dander --version
 dander new my-data-platform
 cd my-data-platform
@@ -221,7 +221,7 @@ credential or employee row is stored in this repository.
 JWT bearer authentication, Salesforce's distinct authorization-server audience, a short assertion,
 server-filtered SOQL, bounded streaming Bulk API 2.0 result pages, a declared raw schema, and
 soft-delete visibility. Hosted replays use an inclusive `SystemModstamp` watermark and idempotent
-SCD1 publication. Dander 0.4 also supports the independently installed first-party
+SCD1 publication. Dander 0.5 supports the independently installed first-party
 [`dander-connector-salesforce`](https://github.com/harrisonoconnorhover/dander-connector-salesforce)
 plugin; an exact manifest pin takes precedence over the deprecated built-in fallback. See
 [`docs/salesforce.md`](docs/salesforce.md).
@@ -242,8 +242,8 @@ a free local development target. See [`docs/odoo.md`](docs/odoo.md).
 
 `connectors/netsuite.example.yaml` is a **simulator-validated, not NetSuite-validated** customer
 SuiteQL slice. It uses bounded offset paging, stable ordering, declared schemas, and the existing
-OAuth1 TBA signer. It is not part of the public `0.2.0` support surface; real-tenant acceptance and
-current OAuth2 setup are gates for a future release. See
+OAuth1 TBA signer. It is not part of the current public support surface; real-tenant acceptance and
+current OAuth2 setup remain gates for a future release. See
 [`docs/netsuite-simulator.md`](docs/netsuite-simulator.md).
 
 ### Strict $0 BigQuery Sandbox
@@ -436,18 +436,22 @@ needs that flag so its full-platform plan preserves the service.
 
 ### Additive hosted pipelines
 
-The tracked `dander.yaml` runs Greenhouse and HubSpot as separate pipelines. Each pipeline receives
-its own Cloud Run Job, Scheduler trigger, runtime identity, scheduler identity, secret bindings,
-model selection, and pause policy. They share the immutable image and BigQuery datasets. Adding a
-pipeline never repurposes another pipeline's job.
+The tracked `dander.yaml` runs Greenhouse, HubSpot, Salesforce, and ServiceNow as separate daily
+pipelines, plus one paused executable Greenhouse graph. Each pipeline receives its own Cloud Run
+Job, Scheduler trigger, runtime identity, scheduler identity, secret bindings, model selection,
+and pause policy. They share the immutable image and BigQuery datasets. Adding a pipeline never
+repurposes another pipeline's job. Salesforce and ServiceNow are supplied by exact plugin pins in
+the retained source-free project.
 
 ```bash
 uv run dander validate
 uv run dander run greenhouse_jobs --dry-run --project my-gcp-project
 uv run dander run hubspot_companies --dry-run --project my-gcp-project
+uv run dander run salesforce_accounts --dry-run --project my-gcp-project
+uv run dander run servicenow_incidents --dry-run --project my-gcp-project
 ```
 
-Provision or reconcile both pipelines from the manifest:
+Provision or reconcile every declared pipeline from the manifest:
 
 ```bash
 uv run dander init --project "$PROJECT_ID" --apply
@@ -625,15 +629,15 @@ shows each run's agents with their role, ticket, and live PASS/FAIL verdicts:
 
 ## Status
 
-Runnable ingestion v0: the Greenhouse → BigQuery production SCD1 path, strict no-billing sandbox,
-and billing-linked guarded preflight, plus audited secret resolution, watermark state, dry-run
-planning, and BigQuery Terraform bootstrap are implemented and unit-tested. The limits above still
-make this **unsuitable for production**. The named HR, compensation, and customer systems describe
-possible connector categories; they do not imply that this repository came from, connects to, or
-contains data from an existing company. Normal provenance, licensing, and privacy review still
-applies before adding employer-owned code or non-public data.
+Dander `0.5.1` is a working alpha: its source-free GCP platform, four retained daily pipelines,
+connector plugins, transform/test engine, run ledger, metadata spine, and Druff operator interface
+have completed bounded live proofs. The limits above still make it **unsuitable for production**.
+The named HR, compensation, and customer systems describe connector categories or bounded test
+implementations; they do not imply that this repository came from, connects to, or contains data
+from an existing company. Normal provenance, licensing, and privacy review still applies before
+adding employer-owned code or non-public data.
 
-For the exact current branch, validation, deployed-sandbox, and next-session state, see
+For the latest dated release, validation, retained-project, and next-session snapshot, see
 [`docs/session-resume.md`](docs/session-resume.md).
 
 ## License
