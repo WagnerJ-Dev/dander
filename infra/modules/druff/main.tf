@@ -21,7 +21,6 @@ resource "google_cloud_run_v2_service" "druff" {
     service_account = google_service_account.druff.email
 
     scaling {
-      min_instance_count = 0
       max_instance_count = 1
     }
 
