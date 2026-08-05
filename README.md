@@ -226,6 +226,10 @@ SCD1 publication. Dander 0.4 also supports the independently installed first-par
 plugin; an exact manifest pin takes precedence over the deprecated built-in fallback. See
 [`docs/salesforce.md`](docs/salesforce.md).
 
+Connector authors can start with `dander plugins scaffold` and the focused
+[plugin-authoring guide](docs/connector-plugins.md). The generated package uses Dander's API-v1
+conformance helpers and remains inactive until a project pins its exact version.
+
 `connectors/servicenow.example.yaml` reads incidents through ServiceNow's Table API using OAuth2
 client credentials, primitive internal values, stable offset paging, and a declared raw schema.
 The first slice performs a full read and idempotent SCD1 publication; it does not claim unsafe

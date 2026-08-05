@@ -84,3 +84,38 @@ def test_plugins_install_is_a_noop_without_declarations(
 
     assert result.exit_code == 0, result.output
     assert "No connector plugins are declared" in result.output
+
+
+def test_plugins_scaffold_creates_named_project(tmp_path: Path) -> None:
+    destination = tmp_path / "acme"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "plugins",
+            "scaffold",
+            "acme_crm",
+            "--display-name",
+            "Acme CRM",
+            "--directory",
+            str(destination),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Created connector plugin" in result.output
+    assert (destination / "src" / "dander_connector_acme_crm" / "plugin.py").is_file()
+
+
+def test_plugins_scaffold_reports_existing_destination(tmp_path: Path) -> None:
+    destination = tmp_path / "existing"
+    destination.mkdir()
+
+    result = CliRunner().invoke(
+        app,
+        ["plugins", "scaffold", "example", "--directory", str(destination)],
+    )
+
+    assert result.exit_code == 1
+    assert result.exception is not None
+    assert "Destination already exists" in str(result.exception)

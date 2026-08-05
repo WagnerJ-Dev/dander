@@ -14,7 +14,9 @@ from dander.plugins.registry import (
     ConnectorPluginRegistry,
     InstalledConnectorPlugin,
     load_connector_plugins,
+    validate_connector_plugin,
 )
+from dander.plugins.scaffold import PluginScaffoldError, scaffold_connector_plugin
 
 __all__ = [
     "PLUGIN_API_VERSION",
@@ -26,6 +28,9 @@ __all__ = [
     "ConnectorPluginRegistry",
     "ENTRY_POINT_GROUP",
     "InstalledConnectorPlugin",
+    "PluginScaffoldError",
     "SourceFactory",
     "load_connector_plugins",
+    "scaffold_connector_plugin",
+    "validate_connector_plugin",
 ]

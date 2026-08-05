@@ -71,7 +71,9 @@ from dander.pipeline.runtime import (
 from dander.plugins import (
     ConnectorPluginError,
     ConnectorPluginRegistry,
+    PluginScaffoldError,
     load_connector_plugins,
+    scaffold_connector_plugin,
 )
 from dander.project import (
     PlatformRuntimeSpec,
@@ -227,6 +229,37 @@ def install_plugins(
     except ConnectorPluginError as error:
         raise ClickException(f"Installed connector plugins are incompatible: {error}") from error
     console.print(f"[green]Installed {len(requirements)} connector plugin(s).[/green]")
+
+
+@plugins_app.command("scaffold")
+def scaffold_plugin(
+    plugin_id: str = typer.Argument(  # noqa: B008
+        ...,
+        help="Lowercase connector identifier, for example acme_crm.",
+    ),
+    directory: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--directory",
+        help="New destination directory (defaults to dander-connector-<id>).",
+    ),
+    display_name: str | None = typer.Option(  # noqa: B008
+        None,
+        "--display-name",
+        help="Human-readable connector name shown in Druff.",
+    ),
+) -> None:
+    """Create a tested generic-REST connector plugin without overwriting a path."""
+    destination = directory or Path(f"dander-connector-{plugin_id.replace('_', '-')}")
+    try:
+        created = scaffold_connector_plugin(
+            plugin_id,
+            destination,
+            display_name=display_name,
+        )
+    except PluginScaffoldError as error:
+        raise ClickException(str(error)) from error
+    console.print(f"[green]Created connector plugin at {created}.[/green]")
+    console.print(f"Next: cd {created} && uv sync --extra dev && uv run pytest")
 
 
 @graph_app.command("serve")

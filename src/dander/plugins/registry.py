@@ -163,7 +163,7 @@ def load_connector_plugins(
             raise ConnectorPluginError(
                 f"Plugin {declared_id!r} entry-point factory could not be loaded"
             ) from error
-        _validate_plugin(plugin, declared_id=declared_id)
+        validate_connector_plugin(plugin, expected_plugin_id=declared_id)
 
         if previous := plugin_engines.get(plugin.engine):
             raise ConnectorPluginError(
@@ -186,29 +186,35 @@ def load_connector_plugins(
     )
 
 
-def _validate_plugin(plugin: object, *, declared_id: str) -> None:
+def validate_connector_plugin(
+    plugin: object,
+    *,
+    expected_plugin_id: str,
+) -> ConnectorPlugin:
+    """Validate one API-v1 plugin declaration and return its narrowed value."""
     if not isinstance(plugin, ConnectorPlugin):
         raise ConnectorPluginError(
-            f"Plugin {declared_id!r} factory must return dander.plugins.ConnectorPlugin"
+            f"Plugin {expected_plugin_id!r} factory must return dander.plugins.ConnectorPlugin"
         )
-    if plugin.plugin_id != declared_id or not _PLUGIN_ID.fullmatch(plugin.plugin_id):
+    if plugin.plugin_id != expected_plugin_id or not _PLUGIN_ID.fullmatch(plugin.plugin_id):
         raise ConnectorPluginError(
-            f"Plugin entry point {declared_id!r} returned plugin ID {plugin.plugin_id!r}"
+            f"Plugin entry point {expected_plugin_id!r} returned plugin ID {plugin.plugin_id!r}"
         )
     if plugin.api_version != PLUGIN_API_VERSION:
         raise ConnectorPluginError(
-            f"Plugin {declared_id!r} uses API version {plugin.api_version}; "
+            f"Plugin {expected_plugin_id!r} uses API version {plugin.api_version}; "
             f"Dander requires {PLUGIN_API_VERSION}"
         )
     if not _PLUGIN_ID.fullmatch(plugin.engine):
         raise ConnectorPluginError(
-            f"Plugin {declared_id!r} has invalid engine key {plugin.engine!r}"
+            f"Plugin {expected_plugin_id!r} has invalid engine key {plugin.engine!r}"
         )
     if not plugin.display_name.strip():
-        raise ConnectorPluginError(f"Plugin {declared_id!r} must have a display name")
+        raise ConnectorPluginError(f"Plugin {expected_plugin_id!r} must have a display name")
     if not callable(plugin.source_factory):
-        raise ConnectorPluginError(f"Plugin {declared_id!r} source factory is not callable")
+        raise ConnectorPluginError(f"Plugin {expected_plugin_id!r} source factory is not callable")
     _validate_descriptors(plugin)
+    return plugin
 
 
 def _validate_descriptors(plugin: ConnectorPlugin) -> None:
