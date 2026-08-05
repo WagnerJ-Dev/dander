@@ -12,6 +12,10 @@ capabilities enter through the next minor release.
   API-v1 conformance test, example declaration, and inert CI/trusted-publishing workflows.
 - Expose reusable plugin declaration, installed-entry-point, and optional source-factory checks.
 - Document the smallest supported path from scaffold through simulator and real-account acceptance.
+- Add a small curated catalog for the provider-validated Salesforce and ServiceNow connector
+  packages, including exact pins, Dander compatibility, support status, and public links.
+- Add `dander plugins search` and a presentation-safe `GET /v1/plugin-catalog` graph-service route
+  whose installed markers come only from validated manifest declarations.
 
 ## 0.4.0 — 2026-08-04 (alpha)
 

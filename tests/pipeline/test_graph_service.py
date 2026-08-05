@@ -26,6 +26,7 @@ from dander.pipeline.graph_service import (
     GRAPH_RUN_API_PATH,
     GRAPH_STATUS_API_PATH,
     GRAPH_VALIDATE_API_PATH,
+    PLUGIN_CATALOG_API_PATH,
     GraphDocumentConflictError,
     GraphDocumentStore,
     GraphDocumentValidationError,
@@ -282,6 +283,38 @@ def test_http_connector_discovery_returns_only_presentation_safe_plugin_data(
             }
         ]
     }
+    serialized = json.dumps(body).lower()
+    assert all(
+        secret_name not in serialized
+        for secret_name in ("base_url", "auth", "secret", "request_body", "credential")
+    )
+
+
+def test_http_plugin_catalog_marks_only_manifest_plugins_installed(tmp_path: Path) -> None:
+    path = tmp_path / "pipeline.yaml"
+    _write_graph(path)
+    installed = InstalledConnectorPlugin(
+        plugin=ConnectorPlugin(
+            plugin_id="salesforce",
+            api_version=1,
+            engine="salesforce_bulk2",
+            display_name="Salesforce",
+            source_factory=cast("Any", lambda *_args: None),
+        ),
+        distribution="dander-connector-salesforce",
+        version="0.1.1",
+    )
+
+    with _running_server(path, connector_plugins=(installed,)) as address:
+        status, body, headers = _request(address, "GET", path=PLUGIN_CATALOG_API_PATH)
+
+    connectors = {connector["id"]: connector for connector in body["connectors"]}
+    assert status == 200
+    assert headers["access-control-allow-origin"] == ORIGIN
+    assert body["schema_version"] == 1
+    assert connectors["salesforce"]["installed"] is True
+    assert connectors["salesforce"]["installed_version"] == "0.1.1"
+    assert connectors["servicenow"]["installed"] is False
     serialized = json.dumps(body).lower()
     assert all(
         secret_name not in serialized

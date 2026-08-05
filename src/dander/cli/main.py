@@ -74,6 +74,7 @@ from dander.plugins import (
     PluginScaffoldError,
     load_connector_plugins,
     scaffold_connector_plugin,
+    search_connector_catalog,
 )
 from dander.project import (
     PlatformRuntimeSpec,
@@ -260,6 +261,39 @@ def scaffold_plugin(
         raise ClickException(str(error)) from error
     console.print(f"[green]Created connector plugin at {created}.[/green]")
     console.print(f"Next: cd {created} && uv sync --extra dev && uv run pytest")
+
+
+@plugins_app.command("search")
+def search_plugins(
+    query: str = typer.Argument(  # noqa: B008
+        "",
+        help="Optional connector name, package, or capability to search for.",
+    ),
+) -> None:
+    """Search Dander's small curated connector catalog."""
+    connectors = search_connector_catalog(query)
+    if not connectors:
+        console.print(f"No curated connectors match {query!r}.")
+        return
+
+    table = Table(title="Dander connector catalog")
+    table.add_column("Connector")
+    table.add_column("Package pin")
+    table.add_column("Dander")
+    table.add_column("Support")
+    table.add_column("Validation")
+    for connector in connectors:
+        table.add_row(
+            connector.display_name,
+            f"{connector.distribution}=={connector.version}",
+            connector.dander_specifier,
+            connector.support_status,
+            connector.validation_status,
+        )
+    console.print(table)
+    console.print("Exact package pins:")
+    for connector in connectors:
+        console.print(f"  {connector.distribution}=={connector.version}")
 
 
 @graph_app.command("serve")

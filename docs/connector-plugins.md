@@ -109,3 +109,22 @@ Then perform one narrow real-account acceptance when access exists. Describe evi
 
 Publishing a package does not make it first-party or supported. Curated discovery records those
 claims separately from PyPI metadata.
+
+## Discover curated connectors
+
+Search the small first-party catalog without contacting PyPI at runtime:
+
+```console
+dander plugins search
+dander plugins search salesforce
+```
+
+Each result includes an exact public package pin, its compatible Dander range, support status,
+provider-validation status, and documentation links. The catalog ships with Dander; PyPI remains
+the package store and source of the actual distribution.
+
+When `dander graph serve` opens a project, `GET /v1/plugin-catalog` exposes the same non-secret
+catalog and marks only validated, manifest-declared plugins as installed. `GET /v1/connectors`
+continues to describe the runtime connectors that are actually active. Authoring tools may present
+catalog setup instructions, but package installation and manifest changes remain explicit operator
+actions.
