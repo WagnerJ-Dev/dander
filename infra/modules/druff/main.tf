@@ -17,6 +17,10 @@ resource "google_cloud_run_v2_service" "druff" {
     owner  = "dander"
   }
 
+  lifecycle {
+    ignore_changes = [scaling]
+  }
+
   template {
     service_account = google_service_account.druff.email
 

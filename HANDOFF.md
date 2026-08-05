@@ -4,7 +4,7 @@
 
 - Added optional immutable Druff image input to normal initialization and full-platform previews.
 - Added a public, scale-to-zero Cloud Run UI beside the hosted runtime with a dedicated no-role
-  service account, one Terraform owner for Cloud Run API enablement, and no zero-value drift.
+  service account and ignored only the provider-reported zero scaling defaults.
 - Kept graph persistence, connector data, credentials, and execution on Dander's loopback service.
 - Packaged the new Terraform module into generated source-free projects.
 - Documented exact image retention, public usage, and local-network behavior.
@@ -33,8 +33,8 @@ uv run dander graph serve --file /path/to/graph.yaml --origin HTTPS_DRUFF_URL
 
 ## Remaining
 
-- Pass protected CI for the provider-normalization drift correction.
-- Apply only the reviewed Druff image/scaling update in the disposable project.
+- Pass protected CI for the final provider-normalization drift correction.
+- Apply only the reviewed Druff image update in the disposable project.
 - Verify hosted open/save, paused schedules, and a final no-drift plan; never touch the retained
   project.
 
