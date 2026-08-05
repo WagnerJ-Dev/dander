@@ -433,3 +433,12 @@
   only when both a connector configuration and authentication strategy are supplied.
 - PyPI remains the package store. Curated discovery and support claims stay separate from package
   execution, and the authoring slice targets the next Dander release after accepted `0.4.0`.
+
+## 2026-08-05 — Connector discovery stays curated and package-backed
+
+- Dander ships a small static catalog of reviewed connector packages rather than depending on a
+  marketplace service or live PyPI queries. PyPI remains authoritative for package distribution.
+- Catalog installation status comes only from the already validated manifest plugin registry;
+  unrelated globally installed packages stay inactive and are not represented as project-installed.
+- Druff may search and copy exact setup instructions, but it does not install packages, rewrite the
+  manifest, or introduce a second plugin runtime.

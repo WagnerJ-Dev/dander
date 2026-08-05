@@ -119,3 +119,22 @@ def test_plugins_scaffold_reports_existing_destination(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert result.exception is not None
     assert "Destination already exists" in str(result.exception)
+
+
+def test_plugins_search_lists_curated_exact_package_pins() -> None:
+    result = CliRunner().invoke(app, ["plugins", "search"])
+
+    assert result.exit_code == 0, result.output
+    assert "dander-connector-salesforce==0.1.1" in result.output
+    assert "dander-connector-servicenow==0.1.1" in result.output
+
+
+def test_plugins_search_filters_and_reports_no_match() -> None:
+    filtered = CliRunner().invoke(app, ["plugins", "search", "incident"])
+    missing = CliRunner().invoke(app, ["plugins", "search", "not-a-connector"])
+
+    assert filtered.exit_code == 0, filtered.output
+    assert "dander-connector-servicenow==0.1.1" in filtered.output
+    assert "dander-connector-salesforce" not in filtered.output
+    assert missing.exit_code == 0, missing.output
+    assert "No curated connectors match" in missing.output
