@@ -6,6 +6,13 @@ capabilities enter through the next minor release.
 
 ## Unreleased
 
+## 0.5.1 — 2026-08-05 (alpha)
+
+### Fixed
+
+- Update the curated Salesforce and ServiceNow connector recommendations to their published
+  `0.2.0` releases and accurately require Dander `0.5.x`.
+
 ## 0.5.0 — 2026-08-05 (alpha)
 
 ### Added

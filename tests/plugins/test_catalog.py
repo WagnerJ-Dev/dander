@@ -13,7 +13,7 @@ from dander.plugins import (
 )
 
 
-def _installed_salesforce(version: str = "0.1.1") -> InstalledConnectorPlugin:
+def _installed_salesforce(version: str = "0.2.0") -> InstalledConnectorPlugin:
     return InstalledConnectorPlugin(
         plugin=ConnectorPlugin(
             plugin_id="salesforce",
@@ -28,14 +28,14 @@ def _installed_salesforce(version: str = "0.1.1") -> InstalledConnectorPlugin:
 
 
 def test_curated_catalog_has_exact_public_packages_and_dander_05_compatibility() -> None:
-    catalog = build_plugin_catalog(dander_version="0.5.0")
+    catalog = build_plugin_catalog(dander_version="0.5.1")
     connectors = cast("list[dict[str, object]]", catalog["connectors"])
 
     assert catalog["schema_version"] == 1
-    assert catalog["dander_version"] == "0.5.0"
+    assert catalog["dander_version"] == "0.5.1"
     assert {connector["id"] for connector in connectors} == {"salesforce", "servicenow"}
-    assert all(connector["version"] == "0.1.1" for connector in connectors)
-    assert all(connector["dander_specifier"] == ">=0.4.0,<0.6" for connector in connectors)
+    assert all(connector["version"] == "0.2.0" for connector in connectors)
+    assert all(connector["dander_specifier"] == ">=0.5.0,<0.6" for connector in connectors)
     assert all(connector["compatible"] is True for connector in connectors)
     assert all(connector["support_status"] == "first-party-alpha" for connector in connectors)
     assert all(connector["validation_status"] == "provider-validated" for connector in connectors)
@@ -69,6 +69,13 @@ def test_catalog_installation_status_uses_only_validated_manifest_plugins() -> N
 
 def test_catalog_marks_unsupported_dander_version_incompatible() -> None:
     catalog = build_plugin_catalog(dander_version="0.6.0")
+    connectors = cast("list[dict[str, object]]", catalog["connectors"])
+
+    assert all(connector["compatible"] is False for connector in connectors)
+
+
+def test_catalog_marks_dander_04_incompatible_with_current_connectors() -> None:
+    catalog = build_plugin_catalog(dander_version="0.4.0")
     connectors = cast("list[dict[str, object]]", catalog["connectors"])
 
     assert all(connector["compatible"] is False for connector in connectors)
