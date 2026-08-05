@@ -5,8 +5,8 @@ scale-to-zero Cloud Run service. The hosted runtime owns Cloud Run API enablemen
 does not create a second Terraform owner for that project service. Its dedicated service account
 receives no project roles, secrets, datasets, or runtime authority.
 
-Cloud Run's default minimum of zero is intentionally left implicit to avoid provider normalization
-drift; the configured maximum remains one instance.
+Cloud Run's default minimum of zero remains implicit. Terraform ignores the provider-only top-level
+scaling status, while the authored template maximum and every other service setting remain managed.
 
 The browser still connects to the operator-owned Dander graph service on `127.0.0.1`; no graph,
 credential, manifest, or execution API is hosted by this module.
