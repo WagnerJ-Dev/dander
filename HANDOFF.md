@@ -31,10 +31,10 @@ uv run pytest tests/plugins tests/cli/test_plugins_cli.py -q
 
 ## Remaining
 
-- Obtain explicit approval to publish merged Dander `0.4.0` and create the ServiceNow repository.
-- Finalize Salesforce `0.1.0`, then lock and protect the ServiceNow candidate.
-- Do not open or merge this 0.5-targeted PR until the 0.4 release sequence is complete.
-- Keep all GCP, Druff provisioning, schedulers, secrets, and IAM unchanged.
+- Merge this 0.5-targeted authoring slice through protected `main` after CI passes.
+- Keep the scaffold's generated publication workflow inert until each plugin author configures it.
+- Add curated connector discovery and Druff installation UX as a separate follow-up slice.
+- Keep GCP, Druff provisioning, schedulers, secrets, and IAM unchanged in this PR.
 
 ## Review First
 
