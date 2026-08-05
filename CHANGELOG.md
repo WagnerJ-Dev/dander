@@ -6,6 +6,25 @@ capabilities enter through the next minor release.
 
 ## Unreleased
 
+## 0.5.0 — 2026-08-05 (alpha)
+
+### Added
+
+- Add read-only connector capability discovery, connection checks, exact counts, and targeted
+  record lookup without changing the existing source interface.
+- Add a connector scaffold, API-v1 conformance helpers, and a curated PyPI-backed plugin catalog.
+- Host Druff beside Dander's operator-bound graph service and publish presentation-safe connector,
+  operation, and catalog descriptors.
+- Execute ordered, schema-preserving trim, truncate, default, and bounded-filter operations from
+  canonical graphs after raw ingestion.
+
+### Acceptance
+
+- Public candidates completed a source-free isolated proof with Druff-authored graph operations,
+  Salesforce connection/count/lookup capabilities, ingestion, replay, monotonic cursor, released
+  lease, staging cleanup, restored schedules, and Terraform no-drift.
+- Stable `0.5.0` preserves the accepted `0.5.0rc2` runtime behavior.
+
 ## 0.5.0rc2 — 2026-08-05 (alpha)
 
 ### Added
