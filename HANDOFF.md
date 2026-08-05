@@ -4,7 +4,7 @@
 
 - Added optional immutable Druff image input to normal initialization and full-platform previews.
 - Added a public, scale-to-zero Cloud Run UI beside the hosted runtime with a dedicated no-role
-  service account and one Terraform owner for Cloud Run API enablement.
+  service account, one Terraform owner for Cloud Run API enablement, and no zero-value drift.
 - Kept graph persistence, connector data, credentials, and execution on Dander's loopback service.
 - Packaged the new Terraform module into generated source-free projects.
 - Documented exact image retention, public usage, and local-network behavior.
@@ -33,14 +33,13 @@ uv run dander graph serve --file /path/to/graph.yaml --origin HTTPS_DRUFF_URL
 
 ## Remaining
 
-- Pass protected CI in both repositories; final adversarial review is already clean.
-- Merge Druff first, then Dander.
-- Push the immutable Druff image to the disposable proof project.
-- Apply only the reviewed Druff additions and verify the hosted-to-local bridge.
-- Confirm paused schedules and a final no-drift Terraform plan; never touch the retained project.
+- Pass protected CI for the provider-normalization drift correction.
+- Apply only the reviewed Druff image/scaling update in the disposable project.
+- Verify hosted open/save, paused schedules, and a final no-drift plan; never touch the retained
+  project.
 
 ## Review First
 
 - `infra/modules/druff/main.tf`
-- `src/dander/bootstrap/terraform.py`
-- `src/dander/pipeline/graph_deployment.py`
+- `infra/modules/druff/README.md`
+- `tests/infra/test_druff_hosting.py`

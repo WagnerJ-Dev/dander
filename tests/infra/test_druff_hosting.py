@@ -16,7 +16,6 @@ def test_druff_is_optional_source_free_and_separate_from_pipeline_authority() ->
     assert 'check "druff_requires_runtime"' in root
     assert 'resource "google_cloud_run_v2_service" "druff"' in module
     assert "invoker_iam_disabled = true" in normalized
-    assert "min_instance_count = 0" in normalized
     assert "max_instance_count = 1" in normalized
     assert "service_account = google_service_account.druff.email" in normalized
     assert "roles/" not in module
