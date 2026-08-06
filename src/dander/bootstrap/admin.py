@@ -135,11 +135,31 @@ class AdministrativeBootstrap:
             self._run("terraform", "apply", str(plan_path))
         return plan_path
 
+    def apply_saved_plan(self, *, state_bucket: str) -> Path:
+        """Apply only the previously saved stage-zero plan."""
+        if not _BUCKET_NAME.fullmatch(state_bucket):
+            raise AdministrativeBootstrapError(f"Invalid state bucket: {state_bucket!r}")
+        self._prepare_operator_directories(preserve_plan=True)
+        if not self._plan_path.is_file() or self._plan_path.is_symlink():
+            raise AdministrativeBootstrapError(
+                f"No reviewed stage-zero plan exists at {self._plan_path}"
+            )
+        self._run(
+            "terraform",
+            "init",
+            "-reconfigure",
+            "-input=false",
+            f"-backend-config=bucket={state_bucket}",
+            f"-backend-config=prefix={_STAGE_ZERO_STATE_PREFIX}",
+        )
+        self._run("terraform", "apply", str(self._plan_path))
+        return self._plan_path
+
     @staticmethod
     def _is_within(candidate: Path, parent: Path) -> bool:
         return candidate == parent or parent in candidate.parents
 
-    def _prepare_operator_directories(self) -> None:
+    def _prepare_operator_directories(self, *, preserve_plan: bool = False) -> None:
         try:
             if self._tf_data_dir.is_symlink():
                 raise AdministrativeBootstrapError("terraform-data must not be a symlink")
@@ -164,7 +184,8 @@ class AdministrativeBootstrap:
             self._tf_data_dir.chmod(0o700)
             if self._plan_path.exists():
                 self._plan_path.chmod(0o600)
-                self._plan_path.unlink()
+                if not preserve_plan:
+                    self._plan_path.unlink()
         except OSError as error:
             raise AdministrativeBootstrapError(
                 "Could not create or secure the operator artifact directory"

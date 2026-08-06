@@ -81,7 +81,7 @@ def execute_init(
     terraform_bootstrap_cls: type[TerraformBootstrap] = TerraformBootstrap,
     active_admin_member_fn: Callable[..., str] = active_admin_member,
     wait_for_impersonation_fn: Callable[..., None] = wait_for_service_account_impersonation,
-) -> None:
+) -> Path:
     """Resolve, execute, and render one ``dander init`` request."""
     try:
         manifest = load_project_config(options.config)
@@ -157,6 +157,7 @@ def execute_init(
             ).publish(
                 project=options.project,
                 region=platform.region,
+                impersonate_service_account=bootstrap_account,
             )
         except ProjectBootstrapError as error:
             raise ClickException(str(error)) from error
@@ -200,6 +201,7 @@ def execute_init(
 
     action = "applied" if options.apply else "planned"
     console.print(f"[green]Bootstrap {action}.[/green] Saved plan: {plan_path}")
+    return plan_path
 
 
 def _bootstrap_administration(
