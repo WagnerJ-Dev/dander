@@ -2,42 +2,42 @@
 
 ## Finished
 
-- Isolated the work on `codex/thin-run-cli`; the original `main` checkout remains untouched.
-- Replaced the 264-line `dander run` body with a typed options object and a thin delegate.
-- Split run resolution, graph planning, safety checks, dependency construction, execution, and
-  rendering into focused functions without changing command flags or output.
-- Preserved existing private auth/source helper imports through compatibility aliases.
-- Added one non-network hosted composition test for project, store, writer, and transform wiring.
+- Isolated the work on `codex/thin-init-cli`; the original `main` checkout remains untouched.
+- Replaced the 232-line `dander init` orchestration body with a typed options object and delegate.
+- Split manifest resolution, safety decisions, stage-zero sequencing, image publication, platform
+  configuration, and Terraform composition into `init_command.py`.
+- Preserved the command signature, output, bootstrap monkeypatch points, and private helper aliases.
+- Kept runtime behavior, package metadata, Terraform, and deployed resources unchanged.
 
 ## Try It
 
 ```bash
-uv run dander run greenhouse_jobs --dry-run --project unit-project
-uv run pytest tests/cli/test_run_command.py
+uv run dander init --help
+uv run pytest tests/cli/test_init_cli.py
 ```
 
 ## Checks
 
-- Ruff, formatting, and strict mypy passed across the repository.
-- Full suite passed: `748 passed`.
-- Legacy, project, and graph dry-run output plus `dander run --help` matched `main` exactly.
-- Dependency audit and both Terraform configurations passed validation.
-- Wheel/sdist inspection and outside-checkout installs passed; the local container built and ran
-  as UID `65532` with its expected proof assets.
+- Focused init suite passed: `9 passed`; full suite passed: `748 passed`.
+- Repository-wide Ruff, formatting, and strict mypy passed.
+- `dander init --help` matched `main` byte-for-byte.
+- Dependency audit, platform Terraform, stage-zero Terraform, and generated Terraform passed.
+- Wheel/sdist inspection and external installs passed; the container built and its runtime contract
+  passed.
 
 ## Decisions
 
 - Keep Typer option declarations in `main.py`; the new module never imports `main.py`.
-- Preserve runtime behavior, package version, Terraform, and deployed resources unchanged.
-- Add only the one missing non-dry composition test rather than expanding test scope generally.
+- Inject existing bootstrap symbols from `main.py` to retain current test and development seams.
+- Add no duplicate tests because the existing init suite already covers the extracted wiring.
 
 ## Remaining
 
 - Protected GitHub CI must repeat Linux package/container checks and security scans.
-- Merge only after review; no deployment or release is part of this branch.
+- Merge only after review; no deployment, release, Terraform apply, or GCP mutation is in scope.
 
 ## Review First
 
-- `src/dander/cli/run_command.py`
+- `src/dander/cli/init_command.py`
 - `src/dander/cli/main.py`
-- `tests/cli/test_run_command.py`
+- `tests/cli/test_init_cli.py`
