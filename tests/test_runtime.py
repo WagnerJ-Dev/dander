@@ -352,6 +352,7 @@ def test_salesforce_query_record_envelope_satisfies_declared_runtime_schema() ->
     config = load_source_config(
         Path(__file__).parents[1] / "connectors" / "salesforce_jwt.example.yaml"
     )
+    config.endpoints = [config.endpoints[0]]
 
     class _SalesforceSource(Source):
         def discover(self) -> Mapping[str, Any]:

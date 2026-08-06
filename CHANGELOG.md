@@ -14,6 +14,8 @@ capabilities enter through the next minor release.
   immediate cleanup for handled completion and failure paths.
 - Add plan-first stage-zero and platform commands, source-free immutable image publication, a
   read-only permission preflight, and documented least-privilege upgrade and rollback workflows.
+- Expand the Salesforce project contract to four independently watermarked CRM endpoints, four
+  governed staging models, and an Opportunity fact with Account and historical owner dimensions.
 
 ## 0.5.1 — 2026-08-05 (alpha)
 

@@ -1,0 +1,49 @@
+model: stg_salesforce__opportunities
+description: Salesforce Opportunities normalized with revenue, stage, ownership, and tombstones.
+owner: data-eng
+materialization: incremental
+dataset: staging
+source_system: salesforce
+sensitivity: confidential
+unique_key: [opportunity_id]
+incremental_cursor: system_modified_at
+
+columns:
+  - {name: opportunity_id, type: STRING, description: Stable Salesforce Opportunity identifier.}
+  - {name: account_id, type: STRING, description: Related Account identifier when present.}
+  - {name: owner_id, type: STRING, description: Current Salesforce User owner identifier.}
+  - {name: opportunity_name, type: STRING, description: Opportunity display name.}
+  - {name: stage_name, type: STRING, description: Current Salesforce sales stage.}
+  - {name: amount, type: NUMERIC, description: Opportunity revenue amount when present.}
+  - {name: probability, type: NUMERIC, description: Salesforce win probability percentage.}
+  - {name: close_date, type: DATE, description: Expected or actual close date.}
+  - {name: opportunity_type, type: STRING, description: Salesforce Opportunity type.}
+  - {name: lead_source, type: STRING, description: Lead source when present.}
+  - {name: forecast_category, type: STRING, description: Salesforce forecast category.}
+  - {name: is_closed, type: BOOL, description: Whether the Opportunity is closed.}
+  - {name: is_won, type: BOOL, description: Whether the Opportunity is won.}
+  - {name: created_at, type: TIMESTAMP, description: Salesforce record creation timestamp.}
+  - {name: last_modified_at, type: TIMESTAMP, description: User-facing modification timestamp.}
+  - {name: system_modified_at, type: TIMESTAMP, description: Salesforce system watermark.}
+  - {name: is_deleted, type: BOOL, description: Whether Salesforce soft-deleted the Opportunity.}
+
+tests:
+  - {column: opportunity_id, not_null: true, unique: true}
+  - {column: opportunity_name, not_null: true}
+  - {column: stage_name, not_null: true}
+  - {column: close_date, not_null: true}
+  - {column: account_id, relationships: {to: stg_salesforce__accounts, field: account_id}}
+  - {column: owner_id, relationships: {to: stg_salesforce__users, field: user_id}}
+  - {column: is_closed, accepted_values: [true, false]}
+  - {column: is_won, accepted_values: [true, false]}
+  - {column: is_deleted, accepted_values: [true, false]}
+
+metrics:
+  - name: source_opportunity_count
+    description: Number of Salesforce Opportunities represented, including tombstones.
+    aggregation: count_distinct
+    field: opportunity_id
+  - name: source_opportunity_amount
+    description: Total stated amount across Opportunities with a populated amount.
+    aggregation: sum
+    field: amount

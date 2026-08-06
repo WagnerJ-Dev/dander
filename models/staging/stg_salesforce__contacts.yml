@@ -1,0 +1,42 @@
+model: stg_salesforce__contacts
+description: Salesforce Contacts normalized with Account and owner relationships and tombstones.
+owner: data-eng
+materialization: incremental
+dataset: staging
+source_system: salesforce
+sensitivity: restricted
+unique_key: [contact_id]
+incremental_cursor: system_modified_at
+
+columns:
+  - {name: contact_id, type: STRING, description: Stable Salesforce Contact identifier.}
+  - {name: account_id, type: STRING, description: Related Account identifier when present.}
+  - {name: owner_id, type: STRING, description: Current Salesforce User owner identifier.}
+  - {name: first_name, type: STRING, description: Contact first name when present.}
+  - {name: last_name, type: STRING, description: Contact last name.}
+  - {name: contact_name, type: STRING, description: Salesforce-composed Contact display name.}
+  - {name: email, type: STRING, description: Personal email address when present.}
+  - {name: phone, type: STRING, description: Personal telephone number when present.}
+  - {name: title, type: STRING, description: Contact job title when present.}
+  - {name: department, type: STRING, description: Contact department when present.}
+  - {name: mailing_city, type: STRING, description: Mailing city when present.}
+  - {name: mailing_state, type: STRING, description: Mailing state or region when present.}
+  - {name: mailing_postal_code, type: STRING, description: Mailing postal code when present.}
+  - {name: mailing_country, type: STRING, description: Mailing country when present.}
+  - {name: created_at, type: TIMESTAMP, description: Salesforce record creation timestamp.}
+  - {name: last_modified_at, type: TIMESTAMP, description: User-facing modification timestamp.}
+  - {name: system_modified_at, type: TIMESTAMP, description: Salesforce system watermark.}
+  - {name: is_deleted, type: BOOL, description: Whether Salesforce soft-deleted the Contact.}
+
+tests:
+  - {column: contact_id, not_null: true, unique: true}
+  - {column: last_name, not_null: true}
+  - {column: account_id, relationships: {to: stg_salesforce__accounts, field: account_id}}
+  - {column: owner_id, relationships: {to: stg_salesforce__users, field: user_id}}
+  - {column: is_deleted, accepted_values: [true, false]}
+
+metrics:
+  - name: contact_count
+    description: Number of Salesforce Contacts represented, including soft-deleted records.
+    aggregation: count_distinct
+    field: contact_id

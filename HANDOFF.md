@@ -2,43 +2,40 @@
 
 ## Finished
 
-- Added a read-only stage-zero permission preflight with conditional billing and WIF checks.
-- Added source-free `image-publish` with bootstrap-account impersonation and immutable digests.
-- Made admin and platform planning print review/apply commands; apply commands reuse saved plans.
-- Made `init-platform-plan` render the complete manifest-defined hosted platform.
-- Documented plan-first install/upgrade, least privilege, and immutable-image rollback.
+- Added a copyable Salesforce CRM project with Accounts, Contacts, Opportunities, and Users.
+- Added five governed staging/fact models with tests, metrics, relationships, and Dataplex publication.
+- Packaged the Salesforce project overlay in every generated source-free Dander project.
+- Updated Salesforce documentation for personal data, soft deletion, replay, and custom fields.
 
 ## Try It
 
-```bash
-dander image-publish --project PROJECT --failure-alert-email OPERATOR_EMAIL
-```
-
-Run the printed platform-plan command, review its saved Terraform plan, then run the printed apply
-command. `image-publish` intentionally requires a generated project without `src/`.
+Generate a project, then copy `examples/salesforce/dander.yaml`, `connectors/`, and `models/`
+from the packaged Salesforce overlay into the project root. Install the exact plugin pin from the
+example manifest, validate, and run `dander run salesforce_crm --dry-run --project PROJECT_ID`.
 
 ## Checks
 
-- Focused bootstrap and CLI tests passed: `35 passed`.
-- Full test suite passed: `763 passed`.
+- Full Dander suite passed: `763 passed`.
 - Ruff formatting/lint and strict mypy passed.
-- Main and stage-zero Terraform initialization/validation passed with backends disabled.
-- Wheel/sdist inspection, external wheel install, project generation, and validation passed.
+- Main and stage-zero Terraform initialization and validation passed with backends disabled.
+- Wheel/sdist inspection and external, source-free scaffold generation passed.
+- Fresh Dander/plugin wheel installation, four-endpoint validation, and dry-run passed.
 
 ## Decisions
 
-- Keep `dander init` as a compatibility shortcut; make plan-first commands the public path.
-- Use predefined GCP roles, not a custom role; request billing/WIF permissions only on opt-in.
-- Require source-free projects only for the new explicit image publication command.
+- New examples use `salesforce_crm`; the retained project keeps its existing pipeline ID.
+- Contact email and phone remain enabled and are explicitly documented as personal data.
+- Beta classification remains gated on published-candidate live acceptance.
 
 ## Remaining
 
 - Protected CI and review must pass before this PR merges.
-- Deep Salesforce endpoints and governed models remain separate sequential PRs.
-- Candidate publication and live GCP acceptance still require explicit approval.
+- Publish the Dander and Salesforce candidates only after explicit approval.
+- Run the fresh-project live proof before changing Alpha to Beta or publishing stable releases.
+- Retained-project deployment, schedule changes, and the seven-day soak remain separately gated.
 
 ## Review First
 
-- `src/dander/cli/main.py`
-- `src/dander/bootstrap/permissions.py`
-- `docs/getting-started.md`
+- `examples/salesforce/dander.yaml`
+- `models/marts/fct_salesforce__opportunities.sql`
+- `src/dander/project/scaffold.py`

@@ -482,3 +482,13 @@
   billing and Workload Identity permissions are checked only when those features are selected.
 - A cloud administrator may perform stage zero once; later image and platform operations use the
   bootstrap account through operator-scoped impersonation rather than Project Owner.
+
+## 2026-08-06 — Salesforce becomes the first deep connector
+
+- Accounts, Contacts, Opportunities, and Users retain separate inclusive `SystemModstamp` cursors
+  behind the existing `salesforce_bulk2` engine and plugin API v1.
+- QueryAll retains visible CRM tombstones; Users retain inactive owners through `IsActive`.
+  Hard-deleted or purged records and provider write-back remain outside the contract.
+- The governed fact excludes deleted Opportunities and Accounts while retaining inactive owner
+  dimensions. Existing installations may keep the `salesforce_accounts` pipeline resource ID;
+  new examples use `salesforce_crm`.
