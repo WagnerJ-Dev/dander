@@ -18,6 +18,7 @@ example manifest, validate, and run `dander run salesforce_crm --dry-run --proje
 - Full Dander suite passed: `763 passed`.
 - Ruff formatting/lint and strict mypy passed.
 - Main and stage-zero Terraform initialization and validation passed with backends disabled.
+- Local Linux container build passed with the packaged Salesforce example in its build context.
 - Wheel/sdist inspection and external, source-free scaffold generation passed.
 - Fresh Dander/plugin wheel installation, four-endpoint validation, and dry-run passed.
 
