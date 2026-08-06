@@ -1,0 +1,29 @@
+version: 1
+
+platform:
+  region: us-central1
+  bigquery_location: US
+  safety:
+    require_guarded_free_tier: false
+
+plugins:
+  salesforce:
+    distribution: dander-connector-salesforce
+    version: 0.3.0rc1
+
+pipelines:
+  salesforce_crm:
+    source: salesforce
+    models:
+      - stg_salesforce__users
+      - stg_salesforce__accounts
+      - stg_salesforce__contacts
+      - stg_salesforce__opportunities
+      - fct_salesforce__opportunities
+    publish_dataplex: true
+    schedule: "0 7 * * *"
+    time_zone: America/New_York
+    paused: true
+    secrets:
+      SALESFORCE_EXTERNAL_CLIENT_APP_ID: salesforce-client-id
+      SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY: salesforce-private-key

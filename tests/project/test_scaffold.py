@@ -41,8 +41,18 @@ def test_scaffold_creates_complete_paused_project(tmp_path: Path) -> None:
         "infra/bootstrap-admin/main.tf",
         "models/staging/stg_greenhouse__jobs.sql",
         "models/staging/stg_greenhouse__jobs.yml",
+        "examples/salesforce/dander.yaml",
+        "examples/salesforce/connectors/salesforce.yaml",
+        "examples/salesforce/models/staging/stg_salesforce__users.sql",
+        "examples/salesforce/models/staging/stg_salesforce__accounts.sql",
+        "examples/salesforce/models/staging/stg_salesforce__contacts.sql",
+        "examples/salesforce/models/staging/stg_salesforce__opportunities.sql",
+        "examples/salesforce/models/marts/fct_salesforce__opportunities.sql",
     ):
         assert (project / relative).is_file()
+    salesforce = load_project_config(project / "examples" / "salesforce" / "dander.yaml")
+    assert salesforce.plugins["salesforce"].version == "0.3.0rc1"
+    assert set(salesforce.pipelines) == {"salesforce_crm"}
     assert not list(project.rglob("*.tfplan"))
     assert not list(project.rglob("*.tfstate"))
     assert not list(project.rglob(".terraform"))

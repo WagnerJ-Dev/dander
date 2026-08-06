@@ -2,42 +2,40 @@
 
 ## Finished
 
-- Isolated the work on `codex/thin-init-cli`; the original `main` checkout remains untouched.
-- Replaced the 232-line `dander init` orchestration body with a typed options object and delegate.
-- Split manifest resolution, safety decisions, stage-zero sequencing, image publication, platform
-  configuration, and Terraform composition into `init_command.py`.
-- Preserved the command signature, output, bootstrap monkeypatch points, and private helper aliases.
-- Kept runtime behavior, package metadata, Terraform, and deployed resources unchanged.
+- Reconciled Josh's current `main` with the complete functional beta-readiness tip.
+- Preserved Josh's three unique commits, capability contracts, tickets, and secret-scan review.
+- Added sanitized run failures, interrupted-run reconciliation, and supported staging expiration.
+- Added plan-first operations, permission preflight, upgrade guidance, and rollback guidance.
+- Added the four-endpoint Salesforce CRM example and five governed models.
 
 ## Try It
 
-```bash
-uv run dander init --help
-uv run pytest tests/cli/test_init_cli.py
-```
+Run `uv run dander validate`, then inspect the combined optional capabilities with
+`uv run dander connector inspect PIPELINE`. The Salesforce example remains under
+`examples/salesforce/` and can be validated source-free from an installed wheel.
 
 ## Checks
 
-- Focused init suite passed: `9 passed`; full suite passed: `748 passed`.
-- Repository-wide Ruff, formatting, and strict mypy passed.
-- `dander init --help` matched `main` byte-for-byte.
-- Dependency audit, platform Terraform, stage-zero Terraform, and generated Terraform passed.
-- Wheel/sdist inspection and external installs passed; the container built and its runtime contract
-  passed.
+- Combined full suite passed: `770 passed`.
+- Ruff formatting/lint and strict mypy passed.
+- Platform and stage-zero Terraform validation passed with backends disabled.
+- Wheel/sdist inspection, external install, source-free generation, and validation passed.
+- The combined Linux container image built successfully.
+- Josh's five GitHub CI jobs passed on the cross-fork draft PR.
 
 ## Decisions
 
-- Keep Typer option declarations in `main.py`; the new module never imports `main.py`.
-- Inject existing bootstrap symbols from `main.py` to retain current test and development seams.
-- Add no duplicate tests because the existing init suite already covers the extracted wiring.
+- Merge exact functional tip `7a1378f`; exclude release-metadata commit `7703567`.
+- Preserve both sides of the decision log and all of Josh's capability implementation.
+- Keep package, lockfile, scaffold, and CI version metadata at `0.5.1`.
 
 ## Remaining
 
-- Protected GitHub CI must repeat Linux package/container checks and security scans.
-- Merge only after review; no deployment, release, Terraform apply, or GCP mutation is in scope.
+- Josh must review the cross-fork draft PR; it must not merge automatically.
+- Release publication, live acceptance, retained-project changes, and schedules remain untouched.
 
 ## Review First
 
-- `src/dander/cli/init_command.py`
-- `src/dander/cli/main.py`
-- `tests/cli/test_init_cli.py`
+- `docs/decisions.md`
+- `src/dander/ingestion/capabilities.py`
+- `src/dander/writer/bigquery.py`

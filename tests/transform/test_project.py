@@ -122,14 +122,40 @@ def test_unknown_selected_model_fails(tmp_path: Path) -> None:
         project.ordered(["absent"])
 
 
-def test_salesforce_accounts_model_loads_and_compiles_raw_relation() -> None:
+def test_salesforce_crm_models_compile_in_governed_dependency_order() -> None:
     models = Path(__file__).parents[2] / "models"
     project = TransformProject.load(models, project_id="valid-project-123")
-    model = project.models["stg_salesforce__accounts"]
+    selected = [
+        "stg_salesforce__users",
+        "stg_salesforce__accounts",
+        "stg_salesforce__contacts",
+        "stg_salesforce__opportunities",
+        "fct_salesforce__opportunities",
+    ]
 
-    assert project.ordered([model.name]) == (model,)
-    assert "`valid-project-123.raw.salesforce_accounts`" in project.compile(model)
-    assert [metric.name for metric in model.metadata.metrics] == ["account_count"]
+    assert [model.name for model in project.ordered(selected)] == selected
+    for endpoint in ("accounts", "contacts", "opportunities", "users"):
+        model = project.models[f"stg_salesforce__{endpoint}"]
+        assert f"`valid-project-123.raw.salesforce_{endpoint}`" in project.compile(model)
+
+    fact = project.models["fct_salesforce__opportunities"]
+    compiled = project.compile(fact)
+    assert "WHERE NOT is_deleted" in compiled
+    assert "owner.is_active AS owner_is_active" in compiled
+    contacts = project.models["stg_salesforce__contacts"]
+    relationships = {
+        test.column: (test.relationships.to, test.relationships.field)
+        for test in contacts.metadata.tests
+        if test.relationships is not None
+    }
+    assert relationships == {
+        "account_id": ("stg_salesforce__accounts", "account_id"),
+        "owner_id": ("stg_salesforce__users", "user_id"),
+    }
+    assert [metric.name for metric in fact.metadata.metrics] == [
+        "active_opportunity_count",
+        "active_opportunity_amount",
+    ]
 
 
 def test_servicenow_incidents_model_loads_and_casts_internal_utc_values() -> None:

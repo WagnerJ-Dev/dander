@@ -1,0 +1,31 @@
+model: stg_salesforce__users
+description: Salesforce Users normalized for owner dimensions while retaining inactive users.
+owner: data-eng
+materialization: incremental
+dataset: staging
+source_system: salesforce
+sensitivity: confidential
+unique_key: [user_id]
+incremental_cursor: system_modified_at
+
+columns:
+  - {name: user_id, type: STRING, description: Stable Salesforce User identifier.}
+  - {name: user_name, type: STRING, description: Salesforce User display name.}
+  - {name: user_alias, type: STRING, description: Salesforce User alias.}
+  - {name: user_type, type: STRING, description: Salesforce User license/type category.}
+  - {name: profile_id, type: STRING, description: Related Salesforce Profile identifier.}
+  - {name: is_active, type: BOOL, description: Whether the Salesforce User can currently sign in.}
+  - {name: created_at, type: TIMESTAMP, description: Salesforce record creation timestamp.}
+  - {name: last_modified_at, type: TIMESTAMP, description: User-facing modification timestamp.}
+  - {name: system_modified_at, type: TIMESTAMP, description: Salesforce system watermark.}
+
+tests:
+  - {column: user_id, not_null: true, unique: true}
+  - {column: user_name, not_null: true}
+  - {column: is_active, not_null: true, accepted_values: [true, false]}
+
+metrics:
+  - name: user_count
+    description: Number of Salesforce Users represented, including inactive users.
+    aggregation: count_distinct
+    field: user_id

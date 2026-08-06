@@ -52,10 +52,12 @@ class RunRecord:
     assertions: int
     assets: int
     failure_stage: RunStage | None
+    failure_code: str | None = None
+    failure_summary: str | None = None
 
 
 class RunHistoryStore(ABC):
-    """Persist lifecycle summaries without row values, cursors, or error messages."""
+    """Persist lifecycle summaries without row values, cursors, or raw exceptions."""
 
     @abstractmethod
     def start(self, run_id: str, source: str, *, pipeline_id: str | None = None) -> None:
@@ -89,8 +91,14 @@ class RunHistoryStore(ABC):
         assertions: int = 0,
         assets: int = 0,
         failure_stage: RunStage | None = None,
+        failure_code: str | None = None,
+        failure_summary: str | None = None,
     ) -> None:
         """Record a terminal aggregate for a run."""
+
+    def reconcile_interrupted(self, pipeline_id: str, *, current_run_id: str) -> None:
+        """Mark older active rows failed after this runner has acquired the lease."""
+        return None
 
     def recent(
         self,
@@ -197,6 +205,8 @@ class BigQueryRunHistoryStore(RunHistoryStore):
         assertions: int = 0,
         assets: int = 0,
         failure_stage: RunStage | None = None,
+        failure_code: str | None = None,
+        failure_summary: str | None = None,
     ) -> None:
         self._update(
             run_id,
@@ -213,6 +223,8 @@ class BigQueryRunHistoryStore(RunHistoryStore):
             assertions=assertions,
             assets=assets,
             failure_stage=failure_stage,
+            failure_code=failure_code,
+            failure_summary=failure_summary,
         )
 
     def _update(
@@ -228,6 +240,8 @@ class BigQueryRunHistoryStore(RunHistoryStore):
         assertions: int,
         assets: int,
         failure_stage: RunStage | None,
+        failure_code: str | None = None,
+        failure_summary: str | None = None,
     ) -> None:
         self._ensure_table()
         config = bigquery.QueryJobConfig(
@@ -248,6 +262,8 @@ class BigQueryRunHistoryStore(RunHistoryStore):
                     "STRING",
                     failure_stage.value if failure_stage is not None else None,
                 ),
+                bigquery.ScalarQueryParameter("failure_code", "STRING", failure_code),
+                bigquery.ScalarQueryParameter("failure_summary", "STRING", failure_summary),
             ]
         )
         finished_at = "CURRENT_TIMESTAMP()" if status is not None else "finished_at"
@@ -255,7 +271,8 @@ class BigQueryRunHistoryStore(RunHistoryStore):
             f"UPDATE `{self._table}` SET status = @status, stage = @stage, "
             f"finished_at = {finished_at}, endpoints = @endpoints, extracted = @extracted, "
             "affected = @affected, models = @models, assertions = @assertions, "
-            "assets = @assets, failure_stage = @failure_stage "
+            "assets = @assets, failure_stage = @failure_stage, failure_code = @failure_code, "
+            "failure_summary = @failure_summary "
             "WHERE run_id = @run_id",
             job_config=config,
         ).result()
@@ -269,7 +286,8 @@ class BigQueryRunHistoryStore(RunHistoryStore):
             "status STRING NOT NULL, stage STRING, started_at TIMESTAMP NOT NULL, "
             "finished_at TIMESTAMP, endpoints INT64 NOT NULL, extracted INT64 NOT NULL, "
             "affected INT64 NOT NULL, models INT64, assertions INT64, assets INT64, "
-            "failure_stage STRING) CLUSTER BY pipeline_id, status"
+            "failure_stage STRING, failure_code STRING, failure_summary STRING) "
+            "CLUSTER BY pipeline_id, status"
         ).result()
         for column, data_type in (
             ("pipeline_id", "STRING"),
@@ -278,6 +296,8 @@ class BigQueryRunHistoryStore(RunHistoryStore):
             ("assertions", "INT64"),
             ("assets", "INT64"),
             ("failure_stage", "STRING"),
+            ("failure_code", "STRING"),
+            ("failure_summary", "STRING"),
         ):
             self._client.query(
                 f"ALTER TABLE `{self._table}` ADD COLUMN IF NOT EXISTS {column} {data_type}"
@@ -305,11 +325,31 @@ class BigQueryRunHistoryStore(RunHistoryStore):
             "'complete', 'ingest')) AS stage, started_at, finished_at, endpoints, "
             "extracted, affected, COALESCE(models, 0) AS models, "
             "COALESCE(assertions, 0) AS assertions, COALESCE(assets, 0) AS assets, "
-            f"failure_stage FROM `{self._table}`{where} "
+            "failure_stage, "
+            "JSON_VALUE(TO_JSON_STRING(history_row), '$.failure_code') AS failure_code, "
+            "JSON_VALUE(TO_JSON_STRING(history_row), '$.failure_summary') AS failure_summary "
+            f"FROM `{self._table}` AS history_row{where} "
             "ORDER BY started_at DESC LIMIT @limit",
             job_config=bigquery.QueryJobConfig(query_parameters=parameters),
         ).result()
         return tuple(_bigquery_run_record(cast("_Row", row)) for row in rows)
+
+    def reconcile_interrupted(self, pipeline_id: str, *, current_run_id: str) -> None:
+        self._ensure_table()
+        config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("pipeline_id", "STRING", pipeline_id),
+                bigquery.ScalarQueryParameter("current_run_id", "STRING", current_run_id),
+            ]
+        )
+        self._client.query(
+            f"UPDATE `{self._table}` SET status = 'failed', finished_at = CURRENT_TIMESTAMP(), "
+            "failure_stage = COALESCE(stage, 'ingest'), failure_code = 'interrupted_run', "
+            "failure_summary = 'A later execution acquired the expired pipeline lease.' "
+            "WHERE status = 'running' AND COALESCE(pipeline_id, source_name) = @pipeline_id "
+            "AND run_id != @current_run_id",
+            job_config=config,
+        ).result()
 
 
 class SqliteRunHistoryStore(RunHistoryStore):
@@ -326,7 +366,8 @@ class SqliteRunHistoryStore(RunHistoryStore):
                 "endpoints INTEGER NOT NULL DEFAULT 0, extracted INTEGER NOT NULL DEFAULT 0, "
                 "affected INTEGER NOT NULL DEFAULT 0, pipeline_id TEXT, stage TEXT, "
                 "models INTEGER NOT NULL DEFAULT 0, assertions INTEGER NOT NULL DEFAULT 0, "
-                "assets INTEGER NOT NULL DEFAULT 0, failure_stage TEXT)"
+                "assets INTEGER NOT NULL DEFAULT 0, failure_stage TEXT, failure_code TEXT, "
+                "failure_summary TEXT)"
             )
             existing = {
                 str(row[1]) for row in connection.execute("PRAGMA table_info(runs)").fetchall()
@@ -338,6 +379,8 @@ class SqliteRunHistoryStore(RunHistoryStore):
                 ("assertions", "INTEGER NOT NULL DEFAULT 0"),
                 ("assets", "INTEGER NOT NULL DEFAULT 0"),
                 ("failure_stage", "TEXT"),
+                ("failure_code", "TEXT"),
+                ("failure_summary", "TEXT"),
             ):
                 if column not in existing:
                     connection.execute(f"ALTER TABLE runs ADD COLUMN {column} {declaration}")
@@ -390,6 +433,8 @@ class SqliteRunHistoryStore(RunHistoryStore):
         assertions: int = 0,
         assets: int = 0,
         failure_stage: RunStage | None = None,
+        failure_code: str | None = None,
+        failure_summary: str | None = None,
     ) -> None:
         stage = (
             RunStage.COMPLETE
@@ -400,7 +445,8 @@ class SqliteRunHistoryStore(RunHistoryStore):
             connection.execute(
                 "UPDATE runs SET status = ?, stage = ?, finished_at = CURRENT_TIMESTAMP, "
                 "endpoints = ?, extracted = ?, affected = ?, models = ?, assertions = ?, "
-                "assets = ?, failure_stage = ? WHERE run_id = ?",
+                "assets = ?, failure_stage = ?, failure_code = ?, failure_summary = ? "
+                "WHERE run_id = ?",
                 (
                     status.value,
                     (stage or RunStage.INGEST).value,
@@ -411,6 +457,8 @@ class SqliteRunHistoryStore(RunHistoryStore):
                     assertions,
                     assets,
                     failure_stage.value if failure_stage is not None else None,
+                    failure_code,
+                    failure_summary,
                     run_id,
                 ),
             )
@@ -427,7 +475,8 @@ class SqliteRunHistoryStore(RunHistoryStore):
             "SELECT run_id, COALESCE(pipeline_id, source), source, status, "
             "COALESCE(stage, CASE WHEN status = 'succeeded' THEN 'complete' ELSE 'ingest' END), "
             "started_at, finished_at, endpoints, extracted, affected, "
-            "COALESCE(models, 0), COALESCE(assertions, 0), COALESCE(assets, 0), failure_stage "
+            "COALESCE(models, 0), COALESCE(assertions, 0), COALESCE(assets, 0), failure_stage, "
+            "failure_code, failure_summary "
             "FROM runs"
         )
         parameters: tuple[object, ...] = ()
@@ -439,6 +488,16 @@ class SqliteRunHistoryStore(RunHistoryStore):
         with sqlite3.connect(self._path) as connection:
             rows = connection.execute(query, parameters).fetchall()
         return tuple(_sqlite_run_record(row) for row in rows)
+
+    def reconcile_interrupted(self, pipeline_id: str, *, current_run_id: str) -> None:
+        with sqlite3.connect(self._path) as connection:
+            connection.execute(
+                "UPDATE runs SET status = 'failed', finished_at = CURRENT_TIMESTAMP, "
+                "failure_stage = COALESCE(stage, 'ingest'), failure_code = 'interrupted_run', "
+                "failure_summary = 'A later execution acquired the expired pipeline lease.' "
+                "WHERE status = 'running' AND COALESCE(pipeline_id, source) = ? AND run_id != ?",
+                (pipeline_id, current_run_id),
+            )
 
 
 def _sqlite_run_record(row: tuple[object, ...]) -> RunRecord:
@@ -457,6 +516,8 @@ def _sqlite_run_record(row: tuple[object, ...]) -> RunRecord:
         assertions=int(cast("int", row[11])),
         assets=int(cast("int", row[12])),
         failure_stage=RunStage(str(row[13])) if row[13] is not None else None,
+        failure_code=str(row[14]) if row[14] is not None else None,
+        failure_summary=str(row[15]) if row[15] is not None else None,
     )
 
 
@@ -478,4 +539,8 @@ def _bigquery_run_record(row: _Row) -> RunRecord:
         assertions=int(cast("int", row["assertions"])),
         assets=int(cast("int", row["assets"])),
         failure_stage=RunStage(str(failure_stage)) if failure_stage is not None else None,
+        failure_code=(str(row["failure_code"]) if row["failure_code"] is not None else None),
+        failure_summary=(
+            str(row["failure_summary"]) if row["failure_summary"] is not None else None
+        ),
     )

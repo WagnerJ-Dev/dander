@@ -341,6 +341,8 @@ def test_status_combines_deployment_and_latest_dander_run(tmp_path: Path) -> Non
         "assertions": 0,
         "assets": 0,
         "failure_stage": None,
+        "failure_code": None,
+        "failure_summary": None,
     }
     assert history.calls == [(1, "graph_records")]
 

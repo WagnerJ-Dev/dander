@@ -1,0 +1,49 @@
+model: fct_salesforce__opportunities
+description: Non-deleted Salesforce Opportunity facts with active Account and historical owner data.
+owner: data-eng
+materialization: table
+dataset: marts
+source_system: salesforce
+sensitivity: confidential
+
+columns:
+  - {name: opportunity_id, type: STRING, description: Stable Salesforce Opportunity identifier.}
+  - {name: opportunity_name, type: STRING, description: Opportunity display name.}
+  - {name: account_id, type: STRING, description: Related non-deleted Account identifier.}
+  - {name: account_name, type: STRING, description: Related non-deleted Account name.}
+  - {name: account_type, type: STRING, description: Related Account classification.}
+  - {name: industry, type: STRING, description: Related Account industry.}
+  - {name: owner_id, type: STRING, description: Current or historical owner User identifier.}
+  - {name: owner_name, type: STRING, description: Owner display name including inactive owners.}
+  - {name: owner_alias, type: STRING, description: Owner Salesforce alias.}
+  - {name: owner_type, type: STRING, description: Owner Salesforce User type.}
+  - {name: owner_is_active, type: BOOL, description: Whether the owner is currently active.}
+  - {name: stage_name, type: STRING, description: Current Opportunity stage.}
+  - {name: amount, type: NUMERIC, description: Opportunity revenue amount when present.}
+  - {name: probability, type: NUMERIC, description: Salesforce win probability percentage.}
+  - {name: close_date, type: DATE, description: Expected or actual close date.}
+  - {name: opportunity_type, type: STRING, description: Salesforce Opportunity type.}
+  - {name: lead_source, type: STRING, description: Lead source when present.}
+  - {name: forecast_category, type: STRING, description: Salesforce forecast category.}
+  - {name: is_closed, type: BOOL, description: Whether the Opportunity is closed.}
+  - {name: is_won, type: BOOL, description: Whether the Opportunity is won.}
+  - {name: created_at, type: TIMESTAMP, description: Salesforce record creation timestamp.}
+  - {name: last_modified_at, type: TIMESTAMP, description: User-facing modification timestamp.}
+  - {name: system_modified_at, type: TIMESTAMP, description: Salesforce system watermark.}
+
+tests:
+  - {column: opportunity_id, not_null: true, unique: true}
+  - {column: account_id, relationships: {to: stg_salesforce__accounts, field: account_id}}
+  - {column: owner_id, relationships: {to: stg_salesforce__users, field: user_id}}
+  - {column: is_closed, not_null: true, accepted_values: [true, false]}
+  - {column: is_won, not_null: true, accepted_values: [true, false]}
+
+metrics:
+  - name: active_opportunity_count
+    description: Number of non-deleted Opportunities tied to active or no Accounts.
+    aggregation: count_distinct
+    field: opportunity_id
+  - name: active_opportunity_amount
+    description: Total amount across non-deleted Opportunities tied to active or no Accounts.
+    aggregation: sum
+    field: amount

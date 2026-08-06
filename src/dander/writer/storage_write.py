@@ -172,7 +172,10 @@ class BigQueryStorageScd1Writer(WritePattern):
         staging_id = _target_id(staging_target)
         schema_sql = ", ".join(f"`{field.name}` {_field_type_sql(field)}" for field in declared)
         try:
-            self._client.query(f"CREATE TABLE `{staging_id}` ({schema_sql})").result()
+            self._client.query(
+                f"CREATE TABLE `{staging_id}` ({schema_sql}) OPTIONS "
+                "(expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 1 DAY))"
+            ).result()
             self._backend.append(
                 staged_rows,
                 staging_target,

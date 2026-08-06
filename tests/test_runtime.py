@@ -222,8 +222,17 @@ class _History(RunHistoryStore):
         assertions: int = 0,
         assets: int = 0,
         failure_stage: RunStage | None = None,
+        failure_code: str | None = None,
+        failure_summary: str | None = None,
     ) -> None:
-        assert (models, assertions, assets, failure_stage) == (0, 0, 0, None)
+        assert (models, assertions, assets, failure_stage, failure_code, failure_summary) == (
+            0,
+            0,
+            0,
+            None,
+            None,
+            None,
+        )
         self.finished = (run_id, status, endpoints, extracted, affected)
 
 
@@ -343,6 +352,7 @@ def test_salesforce_query_record_envelope_satisfies_declared_runtime_schema() ->
     config = load_source_config(
         Path(__file__).parents[1] / "connectors" / "salesforce_jwt.example.yaml"
     )
+    config.endpoints = [config.endpoints[0]]
 
     class _SalesforceSource(Source):
         def discover(self) -> Mapping[str, Any]:

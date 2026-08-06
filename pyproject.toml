@@ -129,6 +129,18 @@ packages = ["src/dander"]
 "connectors/greenhouse_job_board.yaml" = "dander/templates/project/connectors/greenhouse_job_board.yaml"
 "models/staging/stg_greenhouse__jobs.sql" = "dander/templates/project/models/staging/stg_greenhouse__jobs.sql"
 "models/staging/stg_greenhouse__jobs.yml" = "dander/templates/project/models/staging/stg_greenhouse__jobs.yml"
+"examples/salesforce/dander.yaml" = "dander/templates/project/examples/salesforce/dander.yaml"
+"connectors/salesforce_jwt.example.yaml" = "dander/templates/project/examples/salesforce/connectors/salesforce.yaml"
+"models/staging/stg_salesforce__users.sql" = "dander/templates/project/examples/salesforce/models/staging/stg_salesforce__users.sql"
+"models/staging/stg_salesforce__users.yml" = "dander/templates/project/examples/salesforce/models/staging/stg_salesforce__users.yml"
+"models/staging/stg_salesforce__accounts.sql" = "dander/templates/project/examples/salesforce/models/staging/stg_salesforce__accounts.sql"
+"models/staging/stg_salesforce__accounts.yml" = "dander/templates/project/examples/salesforce/models/staging/stg_salesforce__accounts.yml"
+"models/staging/stg_salesforce__contacts.sql" = "dander/templates/project/examples/salesforce/models/staging/stg_salesforce__contacts.sql"
+"models/staging/stg_salesforce__contacts.yml" = "dander/templates/project/examples/salesforce/models/staging/stg_salesforce__contacts.yml"
+"models/staging/stg_salesforce__opportunities.sql" = "dander/templates/project/examples/salesforce/models/staging/stg_salesforce__opportunities.sql"
+"models/staging/stg_salesforce__opportunities.yml" = "dander/templates/project/examples/salesforce/models/staging/stg_salesforce__opportunities.yml"
+"models/marts/fct_salesforce__opportunities.sql" = "dander/templates/project/examples/salesforce/models/marts/fct_salesforce__opportunities.sql"
+"models/marts/fct_salesforce__opportunities.yml" = "dander/templates/project/examples/salesforce/models/marts/fct_salesforce__opportunities.yml"
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -146,7 +158,9 @@ include = [
   "docs/known-limitations.md",
   "docs/netsuite-simulator.md",
   "docs/operator-soak.md",
+  "docs/rollback.md",
   "docs/upgrading.md",
+  "examples",
   "infra",
   "graphs",
   "models",

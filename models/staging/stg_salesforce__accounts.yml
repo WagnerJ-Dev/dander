@@ -15,6 +15,12 @@ columns:
   - name: account_name
     type: STRING
     description: Salesforce Account display name.
+  - name: owner_id
+    type: STRING
+    description: Salesforce User identifier for the current Account owner.
+  - name: parent_account_id
+    type: STRING
+    description: Parent Salesforce Account identifier when the hierarchy is populated.
   - name: account_type
     type: STRING
     description: Salesforce Account type when assigned.
@@ -27,12 +33,21 @@ columns:
   - name: number_of_employees
     type: INT64
     description: Reported employee count when present.
+  - name: website
+    type: STRING
+    description: Account website when present.
+  - name: phone
+    type: STRING
+    description: Account telephone number when present.
   - name: billing_city
     type: STRING
     description: Billing city when present.
   - name: billing_state
     type: STRING
     description: Billing state or region when present.
+  - name: billing_postal_code
+    type: STRING
+    description: Billing postal code when present.
   - name: billing_country
     type: STRING
     description: Billing country when present.
@@ -55,6 +70,14 @@ tests:
     unique: true
   - column: account_name
     not_null: true
+  - column: owner_id
+    relationships:
+      to: stg_salesforce__users
+      field: user_id
+  - column: parent_account_id
+    relationships:
+      to: stg_salesforce__accounts
+      field: account_id
   - column: is_deleted
     accepted_values: [true, false]
 

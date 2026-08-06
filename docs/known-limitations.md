@@ -16,8 +16,9 @@ an unattended production system containing business-critical data.
 - ServiceNow incidents extraction performs a stably ordered full endpoint read. It does not use a
   timestamp watermark with offset paging because that combination can skip moving records.
 - Source hard deletes are not propagated by the first ServiceNow incidents slice.
-- The supported Salesforce and ServiceNow plugins each expose one read-only object slice. They do
-  not provide provider write-back or broad object/table coverage.
+- Salesforce reads Accounts, Contacts, Opportunities, and Users only. QueryAll preserves visible
+  soft-deletion tombstones, but hard-deleted or purged records cannot be recovered and provider
+  write-back is not supported. ServiceNow remains one read-only incident slice.
 - NetSuite customers are simulator-validated only. The first SuiteQL slice performs a full read,
   is capped by NetSuite's 100,000-result SuiteQL REST limit, and has not passed tenant-specific
   role, field-availability, or authentication acceptance. It is not in the current public support

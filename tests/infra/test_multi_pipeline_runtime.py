@@ -91,8 +91,10 @@ def test_container_carries_the_project_manifest() -> None:
     dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
 
     assert "COPY dander.yaml ./dander.yaml" in dockerfile
+    assert "COPY examples ./examples" in dockerfile
     assert "COPY infra ./infra" in dockerfile
     assert "!dander.yaml" in dockerignore
+    assert "!examples/**" in dockerignore
     assert "!infra/**" in dockerignore
     assert "infra/.terraform/" in dockerignore
 

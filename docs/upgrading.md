@@ -20,29 +20,23 @@ Set every hosted pipeline's `paused` field to `true`, update the exact `ARG DAND
 in the project Dockerfile, then run `dander validate`. Do not use an unpinned package or mutable
 container tag.
 
-Build and push the source-free project image and resolve its immutable digest:
+Build and push the source-free project image through the bootstrap identity:
 
 ```bash
-export DANDER_REGION="us-central1"
-export DANDER_IMAGE_REPOSITORY="$DANDER_REGION-docker.pkg.dev/$DANDER_PROJECT/dander/dander"
-
-gcloud auth configure-docker "$DANDER_REGION-docker.pkg.dev" --quiet
-docker buildx build --platform linux/amd64 --push \
-  --tag "$DANDER_IMAGE_REPOSITORY:v$DANDER_TARGET_VERSION" .
-export DANDER_IMAGE_DIGEST="$(
-  gcloud artifacts docker images describe \
-    "$DANDER_IMAGE_REPOSITORY:v$DANDER_TARGET_VERSION" \
-    --project "$DANDER_PROJECT" \
-    --format='value(image_summary.digest)'
-)"
-test -n "$DANDER_IMAGE_DIGEST"
-export DANDER_IMAGE="$DANDER_IMAGE_REPOSITORY@$DANDER_IMAGE_DIGEST"
+dander image-publish \
+  --project "$DANDER_PROJECT" \
+  --state-bucket "$DANDER_PROJECT-dander-state" \
+  --failure-alert-email "$DANDER_ALERT_EMAIL"
 ```
+
+Copy the immutable digest from the output and run the complete `init-platform-plan` command Dander
+prints. Image publication uses the bootstrap service account; the operator needs Token Creator on
+that account, not Project Owner or direct Artifact Registry administration.
 
 ## Review and apply the exact plan
 
 ```bash
-dander init \
+dander init-platform-plan \
   --project "$DANDER_PROJECT" \
   --state-bucket "$DANDER_PROJECT-dander-state" \
   --bootstrap-service-account "dander-bootstrap@$DANDER_PROJECT.iam.gserviceaccount.com" \
@@ -74,6 +68,9 @@ be immediately retried.
 
 After every pipeline passes, restore the tracked `paused` values, build the resulting project image,
 repeat the reviewed plan/apply sequence, and run one final plan that reports no changes.
+
+Use [rollback.md](rollback.md) if the candidate cannot pass its manual smoke run. Rollback reuses a
+known-good immutable digest and never edits Terraform state, leases, watermarks, or staging by hand.
 
 On an alert, inspect the Cloud Run execution and Dander run ledger first. Rerun once only after the
 prior execution is terminal. Never edit `_dander_leases`, `_dander_watermarks`, run-scoped staging,
