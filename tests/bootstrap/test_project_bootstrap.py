@@ -23,6 +23,7 @@ class _Runner:
     def __init__(self, *, bucket_exists: bool = False) -> None:
         self.bucket_exists = bucket_exists
         self.commands: list[tuple[str, ...]] = []
+        self.inputs: list[str | None] = []
 
     def __call__(
         self,
@@ -32,15 +33,19 @@ class _Runner:
         check: bool,
         capture_output: bool = False,
         text: bool = False,
+        input: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         assert cwd.is_absolute()
         self.commands.append(args)
+        self.inputs.append(input)
         if args[:4] == ("gcloud", "storage", "buckets", "describe"):
             return subprocess.CompletedProcess(args, 0 if self.bucket_exists else 1, stdout="")
         if args[:4] == ("gcloud", "artifacts", "docker", "images"):
             return subprocess.CompletedProcess(args, 0, stdout="sha256:" + "a" * 64 + "\n")
         if args[:3] == ("gcloud", "auth", "list"):
             return subprocess.CompletedProcess(args, 0, stdout="operator@example.invalid\n")
+        if args[:3] == ("gcloud", "auth", "print-access-token"):
+            return subprocess.CompletedProcess(args, 0, stdout="temporary-token\n")
         return subprocess.CompletedProcess(args, 0, stdout="")
 
 
@@ -98,6 +103,49 @@ def test_runtime_image_publisher_accepts_installed_project_context(tmp_path: Pat
     )
 
     assert image.endswith("@sha256:" + "a" * 64)
+
+
+def test_runtime_image_publisher_uses_bootstrap_impersonation_without_token_in_args(
+    tmp_path: Path,
+) -> None:
+    for name in ("Dockerfile", "README.md", "dander.yaml"):
+        (tmp_path / name).write_text(name, encoding="utf-8")
+    for directory in ("connectors", "models"):
+        path = tmp_path / directory
+        path.mkdir()
+        (path / "content.txt").write_text(directory, encoding="utf-8")
+    runner = _Runner()
+
+    image = RuntimeImagePublisher(tmp_path, runner=runner).publish(
+        project="unit-project",
+        region="us-central1",
+        impersonate_service_account="dander-bootstrap@unit-project.iam.gserviceaccount.com",
+    )
+
+    assert image.endswith("@sha256:" + "a" * 64)
+    login_index = next(
+        index for index, command in enumerate(runner.commands) if command[:2] == ("docker", "login")
+    )
+    assert runner.inputs[login_index] == "temporary-token"
+    assert all("temporary-token" not in part for command in runner.commands for part in command)
+    describe = next(command for command in runner.commands if "images" in command)
+    assert (
+        "--impersonate-service-account=dander-bootstrap@unit-project.iam.gserviceaccount.com"
+        in describe
+    )
+
+
+def test_runtime_image_publisher_rejects_source_checkout_when_source_free_is_required(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+
+    with pytest.raises(ProjectBootstrapError, match="generated source-free project"):
+        RuntimeImagePublisher(tmp_path, runner=_Runner()).publish(
+            project="unit-project",
+            region="us-central1",
+            require_source_free=True,
+        )
 
 
 def test_runtime_image_tag_ignores_local_state_but_tracks_infrastructure(tmp_path: Path) -> None:

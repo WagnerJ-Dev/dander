@@ -2,38 +2,43 @@
 
 ## Finished
 
-- Made first-load BigQuery staging creation include a 24-hour expiration atomically.
-- Applied creation-time expiration to SCD1, incremental, replace, snapshot, and SCD2 staging.
-- Added the same expiration option to Storage Write staging before its first append.
-- Preserved immediate `finally` deletion after successful and handled failed runs.
+- Added a read-only stage-zero permission preflight with conditional billing and WIF checks.
+- Added source-free `image-publish` with bootstrap-account impersonation and immutable digests.
+- Made admin and platform planning print review/apply commands; apply commands reuse saved plans.
+- Made `init-platform-plan` render the complete manifest-defined hosted platform.
+- Documented plan-first install/upgrade, least privilege, and immutable-image rollback.
 
 ## Try It
 
 ```bash
-uv run pytest tests/writer/test_bigquery_writer.py tests/writer/test_storage_write_writer.py
+dander image-publish --project PROJECT --failure-alert-email OPERATOR_EMAIL
 ```
+
+Run the printed platform-plan command, review its saved Terraform plan, then run the printed apply
+command. `image-publish` intentionally requires a generated project without `src/`.
 
 ## Checks
 
-- Focused writer suite passed: `39 passed`.
-- Full test suite passed: `754 passed`.
-- Repository-wide Ruff, formatting, and strict mypy passed.
-- `git diff --check` passed.
+- Focused bootstrap and CLI tests passed: `35 passed`.
+- Full test suite passed: `763 passed`.
+- Ruff formatting/lint and strict mypy passed.
+- Main and stage-zero Terraform initialization/validation passed with backends disabled.
+- Wheel/sdist inspection, external wheel install, project generation, and validation passed.
 
 ## Decisions
 
-- Use BigQuery load-job `destinationExpirationTime` so inferred-schema staging stays compatible.
-- Create empty declared and Storage Write staging with expiration in the creation operation.
-- Keep a one-day safety TTL and immediate normal cleanup; add no janitor service.
+- Keep `dander init` as a compatibility shortcut; make plan-first commands the public path.
+- Use predefined GCP roles, not a custom role; request billing/WIF permissions only on opt-in.
+- Require source-free projects only for the new explicit image publication command.
 
 ## Remaining
 
-- Protected GitHub CI must repeat Linux package, Terraform, container, and security checks.
-- Later sequential PRs cover plan-first installation and deep Salesforce.
-- No package publication, Terraform apply, scheduler change, or live-resource mutation occurred.
+- Protected CI and review must pass before this PR merges.
+- Deep Salesforce endpoints and governed models remain separate sequential PRs.
+- Candidate publication and live GCP acceptance still require explicit approval.
 
 ## Review First
 
-- `src/dander/writer/bigquery.py`
-- `src/dander/writer/storage_write.py`
-- `tests/writer/test_bigquery_writer.py`
+- `src/dander/cli/main.py`
+- `src/dander/bootstrap/permissions.py`
+- `docs/getting-started.md`

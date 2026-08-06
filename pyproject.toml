@@ -146,6 +146,7 @@ include = [
   "docs/known-limitations.md",
   "docs/netsuite-simulator.md",
   "docs/operator-soak.md",
+  "docs/rollback.md",
   "docs/upgrading.md",
   "infra",
   "graphs",

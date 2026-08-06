@@ -10,10 +10,11 @@ Job Board pipeline so infrastructure changes remain reviewable before any schedu
 ```bash
 dander validate
 dander run greenhouse_jobs --dry-run --project YOUR_GCP_PROJECT
-dander init --project YOUR_GCP_PROJECT --container-image REGION-docker.pkg.dev/PROJECT/dander/dander@sha256:DIGEST
+dander image-publish --project YOUR_GCP_PROJECT --failure-alert-email OPERATOR_EMAIL
 ```
 
-`dander init` plans by default. Review the saved Terraform plan before using `--apply`. The starter
+`image-publish` prints the complete `init-platform-plan` command. Review that saved Terraform plan,
+then apply it with `init-platform-apply`. The starter
 manifest keeps its scheduler paused and does not enable Dander's optional managed cost guard.
 Disabling the guard does not prevent or cap cloud charges.
 
@@ -21,6 +22,8 @@ Use the public [hosted Greenhouse quickstart](https://github.com/harrisonoconnor
 for the complete installation, provisioning, manual-run, and schedule-enablement sequence. Follow
 the [upgrade guide](https://github.com/harrisonoconnorhover/dander/blob/main/docs/upgrading.md)
 before changing the pinned `DANDER_VERSION` in this project's Dockerfile.
+Use the public [rollback guide](https://github.com/harrisonoconnorhover/dander/blob/main/docs/rollback.md)
+to restore a known-good commit and immutable image without editing Terraform state.
 
 To host Druff's compiled interface with this platform, also pass its immutable image as
 `--druff-container-image`. Repeat that input on later full-platform plans to retain the service.

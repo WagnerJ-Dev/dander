@@ -473,3 +473,12 @@
   subset; Druff edits the same `OperationSpec` objects stored in `PipelineGraph`.
 - Rename/drop remain edge mappings. Deduplication, arbitrary SQL hooks, deleted feeds, and provider
   write-back require separate product decisions rather than entering through this slice.
+
+## 2026-08-05 — Hosted installation is plan-first by default
+
+- The compatibility `dander init` path remains, while public installation and upgrades separate
+  stage-zero planning, saved-plan application, immutable image publication, and platform planning.
+- A read-only permission preflight tests the active identity before stage-zero Terraform. Optional
+  billing and Workload Identity permissions are checked only when those features are selected.
+- A cloud administrator may perform stage zero once; later image and platform operations use the
+  bootstrap account through operator-scoped impersonation rather than Project Owner.

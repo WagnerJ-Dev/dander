@@ -6,6 +6,15 @@ capabilities enter through the next minor release.
 
 ## Unreleased
 
+### Added
+
+- Add sanitized failure codes and summaries to local and hosted run history, and reconcile stale
+  non-terminal runs after an expired lease is safely reacquired.
+- Give every BigQuery run-scoped staging table a 24-hour expiration at creation while retaining
+  immediate cleanup for handled completion and failure paths.
+- Add plan-first stage-zero and platform commands, source-free immutable image publication, a
+  read-only permission preflight, and documented least-privilege upgrade and rollback workflows.
+
 ## 0.5.1 — 2026-08-05 (alpha)
 
 ### Fixed

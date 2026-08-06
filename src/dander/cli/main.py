@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil as shutil
 import subprocess as subprocess
 import sys
@@ -21,11 +22,13 @@ from dander.bootstrap import (
     AdministrativeBootstrapError,
     DeploymentSummary,
     DeploymentVerifier,
+    ProjectBootstrapError,
     RuntimeImagePublisher,
     StateBucketBootstrap,
     TerraformBootstrap,
     TerraformBootstrapError,
     active_admin_member,
+    require_stage_zero_permissions,
     wait_for_service_account_impersonation,
     write_summary,
 )
@@ -698,6 +701,12 @@ def init_admin_plan(
 ) -> None:
     """Plan stage-zero state bucket and bootstrap identity resources."""
     try:
+        require_stage_zero_permissions(
+            project=project,
+            cwd=infra_dir.resolve().parent.parent,
+            billing_account_id=billing_account_id,
+            github_repository=github_repository,
+        )
         plan_path = AdministrativeBootstrap(infra_dir, operator_artifact_dir).execute(
             project=project,
             state_bucket=state_bucket,
@@ -709,10 +718,38 @@ def init_admin_plan(
             billing_account_id=billing_account_id,
             github_repository=github_repository,
             github_ref=github_ref,
+            adopt_state_bucket=True,
         )
     except AdministrativeBootstrapError as error:
         raise ClickException(str(error)) from error
     console.print(f"[green]Administrative bootstrap planned.[/green] Saved plan: {plan_path}")
+    console.print(
+        "Review: "
+        + shlex.join(("terraform", f"-chdir={infra_dir}", "show", "-no-color", str(plan_path)))
+    )
+    apply_command = [
+        "dander",
+        "init-admin-apply",
+        "--project",
+        project,
+        "--state-bucket",
+        state_bucket,
+        "--admin-member",
+        admin_member,
+        "--region",
+        region,
+        "--state-location",
+        state_location,
+        "--bootstrap-service-account-id",
+        bootstrap_service_account_id,
+        "--operator-artifact-dir",
+        str(operator_artifact_dir),
+    ]
+    if billing_account_id:
+        apply_command.extend(("--billing-account", billing_account_id))
+    if github_repository:
+        apply_command.extend(("--github-repository", github_repository, "--github-ref", github_ref))
+    console.print("Next after review: " + shlex.join(apply_command))
 
 
 @app.command("init-admin-apply")
@@ -743,21 +780,83 @@ def init_admin_apply(
     ):
         raise typer.Abort()
     try:
-        plan_path = AdministrativeBootstrap(infra_dir, operator_artifact_dir).execute(
-            project=project,
+        plan_path = AdministrativeBootstrap(infra_dir, operator_artifact_dir).apply_saved_plan(
             state_bucket=state_bucket,
-            admin_member=admin_member,
-            apply=True,
-            region=region,
-            state_location=state_location,
-            bootstrap_service_account_id=bootstrap_service_account_id,
-            billing_account_id=billing_account_id,
-            github_repository=github_repository,
-            github_ref=github_ref,
         )
     except AdministrativeBootstrapError as error:
         raise ClickException(str(error)) from error
     console.print(f"[green]Administrative bootstrap applied.[/green] Saved plan: {plan_path}")
+
+
+@app.command("image-publish")
+def image_publish(
+    project: str = typer.Option(..., "--project", help="GCP project id."),
+    failure_alert_email: str = typer.Option(
+        ...,
+        "--failure-alert-email",
+        help="Failure-alert address forwarded to the next platform-plan command.",
+    ),
+    state_bucket: str = typer.Option(
+        "", "--state-bucket", help="Defaults to <project>-dander-state."
+    ),
+    bootstrap_service_account: str = typer.Option(
+        "",
+        "--bootstrap-service-account",
+        help="Bootstrap identity used for Artifact Registry publication.",
+    ),
+    region: str | None = typer.Option(
+        None, "--region", help="Override platform.region from dander.yaml."
+    ),
+    billing_account_id: str = typer.Option("", "--billing-account"),
+    config: Path = typer.Option(_DEFAULT_PROJECT_CONFIG, "--config"),  # noqa: B008
+    tag_prefix: str = typer.Option("runtime", "--tag-prefix"),
+) -> None:
+    """Build and publish the source-free runtime image through the bootstrap identity."""
+    try:
+        manifest = load_project_config(config)
+        manifest.validate_references(config.resolve().parent)
+    except ProjectConfigError as error:
+        raise ClickException(str(error)) from error
+    resolved_region = region or manifest.platform.region
+    resolved_bucket = state_bucket or f"{project}-dander-state"
+    bootstrap = bootstrap_service_account or (f"dander-bootstrap@{project}.iam.gserviceaccount.com")
+    if not typer.confirm(
+        f"Build and push a source-free runtime image to GCP project {project!r}?",
+        default=False,
+    ):
+        raise typer.Abort()
+    try:
+        image = RuntimeImagePublisher(config.resolve().parent).publish(
+            project=project,
+            region=resolved_region,
+            tag_prefix=tag_prefix,
+            impersonate_service_account=bootstrap,
+            require_source_free=True,
+        )
+    except ProjectBootstrapError as error:
+        raise ClickException(str(error)) from error
+    console.print(f"[green]Published immutable runtime image:[/green] {image}")
+    next_command = [
+        "dander",
+        "init-platform-plan",
+        "--project",
+        project,
+        "--state-bucket",
+        resolved_bucket,
+        "--bootstrap-service-account",
+        bootstrap,
+        "--container-image",
+        image,
+        "--failure-alert-email",
+        failure_alert_email,
+        "--config",
+        str(config),
+    ]
+    if billing_account_id:
+        next_command.extend(("--billing-account", billing_account_id))
+    if region is not None:
+        next_command.extend(("--region", region))
+    console.print("Next: " + shlex.join(next_command))
 
 
 @app.command("init-platform-plan")
@@ -766,41 +865,82 @@ def init_platform_plan(
     state_bucket: str = typer.Option(..., "--state-bucket", help="Existing remote-state bucket."),
     bootstrap_service_account: str = typer.Option(..., "--bootstrap-service-account"),
     state_prefix: str = typer.Option("dander/state", "--state-prefix"),
-    region: str = typer.Option("us-central1", "--region"),
-    bigquery_location: str = typer.Option("US", "--bigquery-location"),
+    container_image: str = typer.Option(
+        ..., "--container-image", help="Immutable runtime image ending in @sha256 digest."
+    ),
+    failure_alert_email: str = typer.Option(..., "--failure-alert-email"),
+    config: Path = typer.Option(_DEFAULT_PROJECT_CONFIG, "--config"),  # noqa: B008
+    region: str | None = typer.Option(None, "--region"),
+    bigquery_location: str | None = typer.Option(None, "--bigquery-location"),
+    billing_account_id: str = typer.Option("", "--billing-account"),
+    druff_container_image: str = typer.Option("", "--druff-container-image"),
+    secret_ids: list[str] | None = typer.Option(None, "--secret-id"),  # noqa: B008
+    github_repository: str = typer.Option("", "--github-repository"),
+    github_ref: str = typer.Option("refs/heads/main", "--github-ref"),
+    enable_cost_guard: bool | None = typer.Option(None, "--enable-cost-guard/--no-cost-guard"),
+    cost_guard_budget_name: str = typer.Option("dander-sbx-cap", "--cost-guard-budget-name"),
+    cost_guard_budget_amount: str = typer.Option("5.00", "--cost-guard-budget-amount"),
+    live_cost_guard: bool = typer.Option(False, "--live-cost-guard"),
     infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
 ) -> None:
-    """Plan platform Terraform while impersonating the stage-zero identity."""
-    plan_path = _execute_platform_bootstrap(
-        project=project,
-        state_bucket=state_bucket,
-        state_prefix=state_prefix,
-        bootstrap_service_account=bootstrap_service_account,
-        apply=False,
-        region=region,
-        bigquery_location=bigquery_location,
-        runtime_cpu=1,
-        runtime_memory="512Mi",
-        runtime_timeout_seconds=300,
-        runtime_max_retries=1,
-        runtime_batch_rows=10_000,
-        require_guarded_free_tier=False,
-        enable_runtime=False,
-        billing_account_id="",
-        container_image="",
-        druff_container_image="",
-        pipelines={},
-        failure_alert_email="",
-        secret_ids=(),
-        github_repository="",
-        github_ref="refs/heads/main",
-        enable_cost_guard=False,
-        cost_guard_budget_name="dander-sbx-cap",
-        cost_guard_budget_amount="5.00",
-        live_cost_guard=False,
-        infra_dir=infra_dir,
+    """Plan the complete manifest-defined platform through the bootstrap identity."""
+    plan_path = execute_init(
+        InitOptions(
+            project=project,
+            state_bucket=state_bucket,
+            state_prefix=state_prefix,
+            bootstrap_service_account=bootstrap_service_account,
+            admin_member="",
+            operator_artifact_dir=None,
+            state_location="US",
+            region=region,
+            bigquery_location=bigquery_location,
+            runtime_cpu=None,
+            runtime_memory=None,
+            runtime_timeout_seconds=None,
+            runtime_max_retries=None,
+            runtime_batch_rows=None,
+            require_guarded_free_tier=None,
+            enable_runtime=True,
+            billing_account_id=billing_account_id,
+            container_image=container_image,
+            druff_container_image=druff_container_image,
+            config=config,
+            secret_ids=tuple(secret_ids or ()),
+            github_repository=github_repository,
+            github_ref=github_ref,
+            failure_alert_email=failure_alert_email,
+            enable_cost_guard=enable_cost_guard,
+            cost_guard_budget_name=cost_guard_budget_name,
+            cost_guard_budget_amount=cost_guard_budget_amount,
+            live_cost_guard=live_cost_guard,
+            apply=False,
+            infra_dir=infra_dir,
+        ),
+        console=console,
+        terraform_bootstrap_cls=TerraformBootstrap,
     )
-    console.print(f"[green]Platform bootstrap planned.[/green] Saved plan: {plan_path}")
+    console.print(
+        "Review: "
+        + shlex.join(("terraform", f"-chdir={infra_dir}", "show", "-no-color", str(plan_path)))
+    )
+    console.print(
+        "Next after review: "
+        + shlex.join(
+            (
+                "dander",
+                "init-platform-apply",
+                "--project",
+                project,
+                "--state-bucket",
+                state_bucket,
+                "--bootstrap-service-account",
+                bootstrap_service_account,
+                "--state-prefix",
+                state_prefix,
+            )
+        )
+    )
 
 
 @app.command("init-platform-apply")
