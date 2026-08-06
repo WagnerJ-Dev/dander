@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 import typer
 from click import ClickException
-from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
@@ -22,7 +21,6 @@ from dander.bootstrap import (
     AdministrativeBootstrapError,
     DeploymentSummary,
     DeploymentVerifier,
-    ProjectBootstrapError,
     RuntimeImagePublisher,
     StateBucketBootstrap,
     TerraformBootstrap,
@@ -41,6 +39,12 @@ from dander.catalog import (
     SemanticRegistryError,
     SemanticRegistryPublisher,
     SqliteMetadataStore,
+)
+from dander.cli.init_command import (
+    InitOptions,
+    execute_init,
+    execute_platform_bootstrap,
+    resolve_platform_config,
 )
 from dander.cli.run_command import (
     RunOptions,
@@ -78,9 +82,6 @@ from dander.plugins import (
     search_connector_catalog,
 )
 from dander.project import (
-    PlatformRuntimeSpec,
-    PlatformSafetySpec,
-    PlatformSpec,
     ProjectConfigError,
     ProjectScaffoldError,
     load_project_config,
@@ -132,9 +133,11 @@ _DEFAULT_CATALOG_PATH = Path(".dander/catalog.json")
 _DEFAULT_BOOTSTRAP_ADMIN_DIR = Path("infra/bootstrap-admin")
 _DEFAULT_PROJECT_CONFIG = Path("dander.yaml")
 
-# Preserve the existing private imports used by connector tests and downstream development tools.
+# Preserve existing private imports used by tests and downstream development tools.
 _build_auth = build_auth
 _build_source_adapter = build_source_adapter
+_execute_platform_bootstrap = execute_platform_bootstrap
+_resolve_platform_config = resolve_platform_config
 
 
 def _show_version(value: bool) -> None:
@@ -628,232 +631,15 @@ def init(
     infra_dir: Path = typer.Option(_DEFAULT_INFRA_DIR, hidden=True),  # noqa: B008
 ) -> None:
     """Build or update Dander's complete GCP platform from ``dander.yaml``."""
-    try:
-        manifest = load_project_config(config)
-        if enable_runtime:
-            manifest.validate_references(config.resolve().parent)
-        platform = _resolve_platform_config(
-            manifest.platform,
-            region=region,
-            bigquery_location=bigquery_location,
-            runtime_cpu=runtime_cpu,
-            runtime_memory=runtime_memory,
-            runtime_timeout_seconds=runtime_timeout_seconds,
-            runtime_max_retries=runtime_max_retries,
-            runtime_batch_rows=runtime_batch_rows,
-            require_guarded_free_tier=require_guarded_free_tier,
-        )
-    except ProjectConfigError as error:
-        raise ClickException(str(error)) from error
-    pipelines = manifest.terraform_pipelines() if enable_runtime else {}
-    runtime = platform.runtime
-    safety = platform.safety
-    resolved_enable_cost_guard = (
-        safety.require_guarded_free_tier if enable_cost_guard is None else enable_cost_guard
-    )
-    if enable_runtime and safety.require_guarded_free_tier and not resolved_enable_cost_guard:
-        raise ClickException(
-            "platform.safety.require_guarded_free_tier=true requires the cost guard; "
-            "enable it or explicitly override the safety setting"
-        )
-    resolved_billing_account_id = billing_account_id if resolved_enable_cost_guard else ""
-    if not safety.require_guarded_free_tier and not resolved_enable_cost_guard:
-        console.print(
-            "[yellow]Warning: Dander is not managing, limiting, or preventing cloud spending "
-            "for this installation.[/yellow]"
-        )
-    resolved_state_bucket = state_bucket or f"{project}-dander-state"
-    resolved_bootstrap_account = bootstrap_service_account or (
-        f"dander-bootstrap@{project}.iam.gserviceaccount.com"
-    )
-    confirmation = (
-        f"Build/update the complete Dander platform in GCP project {project!r} "
-        f"using state bucket {resolved_state_bucket!r}?"
-    )
-    if druff_container_image:
-        confirmation = f"{confirmation[:-1]} including a public Druff interface?"
-    if live_cost_guard:
-        confirmation = f"{confirmation[:-1]} with LIVE automatic billing detachment enabled?"
-    if apply and not typer.confirm(
-        confirmation,
-        default=False,
-    ):
-        raise typer.Abort()
-    if apply and not bootstrap_service_account:
-        try:
-            repository_dir = infra_dir.resolve().parent
-            resolved_operator_dir = operator_artifact_dir or (
-                Path("~/.dander").expanduser() / project / "bootstrap"
-            )
-            StateBucketBootstrap(cwd=repository_dir).ensure(
-                project=project,
-                bucket=resolved_state_bucket,
-                location=state_location,
-                apply=True,
-            )
-            resolved_admin_member = admin_member or active_admin_member(cwd=repository_dir)
-            AdministrativeBootstrap(
-                infra_dir / "bootstrap-admin",
-                resolved_operator_dir,
-            ).execute(
-                project=project,
-                state_bucket=resolved_state_bucket,
-                admin_member=resolved_admin_member,
-                apply=True,
-                region=platform.region,
-                state_location=state_location,
-                billing_account_id=resolved_billing_account_id,
-                github_repository=github_repository,
-                github_ref=github_ref,
-                adopt_state_bucket=True,
-            )
-            wait_for_service_account_impersonation(
-                service_account=resolved_bootstrap_account,
-                project=project,
-                cwd=repository_dir,
-            )
-        except (AdministrativeBootstrapError, ProjectBootstrapError) as error:
-            raise ClickException(str(error)) from error
-    if apply and enable_runtime and not container_image:
-        try:
-            container_image = RuntimeImagePublisher(infra_dir.resolve().parent).publish(
-                project=project,
-                region=platform.region,
-            )
-        except ProjectBootstrapError as error:
-            raise ClickException(str(error)) from error
-    if enable_runtime and not container_image:
-        raise typer.BadParameter(
-            "plan-only runtime initialization requires an immutable image; "
-            "use --apply to build and publish it automatically",
-            param_hint="'--container-image'",
-        )
-    plan_path = _execute_platform_bootstrap(
-        project=project,
-        state_bucket=resolved_state_bucket,
-        state_prefix=state_prefix,
-        bootstrap_service_account=resolved_bootstrap_account,
-        apply=apply,
-        region=platform.region,
-        bigquery_location=platform.bigquery_location,
-        runtime_cpu=runtime.cpu,
-        runtime_memory=runtime.memory,
-        runtime_timeout_seconds=runtime.timeout_seconds,
-        runtime_max_retries=runtime.max_retries,
-        runtime_batch_rows=runtime.batch_rows,
-        require_guarded_free_tier=safety.require_guarded_free_tier,
-        enable_runtime=enable_runtime,
-        billing_account_id=resolved_billing_account_id,
-        container_image=container_image,
-        druff_container_image=druff_container_image,
-        pipelines=pipelines,
-        failure_alert_email=failure_alert_email,
-        secret_ids=tuple(secret_ids or ()),
-        github_repository=github_repository,
-        github_ref=github_ref,
-        enable_cost_guard=resolved_enable_cost_guard,
-        cost_guard_budget_name=cost_guard_budget_name,
-        cost_guard_budget_amount=cost_guard_budget_amount,
-        live_cost_guard=live_cost_guard,
-        infra_dir=infra_dir,
-    )
-
-    action = "applied" if apply else "planned"
-    console.print(f"[green]Bootstrap {action}.[/green] Saved plan: {plan_path}")
-
-
-def _resolve_platform_config(
-    authored: PlatformSpec,
-    *,
-    region: str | None,
-    bigquery_location: str | None,
-    runtime_cpu: int | None,
-    runtime_memory: str | None,
-    runtime_timeout_seconds: int | None,
-    runtime_max_retries: int | None,
-    runtime_batch_rows: int | None,
-    require_guarded_free_tier: bool | None,
-) -> PlatformSpec:
-    """Apply only explicit CLI overrides and revalidate the complete platform contract."""
-    try:
-        runtime = PlatformRuntimeSpec(
-            cpu=runtime_cpu if runtime_cpu is not None else authored.runtime.cpu,
-            memory=runtime_memory if runtime_memory is not None else authored.runtime.memory,
-            timeout_seconds=(
-                runtime_timeout_seconds
-                if runtime_timeout_seconds is not None
-                else authored.runtime.timeout_seconds
-            ),
-            max_retries=(
-                runtime_max_retries
-                if runtime_max_retries is not None
-                else authored.runtime.max_retries
-            ),
-            batch_rows=(
-                runtime_batch_rows
-                if runtime_batch_rows is not None
-                else authored.runtime.batch_rows
-            ),
-        )
-        safety = PlatformSafetySpec(
-            require_guarded_free_tier=(
-                require_guarded_free_tier
-                if require_guarded_free_tier is not None
-                else authored.safety.require_guarded_free_tier
-            )
-        )
-        return PlatformSpec(
-            region=region if region is not None else authored.region,
-            bigquery_location=(
-                bigquery_location if bigquery_location is not None else authored.bigquery_location
-            ),
-            runtime=runtime,
-            safety=safety,
-        )
-    except ValidationError as error:
-        fields = sorted({".".join(str(part) for part in issue["loc"]) for issue in error.errors()})
-        raise ProjectConfigError(
-            f"Invalid explicit platform override; check: {', '.join(fields)}"
-        ) from error
-
-
-def _execute_platform_bootstrap(
-    *,
-    project: str,
-    state_bucket: str,
-    state_prefix: str,
-    bootstrap_service_account: str,
-    apply: bool,
-    region: str,
-    bigquery_location: str,
-    runtime_cpu: int,
-    runtime_memory: str,
-    runtime_timeout_seconds: int,
-    runtime_max_retries: int,
-    runtime_batch_rows: int,
-    require_guarded_free_tier: bool,
-    enable_runtime: bool,
-    billing_account_id: str,
-    container_image: str,
-    druff_container_image: str,
-    pipelines: dict[str, dict[str, object]],
-    failure_alert_email: str,
-    secret_ids: tuple[str, ...],
-    github_repository: str,
-    github_ref: str,
-    enable_cost_guard: bool,
-    cost_guard_budget_name: str,
-    cost_guard_budget_amount: str,
-    live_cost_guard: bool,
-    infra_dir: Path,
-) -> Path:
-    try:
-        return TerraformBootstrap(infra_dir).execute(
+    execute_init(
+        InitOptions(
             project=project,
             state_bucket=state_bucket,
             state_prefix=state_prefix,
             bootstrap_service_account=bootstrap_service_account,
-            apply=apply,
+            admin_member=admin_member,
+            operator_artifact_dir=operator_artifact_dir,
+            state_location=state_location,
             region=region,
             bigquery_location=bigquery_location,
             runtime_cpu=runtime_cpu,
@@ -866,18 +652,26 @@ def _execute_platform_bootstrap(
             billing_account_id=billing_account_id,
             container_image=container_image,
             druff_container_image=druff_container_image,
-            pipelines=pipelines,
-            failure_alert_email=failure_alert_email,
+            config=config,
             secret_ids=tuple(secret_ids or ()),
             github_repository=github_repository,
             github_ref=github_ref,
+            failure_alert_email=failure_alert_email,
             enable_cost_guard=enable_cost_guard,
             cost_guard_budget_name=cost_guard_budget_name,
             cost_guard_budget_amount=cost_guard_budget_amount,
             live_cost_guard=live_cost_guard,
-        )
-    except TerraformBootstrapError as error:
-        raise ClickException(str(error)) from error
+            apply=apply,
+            infra_dir=infra_dir,
+        ),
+        console=console,
+        state_bucket_bootstrap_cls=StateBucketBootstrap,
+        administrative_bootstrap_cls=AdministrativeBootstrap,
+        runtime_image_publisher_cls=RuntimeImagePublisher,
+        terraform_bootstrap_cls=TerraformBootstrap,
+        active_admin_member_fn=active_admin_member,
+        wait_for_impersonation_fn=wait_for_service_account_impersonation,
+    )
 
 
 @app.command("init-admin-plan")
