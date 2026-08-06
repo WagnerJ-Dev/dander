@@ -342,9 +342,12 @@ _Append-only. PR-Review adds entries below._
    not a violation — but reusing that helper would be cheap defense-in-depth against someone pasting
    a real key into a `filter_rows` predicate.
 3. `test_filter_rows_predicate_value_is_an_opaque_literal_not_a_secret_channel` uses
-   `"sk_live_looksrealbutisnt"`. Not a steering violation — it is self-evidently fake and follows the
-   existing repo precedent of `"AKIAfake-not-a-real-access-key"` in `tests/pipeline/
-   test_request_spec.py` — but the `sk_live_` prefix is one a generic secret scanner regexes on.
+   `"stripe-fake-not-a-real-secret"`. Not a steering violation — it is self-evidently fake and
+   follows the existing repo precedent of `"AKIAfake-not-a-real-access-key"` in `tests/pipeline/
+   test_request_spec.py`. Avoid the literal `sk_live_`/`sk_test_`/`rk_live_` prefixes here — those
+   are exactly what gitleaks's built-in `stripe-access-token` rule regexes on (confirmed by running
+   `gitleaks detect` locally during the 2026-08-05 branch reconciliation, which is why this example
+   was reworded away from an earlier `sk_live_`-prefixed draft).
 4. `test_deduplicate_null_key_component_forms_its_own_group_not_rejected` uses an explicit
    `{"id": None}` rather than an *absent* `id`. Behaviorally identical (both read through
    `record.get`), so coverage is not actually short; noted only because the docstring says
