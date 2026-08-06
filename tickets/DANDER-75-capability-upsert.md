@@ -1,7 +1,7 @@
 ---
 id: DANDER-75
 title: Add upsert connector capability protocol
-status: open
+status: done
 component: python
 epic: connector-capabilities
 depends_on: [DANDER-64]
@@ -203,6 +203,30 @@ changes, exactly like `upsert`.
   designed speculatively here.
 
 ## Implementation Notes
+
+**2026-08-05 update:** the note below and the Review Log entry beneath it describe the
+pre-reconciliation `ConnectorAdapter` implementation from `backup/local-main-pre-reconcile`, no
+longer on this trunk (see the Reconciliation note above). Kept for history. Current implementation
+against `teammate/main`'s `SourceCapabilities`:
+
+- `src/dander/ingestion/capabilities.py`: added `ConnectorOperation.UPSERT`, the `SupportsUpsert`
+  `Protocol` (`upsert(self, endpoint, record) -> Mapping[str, Any]`, no separate identity
+  argument — identity is resolved from the record's own business-key fields), a
+  `_CAPABILITY_PROTOCOLS` entry, and `SourceCapabilities.upsert()` (`require()` guard, delegate,
+  `isinstance(result, Mapping)` validation) — matching the existing accessor pattern.
+- Idempotency/retry/authorization semantics recorded in `docs/decisions.md`, "2026-08-05 —
+  Write-back and deleted-record-feed semantics."
+- `src/dander/ingestion/__init__.py` / `README.md` updated to export and document it.
+- `tests/ingestion/test_capabilities.py`: extended `_CapableSource`, the facade test, and the
+  invalid-result and full-operation-set parametrizations to cover `upsert`.
+- Verified: `ruff check`/`ruff format --check`/`mypy src/dander/ingestion` clean;
+  `pytest tests/ingestion tests/pipeline tests/cli/test_connector_cli.py` green. Done directly in
+  this reconciliation session, not through the Design→Code→PR-Review agent pipeline — no PASS
+  entry added to Review Log for this pass.
+
+---
+
+Original (superseded) note below:
 
 Implemented exactly as designed — a pure extension of `src/dander/ingestion/capabilities.py`
 following the DANDER-65/73/74 pattern, with zero `ConnectorAdapter` edits:

@@ -1,7 +1,7 @@
 ---
 id: DANDER-66
 title: Add get_deleted connector capability protocol
-status: open
+status: done
 component: python
 epic: connector-capabilities
 depends_on: [DANDER-64]
@@ -184,6 +184,34 @@ DANDER-66 only surfaces the deleted-record stream as a typed, detectable capabil
   python.md`); the docstring is the contract, implementations note only deviations.
 
 ## Implementation Notes
+
+**2026-08-05 update:** the note below and the Review Log entry beneath it describe the
+pre-reconciliation `ConnectorAdapter` implementation from `backup/local-main-pre-reconcile`, which
+is no longer on this trunk (see the ticket's Reconciliation note above). Kept for history, not
+current. The actual current implementation, against `teammate/main`'s `SourceCapabilities`:
+
+- `src/dander/ingestion/capabilities.py`: added `SupportsGetDeleted` (`@runtime_checkable`
+  `Protocol`, `get_deleted(self, endpoint, *, since=None) -> Iterator[Mapping[str, Any]]`,
+  mirroring `Source.extract()`), registered it in `_CAPABILITY_PROTOCOLS`, and added
+  `SourceCapabilities.get_deleted()` — `require()` guard then a direct pass-through delegate (no
+  result-shape validation, since the return is a lazily-consumed iterator rather than an
+  eagerly-checkable value, matching how `extract()`/`discover()` already pass through).
+- Cursor/retry/authorization/destination semantics recorded in `docs/decisions.md`, "2026-08-05 —
+  Write-back and deleted-record-feed semantics."
+- `src/dander/ingestion/__init__.py`: exported `SupportsGetDeleted`.
+- `src/dander/ingestion/README.md`: added a "Optional capability discovery" section covering this
+  and the write-back capabilities together.
+- `tests/ingestion/test_capabilities.py`: extended the shared `_CapableSource` fixture with
+  `get_deleted`, and the facade test with iteration + cursor-passthrough assertions; extended the
+  full-operation-set assertion.
+- Verified: `ruff check` clean, `ruff format --check` clean, `mypy src/dander/ingestion` clean,
+  `pytest tests/ingestion tests/pipeline tests/cli/test_connector_cli.py` green. Done directly in
+  this reconciliation session, not through the Design→Code→PR-Review agent pipeline — no PASS
+  entry added to Review Log for this pass.
+
+---
+
+Original (superseded) note below:
 
 Implemented exactly as designed — no deviations.
 

@@ -494,5 +494,37 @@
   `deduplicate`), and `73..76` (write-back `create`/`update`/`upsert`/`delete`) remain genuinely
   open — the fork explicitly deferred them pending separate cursor/retry/authorization/destination
   design, which is the actual next step, not a mechanical port.
-- `origin/main` (this repo's own remote) has not been force-updated to match; that is a separate,
-  explicit decision given force-pushing shared history requires direct confirmation.
+- `origin/main` (this repo's own remote) was force-pushed to match (`60dc73b`) after explicit
+  confirmation, since it rewrites shared history rather than fast-forwarding it.
+
+## 2026-08-05 — Write-back and deleted-record-feed semantics
+
+Resolves the "separate product decisions" the two entries above deferred, unblocking
+`tickets/DANDER-66` (`get_deleted`) and `DANDER-73..76` (`create`/`update`/`upsert`/`delete`).
+
+- **Cursor:** `get_deleted(endpoint, *, since=None)` mirrors `Source.extract(endpoint,
+  since=...)` exactly — same per-endpoint keying, same cursor type and meaning — so a downstream
+  consumer can reconcile the insert/update stream and the delete stream off one watermark. No new
+  cursor concept is introduced.
+- **Retry:** `create` is non-idempotent — a caller MUST NOT blindly retry it after an ambiguous
+  failure (e.g. a timeout where the write may or may not have landed) without an out-of-band
+  reconciliation step. `update`, `upsert`, and `delete` are naturally idempotent (re-applying
+  converges to the same source-system state; a repeat `delete` of an absent record returns
+  `DeleteOutcome.NOT_FOUND` rather than raising), so ordinary bounded retry/backoff applies to
+  them the same as any other source call.
+- **Authorization:** no new credential path. Every write-back and `get_deleted` implementation
+  resolves credentials through the source's already-wired `AuthStrategy`
+  (`dander.security.base`), so access stays routed through the existing audited strategy per
+  `steering/01-security.md`. These capabilities add no separate write-scoped credential or token.
+- **Destination:** write-back operations write to the *source system*, not BigQuery — there is no
+  BigQuery destination to decide for `create`/`update`/`upsert`/`delete` themselves. Consuming
+  `get_deleted` to propagate hard deletes into a BigQuery target remains explicitly out of scope
+  here, deferred to future write-pattern work building on `dander.writer`; this decision only
+  makes the feed a typed, detectable capability.
+- **Shape:** `SourceCapabilities` in `src/dander/ingestion/capabilities.py` gains
+  `get_deleted`/`create`/`update`/`upsert`/`delete` accessor methods matching the existing
+  `get_single_object`/`count`/`test_connection` pattern (`require()` guard, `cast` to the
+  matching `Protocol`, result-shape validation raising `InvalidConnectorCapabilityResultError`
+  where the result isn't a lazily-consumed iterator). No concrete source implements any of the
+  five yet — this ships the mechanism and contract only, per the existing `ConnectorOperation`
+  registry's Open/Closed extension pattern.

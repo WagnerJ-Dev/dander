@@ -1,7 +1,7 @@
 ---
 id: DANDER-73
 title: Add create connector capability protocol
-status: open
+status: done
 component: python
 epic: connector-capabilities
 depends_on: [DANDER-64]
@@ -214,6 +214,31 @@ Cases:
   connector capability, not a hard non-goal") is present in `steering/00-project-overview.md`.
 
 ## Implementation Notes
+
+**2026-08-05 update:** the note below and the Review Log entry beneath it describe the
+pre-reconciliation `ConnectorAdapter` implementation from `backup/local-main-pre-reconcile`, no
+longer on this trunk (see the Reconciliation note above). Kept for history. Current implementation
+against `teammate/main`'s `SourceCapabilities`:
+
+- `src/dander/ingestion/capabilities.py`: added `ConnectorOperation.CREATE`, the `SupportsCreate`
+  `Protocol` (`create(self, endpoint, record) -> Mapping[str, Any]`, docstring states
+  non-idempotency and the no-blind-retry rule), a `_CAPABILITY_PROTOCOLS` entry, and
+  `SourceCapabilities.create()` (`require()` guard, delegate, `isinstance(result, Mapping)`
+  validation raising `InvalidConnectorCapabilityResultError` otherwise) — matching the existing
+  `get_single_object`/`count` accessor pattern exactly.
+- Idempotency/retry/authorization semantics recorded in `docs/decisions.md`, "2026-08-05 —
+  Write-back and deleted-record-feed semantics."
+- `src/dander/ingestion/__init__.py` / `README.md` updated to export and document it.
+- `tests/ingestion/test_capabilities.py`: extended `_CapableSource`, the facade test, and the
+  invalid-result and full-operation-set parametrizations to cover `create`.
+- Verified: `ruff check`/`ruff format --check`/`mypy src/dander/ingestion` clean;
+  `pytest tests/ingestion tests/pipeline tests/cli/test_connector_cli.py` green. Done directly in
+  this reconciliation session, not through the Design→Code→PR-Review agent pipeline — no PASS
+  entry added to Review Log for this pass.
+
+---
+
+Original (superseded) note below:
 
 Built exactly per Design, no deviations:
 

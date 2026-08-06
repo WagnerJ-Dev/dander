@@ -1,7 +1,7 @@
 ---
 id: DANDER-76
 title: Add delete connector capability protocol
-status: open
+status: done
 component: python
 epic: connector-capabilities
 depends_on: [DANDER-64]
@@ -249,6 +249,33 @@ Cases:
   (same flag DANDER-64 raised). Not blocking — this ticket ships an interface only.
 
 ## Implementation Notes
+
+**2026-08-05 update:** the note below and the Review Log entry beneath it describe the
+pre-reconciliation `ConnectorAdapter` implementation from `backup/local-main-pre-reconcile`, no
+longer on this trunk (see the Reconciliation note above). Kept for history. Current implementation
+against `teammate/main`'s `SourceCapabilities`:
+
+- `src/dander/ingestion/capabilities.py`: added `ConnectorOperation.DELETE`, the `DeleteOutcome`
+  `StrEnum` (`DELETED`/`NOT_FOUND`), the `SupportsDelete` `Protocol`
+  (`delete(self, endpoint, identity) -> DeleteOutcome`, docstring notes natural idempotency via
+  `NOT_FOUND` rather than raising on a miss), a `_CAPABILITY_PROTOCOLS` entry, and
+  `SourceCapabilities.delete()` (`require()` guard, delegate, `isinstance(result, DeleteOutcome)`
+  validation) — matching the existing accessor pattern.
+- Idempotency/retry/authorization semantics recorded in `docs/decisions.md`, "2026-08-05 —
+  Write-back and deleted-record-feed semantics."
+- `src/dander/ingestion/__init__.py` / `README.md` updated to export `DeleteOutcome` and
+  `SupportsDelete` and document it.
+- `tests/ingestion/test_capabilities.py`: extended `_CapableSource`, the facade test (both the
+  `DELETED` and `NOT_FOUND` branches), and the invalid-result and full-operation-set
+  parametrizations to cover `delete`.
+- Verified: `ruff check`/`ruff format --check`/`mypy src/dander/ingestion` clean;
+  `pytest tests/ingestion tests/pipeline tests/cli/test_connector_cli.py` green. Done directly in
+  this reconciliation session, not through the Design→Code→PR-Review agent pipeline — no PASS
+  entry added to Review Log for this pass.
+
+---
+
+Original (superseded) note below:
 
 Implemented exactly per Design, no deviations.
 
