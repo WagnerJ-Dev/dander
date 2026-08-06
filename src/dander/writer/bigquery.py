@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from itertools import islice
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from dander.concurrency import FencingToken
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_STAGING_TTL = timedelta(days=1)
 
 
 class BigQueryWriteError(ValueError):
@@ -262,10 +263,10 @@ class BigQuerySnapshotWriter(WritePattern):
             if row[self._snapshot_field] is None:
                 raise BigQueryWriteError(f"Record {index} has a null snapshot value")
 
-        _validate_declared_schema(target, self._schema_evolution)
+        declared = _validate_declared_schema(target, self._schema_evolution)
         staging_id = _staging_id(target)
         try:
-            self._load(rows, staging_id)
+            self._load(rows, staging_id, schema=declared)
             self._client.query(
                 _create_snapshot_target_sql(
                     target_id,
@@ -298,12 +299,20 @@ class BigQuerySnapshotWriter(WritePattern):
         finally:
             self._client.delete_table(staging_id, not_found_ok=True)
 
-    def _load(self, rows: Sequence[Mapping[str, Any]], staging_id: str) -> None:
+    def _load(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+        staging_id: str,
+        *,
+        schema: Sequence[WriteField],
+    ) -> None:
         _load_rows_in_chunks(
             self._client,
             rows,
             staging_id,
             max_batch_rows=self._max_batch_rows,
+            expire=True,
+            schema=schema,
         )
 
 
@@ -340,7 +349,7 @@ class BigQueryScd2Writer(WritePattern):
         if collisions:
             raise BigQueryWriteError(f"SCD2 input uses reserved column {collisions[0]!r}")
         staged_rows = _deduplicate_keyed(rows, columns, target.business_key)
-        _validate_declared_schema(target, self._schema_evolution)
+        declared = _validate_declared_schema(target, self._schema_evolution)
         staging_id = _staging_id(target)
 
         try:
@@ -349,6 +358,8 @@ class BigQueryScd2Writer(WritePattern):
                 staged_rows,
                 staging_id,
                 max_batch_rows=self._max_batch_rows,
+                expire=True,
+                schema=declared,
             )
             self._client.query(_create_scd2_target_sql(target_id, staging_id, columns)).result()
             _apply_schema_evolution(
@@ -419,8 +430,12 @@ class BigQueryReplaceWriter(WritePattern):
                 return 0
             staging_id = _staging_id(target)
             try:
-                _create_declared_target(self._client, staging_id, declared)
-                self._client.query(_expire_staging_sql(staging_id)).result()
+                _create_declared_target(
+                    self._client,
+                    staging_id,
+                    declared,
+                    expires=_staging_expiration(),
+                )
                 self._client.copy_table(
                     staging_id,
                     target_id,
@@ -456,10 +471,9 @@ class BigQueryReplaceWriter(WritePattern):
                 self._client.load_table_from_json(
                     batch,
                     staging_id,
-                    job_config=_load_config(disposition, declared),
+                    job_config=_load_config(disposition, declared, expire=first),
                 ).result()
                 if first:
-                    self._client.query(_expire_staging_sql(staging_id)).result()
                     first = False
                 written += len(batch)
                 batch = [dict(record) for record in islice(record_iterator, self._max_batch_rows)]
@@ -633,10 +647,13 @@ def _create_declared_target(
     client: _BigQueryClient,
     target_id: str,
     schema: Sequence[WriteField],
+    *,
+    expires: datetime | None = None,
 ) -> None:
     if not schema:
         return
     table = bigquery.Table(target_id, schema=_bigquery_schema(schema))
+    table.expires = expires
     created = client.create_table(table, exists_ok=True)
     _assert_deployed_schema(schema, created.schema)
 
@@ -740,12 +757,20 @@ def _deduplicate_keyed(
 def _load_config(
     write_disposition: str,
     schema: Sequence[WriteField] = (),
+    *,
+    expire: bool = False,
 ) -> bigquery.LoadJobConfig:
-    config = bigquery.LoadJobConfig(
-        autodetect=not schema,
-        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        write_disposition=write_disposition,
+    properties: dict[str, object] = {"load": {}}
+    if expire:
+        load = cast("dict[str, object]", properties["load"])
+        load["destinationExpirationTime"] = _staging_expiration().isoformat().replace("+00:00", "Z")
+    config = cast(
+        "bigquery.LoadJobConfig",
+        bigquery.LoadJobConfig.from_api_repr(properties),
     )
+    config.autodetect = not schema
+    config.source_format = bigquery.SourceFormat.NEWLINE_DELIMITED_JSON
+    config.write_disposition = write_disposition
     if schema:
         config.schema = _bigquery_schema(schema)
     return config
@@ -776,10 +801,12 @@ def _load_rows_in_chunks(
         client.load_table_from_json(
             [_json_load_row(row) for row in rows[offset : offset + max_batch_rows]],
             destination,
-            job_config=_load_config(disposition, schema),
+            job_config=_load_config(
+                disposition,
+                schema,
+                expire=expire and offset == 0,
+            ),
         ).result()
-        if offset == 0 and expire:
-            client.query(_expire_staging_sql(destination)).result()
 
 
 def _json_load_row(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -799,11 +826,8 @@ def _json_load_value(value: object) -> object:
     return value
 
 
-def _expire_staging_sql(staging_id: str) -> str:
-    return (
-        f"ALTER TABLE `{staging_id}` SET OPTIONS "
-        "(expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 1 DAY))"
-    )
+def _staging_expiration() -> datetime:
+    return datetime.now(UTC) + _STAGING_TTL
 
 
 def _quoted_columns(columns: Sequence[str], *, alias: str | None = None) -> str:

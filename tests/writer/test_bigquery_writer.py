@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -58,7 +58,9 @@ class _Client:
         self.write_disposition: str | None = None
         self.write_dispositions: list[str] = []
         self.loaded_schemas: list[list[bigquery.SchemaField]] = []
+        self.load_configs: list[bigquery.LoadJobConfig] = []
         self.created: list[str] = []
+        self.created_expirations: dict[str, datetime | None] = {}
         self.updated: list[tuple[str, list[str]]] = []
         self.copies: list[tuple[str, str, str]] = []
         self.tables: dict[str, bigquery.Table] = {}
@@ -82,6 +84,7 @@ class _Client:
             return self.tables[table_id]
         self.tables[table_id] = table
         self.created.append(table_id)
+        self.created_expirations[table_id] = table.expires
         return table
 
     def get_table(self, table: str) -> bigquery.Table:
@@ -115,6 +118,7 @@ class _Client:
             assert job_config.autodetect
         self.write_disposition = job_config.write_disposition
         self.write_dispositions.append(job_config.write_disposition)
+        self.load_configs.append(job_config)
         self.loaded_rows = [dict(row) for row in json_rows]
         self.loaded_batches.append(self.loaded_rows)
         self.destination = destination
@@ -175,6 +179,14 @@ def _fenced_target() -> WriteTarget:
     )
 
 
+def _assert_creation_time_expiration(config: bigquery.LoadJobConfig) -> None:
+    value = config.to_api_repr()["load"].get("destinationExpirationTime")
+    assert isinstance(value, str)
+    expires = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    remaining = expires - datetime.now(UTC)
+    assert timedelta(hours=23, minutes=59) < remaining <= timedelta(days=1)
+
+
 def test_scd1_deduplicates_last_record_and_builds_explicit_merge() -> None:
     client = _Client()
     writer = BigQueryScd1Writer(project="unit-project", client=client)
@@ -193,11 +205,11 @@ def test_scd1_deduplicates_last_record_and_builds_explicit_merge() -> None:
         {"id": "one", "label": "new"},
         {"id": "two", "label": "other"},
     ]
-    assert client.queries[0].startswith(f"ALTER TABLE `{client.destination}` SET OPTIONS")
-    assert client.queries[1].startswith(
+    _assert_creation_time_expiration(client.load_configs[0])
+    assert client.queries[0].startswith(
         "CREATE TABLE IF NOT EXISTS `unit-project.raw.example_widgets`"
     )
-    merge = client.queries[2]
+    merge = client.queries[1]
     assert "ON target.`id` = source.`id`" in merge
     assert "target.`label` = source.`label`" in merge
     assert "SELECT *" not in merge
@@ -335,6 +347,7 @@ def test_staging_table_is_cleaned_after_load_failure() -> None:
     with pytest.raises(RuntimeError, match="synthetic load failure"):
         writer.write([{"id": "one"}], _target())
 
+    _assert_creation_time_expiration(client.load_configs[0])
     assert client.deleted == [client.destination]
 
 
@@ -347,7 +360,8 @@ def test_replace_writer_stages_then_atomically_replaces_target() -> None:
     assert affected == 2
     assert client.destination.startswith("unit-project.raw._dander_stage_example_widgets_")
     assert client.write_disposition == "WRITE_TRUNCATE"
-    assert client.queries[0].startswith(f"ALTER TABLE `{client.destination}` SET OPTIONS")
+    _assert_creation_time_expiration(client.load_configs[0])
+    assert client.queries == []
     assert client.copies == [
         (
             client.destination,
@@ -393,6 +407,9 @@ def test_replace_writer_bootstraps_declared_schema_for_empty_snapshot() -> None:
 
     assert len(client.created) == 1
     assert client.created[0].startswith("unit-project.raw._dander_stage_example_widgets_")
+    expires = client.created_expirations[client.created[0]]
+    assert expires is not None
+    assert timedelta(hours=23, minutes=59) < expires - datetime.now(UTC)
     assert client.tables["unit-project.raw.example_widgets"].schema == [
         bigquery.SchemaField("id", "INT64", mode="REQUIRED")
     ]
@@ -414,6 +431,9 @@ def test_replace_writer_bounds_load_requests_and_appends_after_first_chunk() -> 
     assert affected == 5
     assert [len(batch) for batch in client.loaded_batches] == [2, 2, 1]
     assert client.write_dispositions == ["WRITE_TRUNCATE", "WRITE_APPEND", "WRITE_APPEND"]
+    _assert_creation_time_expiration(client.load_configs[0])
+    assert "destinationExpirationTime" not in client.load_configs[1].to_api_repr()["load"]
+    assert "destinationExpirationTime" not in client.load_configs[2].to_api_repr()["load"]
     assert client.copies == [
         (
             client.destination,
@@ -754,7 +774,7 @@ def test_incremental_writer_requires_cursor_and_reuses_idempotent_merge() -> Non
 
     assert writer.mode is WriteMode.INCREMENTAL
     assert affected == 2
-    assert client.queries[2].startswith("MERGE")
+    assert client.queries[1].startswith("MERGE")
 
     with pytest.raises(BigQueryWriteError, match="Cursor column"):
         writer.write([{"id": "two"}], _target())
@@ -782,6 +802,7 @@ def test_snapshot_writer_partitions_and_suppresses_exact_reruns() -> None:
     )
 
     assert affected == 1
+    _assert_creation_time_expiration(client.load_configs[0])
     assert "PARTITION BY DATE(`snapshot_at`)" in client.queries[0]
     insert = client.queries[1]
     assert insert.startswith("INSERT INTO")
@@ -837,6 +858,7 @@ def test_scd2_writer_builds_transactional_change_history() -> None:
     )
 
     assert affected == 2
+    _assert_creation_time_expiration(client.load_configs[0])
     assert client.loaded_rows == [
         {"id": "one", "label": "new"},
         {"id": "two", "label": "other"},
