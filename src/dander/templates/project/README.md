@@ -25,6 +25,11 @@ before changing the pinned `DANDER_VERSION` in this project's Dockerfile.
 Use the public [rollback guide](https://github.com/harrisonoconnorhover/dander/blob/main/docs/rollback.md)
 to restore a known-good commit and immutable image without editing Terraform state.
 
+`examples/salesforce/` contains a source-free four-object CRM project overlay with its exact plugin
+pin, connector schema, four staging models, and Opportunity fact. Follow the public
+[Salesforce guide](https://github.com/harrisonoconnorhover/dander/blob/main/docs/salesforce.md)
+before copying it; Contact Email and Phone are personal data enabled by default.
+
 To host Druff's compiled interface with this platform, also pass its immutable image as
 `--druff-container-image`. Repeat that input on later full-platform plans to retain the service.
 The public UI stores no graph or credentials; start `dander graph serve --origin HTTPS_DRUFF_URL`

@@ -1,75 +1,126 @@
-# Salesforce Accounts
+# Salesforce CRM
 
-Dander's Salesforce slice is intentionally read-only: one Accounts Bulk API 2.0 `queryAll` job,
-server-filtered SOQL, streaming locator pagination, a declared raw schema, SCD1 publication, one
-staging model, and the existing transform/test/run-history path. It does not modify Salesforce
-business records.
+Dander's Salesforce connector is read-only and uses bounded Bulk API 2.0 CSV streaming for four
+independently watermarked endpoints:
 
-Salesforce restricts creation of legacy Connected Apps as of Spring '26 and recommends External
-Client Apps for new integrations. Configure one External Client App for non-interactive JWT bearer
-authentication:
+| Endpoint | Raw relation | Deletion state |
+| --- | --- | --- |
+| Accounts | `raw.salesforce_accounts` | `IsDeleted` from `queryAll` |
+| Contacts | `raw.salesforce_contacts` | `IsDeleted` from `queryAll` |
+| Opportunities | `raw.salesforce_opportunities` | `IsDeleted` from `queryAll` |
+| Users | `raw.salesforce_users` | `IsActive` from `query` |
+
+Contact Email and Phone are enabled by default and are personal data. Confirm that the destination
+project, operators, retention, and downstream access are appropriate before enabling this pipeline.
+
+## Salesforce setup
+
+Salesforce recommends External Client Apps for new integrations. Configure one for non-interactive
+JWT bearer authentication:
 
 1. Generate a 2048-bit RSA private key and self-signed public certificate outside the repository.
 2. In **Setup → External Client App Manager**, create a local app and enable OAuth.
 3. Add **Manage user data via APIs (`api`)** and **Perform requests at any time
    (`refresh_token`, `offline_access`)**, enable **JWT Bearer Flow**, and upload only the public
-   certificate. Salesforce requires the refresh-token scope when an External Client App uses this
-   preauthorized JWT flow; Dander does not store or use a refresh token.
-4. Set permitted users to **Admin approved users are pre-authorized**, select a narrow permission
-   set that can read Account and the selected fields, and assign it to the JWT subject user.
-5. Copy the consumer key. Store it and the private key as secret values; never place either value
-   in connector YAML.
+   certificate. Dander does not store or use a refresh token.
+4. Set permitted users to **Admin approved users are pre-authorized**. Assign a narrow permission
+   set with API access and read access to Account, Contact, Opportunity, User, and every selected
+   field.
+5. Store the consumer key and RSA private key in Dander's configured secret store. Never place a
+   credential value in connector YAML.
 
-Copy and edit the template:
-
-```bash
-cp connectors/salesforce_jwt.example.yaml connectors/salesforce.yaml
-```
-
-Replace `YOUR_DOMAIN`, the API version when necessary, and the JWT `subject`. Production orgs use
-`https://login.salesforce.com` as both authorization-server audience and token host; sandboxes use
-`https://test.salesforce.com`. My Domain hosts are also supported when both values follow the org's
-OAuth configuration.
-
-First validate the connector shape without resolving secrets or contacting Salesforce:
+Newly generated projects include a source-free copy of the complete example. Copy it into the
+project root, then edit the connector:
 
 ```bash
-uv run dander run salesforce --dry-run --sandbox --project YOUR_NO_BILLING_GCP_PROJECT
+cp examples/salesforce/dander.yaml dander.yaml
+cp examples/salesforce/connectors/salesforce.yaml connectors/salesforce.yaml
+cp -R examples/salesforce/models/staging/. models/staging/
+mkdir -p models/marts
+cp -R examples/salesforce/models/marts/. models/marts/
 ```
 
-That command is configuration-only; it does not prove authentication. For a real local extraction,
-authenticate Application Default Credentials to a BigQuery Sandbox GCP project with billing
-disabled, then resolve the template's two references from environment variables and omit
-`--dry-run`:
+Those commands intentionally turn a newly generated starter into a Salesforce-only project. In an
+existing project, copy only the connector/models and merge the `plugins.salesforce` and
+`pipelines.salesforce_crm` blocks instead of replacing `dander.yaml`.
+
+Replace `YOUR_DOMAIN`, the API version when necessary, and the JWT subject. Production orgs usually
+use `https://login.salesforce.com` for the token URL and audience; sandboxes use
+`https://test.salesforce.com`. A My Domain host is supported when it matches the org's OAuth setup.
+
+Custom fields are opt-in. Add each field to both the endpoint SOQL `SELECT` and `raw_schema`, then
+add its governed projection to the relevant model. Undeclared fields fail before publication.
+
+## Project configuration
+
+After `dander-connector-salesforce 0.3.0rc1` is published, a new candidate project can use:
+
+```yaml
+version: 1
+plugins:
+  salesforce:
+    distribution: dander-connector-salesforce
+    version: 0.3.0rc1
+pipelines:
+  salesforce_crm:
+    source: salesforce
+    models:
+      - stg_salesforce__users
+      - stg_salesforce__accounts
+      - stg_salesforce__contacts
+      - stg_salesforce__opportunities
+      - fct_salesforce__opportunities
+    publish_dataplex: true
+    schedule: "0 7 * * *"
+    time_zone: America/New_York
+    paused: true
+    secrets:
+      SALESFORCE_EXTERNAL_CLIENT_APP_ID: salesforce-client-id
+      SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY: salesforce-private-key
+```
+
+Existing deployments may keep their current pipeline ID and resource overrides to avoid replacing
+Cloud Run and Scheduler resources. The repository's retained project therefore keeps the historical
+`salesforce_accounts` ID even though it now runs the complete CRM slice.
+
+Install the exact plugin pin and validate without resolving secrets or contacting Salesforce:
 
 ```bash
-gcloud auth application-default login
-export SALESFORCE_EXTERNAL_CLIENT_APP_ID='the-consumer-key'
-export SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY="$(< /secure/path/dander-salesforce.key)"
-uv run dander run salesforce --sandbox --project YOUR_NO_BILLING_GCP_PROJECT
+dander plugins install
+dander validate
+dander run salesforce_crm --dry-run --project YOUR_GCP_PROJECT
 ```
 
-The caller must be able to read the project's billing status and create/write the BigQuery Sandbox
-dataset. The real command authenticates to Salesforce, streams Accounts through bounded CSV
-result pages, replaces the raw sandbox table, and records local run/cursor state in
-`.dander/state.db`. Sandbox runs intentionally perform a complete read; hosted runs inject the
-committed `SystemModstamp` into the next SOQL query.
+## Governed models
 
-A hosted pipeline should map those same environment names to two Secret Manager containers in
-`dander.yaml`; Terraform manages the containers and least-privilege runtime access, not secret
-versions. Review the plan before applying.
+The project includes four staging models plus `marts.fct_salesforce__opportunities`. The fact:
 
-## Current boundary
+- excludes deleted Opportunities and Opportunities tied to deleted Accounts;
+- joins Account name, type, and industry;
+- joins owner name, alias, type, and active status without filtering inactive owners;
+- exposes amount, probability, stage, forecast category, close date, and closed/won flags; and
+- publishes descriptions, types, tests, relationships, and metrics through Dander's metadata spine.
 
-The connector creates one asynchronous Bulk API 2.0 query job, polls it with a fixed upper bound,
-and reads each CSV page through Salesforce's opaque `Sforce-Locator`. The response is streamed a
-record at a time rather than materialized as one endpoint-sized list. The result job is deleted
-after success or handled failure. QueryAll preserves soft-delete visibility, and the inclusive
-`SystemModstamp >= <watermark>` boundary makes tied timestamps replay-safe through hosted SCD1.
+Relationship tests ignore nullable keys. Build Users before Accounts, then Contacts and
+Opportunities, so owner and Account assertions have an available parent relation.
+
+## Runtime and replay
+
+Each endpoint creates one asynchronous query job, polls with a fixed upper bound, and reads each CSV
+page through Salesforce's opaque `Sforce-Locator`. Pages are streamed record by record rather than
+materializing an endpoint in memory. Query jobs are deleted after success and handled failure.
+
+Hosted runs apply `SystemModstamp >= <watermark>` independently to each endpoint. The inclusive
+boundary deliberately rereads tied timestamps; Dander's SCD1 writer makes replay duplicate-free and
+commits a watermark only after the complete endpoint succeeds. Sandbox runs remain full reads.
+
+Soft-deleted Accounts, Contacts, and Opportunities remain in raw/staging with `is_deleted=true`.
+The fact filters those tombstones. User deactivation changes `is_active` but retains the owner for
+historical reporting. Records already hard-deleted or purged from Salesforce cannot be discovered.
 
 The base SOQL must remain one unfiltered, unordered `SELECT`: Dander owns the watermark predicate,
-and omitting `ORDER BY` preserves Salesforce PK chunking for large jobs. Bulk jobs have no
-completion SLA; a job that exceeds Dander's bounded polling window fails clearly and can be rerun.
+and omitting `ORDER BY` preserves Salesforce's large-query behavior. A job that exceeds Dander's
+bounded polling window fails clearly and can be safely rerun.
 
 Official Salesforce references:
 

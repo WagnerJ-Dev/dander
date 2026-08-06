@@ -14,10 +14,35 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 _SOURCE_ASSETS = (
-    Path("connectors/greenhouse_job_board.yaml"),
-    Path("graphs/greenhouse_jobs.yaml"),
-    Path("models/staging/stg_greenhouse__jobs.sql"),
-    Path("models/staging/stg_greenhouse__jobs.yml"),
+    (Path("connectors/greenhouse_job_board.yaml"), Path("connectors/greenhouse_job_board.yaml")),
+    (Path("graphs/greenhouse_jobs.yaml"), Path("graphs/greenhouse_jobs.yaml")),
+    (
+        Path("models/staging/stg_greenhouse__jobs.sql"),
+        Path("models/staging/stg_greenhouse__jobs.sql"),
+    ),
+    (
+        Path("models/staging/stg_greenhouse__jobs.yml"),
+        Path("models/staging/stg_greenhouse__jobs.yml"),
+    ),
+    (Path("examples/salesforce/dander.yaml"), Path("examples/salesforce/dander.yaml")),
+    (
+        Path("connectors/salesforce_jwt.example.yaml"),
+        Path("examples/salesforce/connectors/salesforce.yaml"),
+    ),
+    *(
+        (
+            Path(f"models/{folder}/{name}.{suffix}"),
+            Path(f"examples/salesforce/models/{folder}/{name}.{suffix}"),
+        )
+        for folder, name in (
+            ("staging", "stg_salesforce__users"),
+            ("staging", "stg_salesforce__accounts"),
+            ("staging", "stg_salesforce__contacts"),
+            ("staging", "stg_salesforce__opportunities"),
+            ("marts", "fct_salesforce__opportunities"),
+        )
+        for suffix in ("sql", "yml")
+    ),
 )
 
 
@@ -41,16 +66,16 @@ def scaffold_project(destination: Path) -> Path:
             with resources.as_file(template) as template_path:
                 shutil.copytree(template_path, staging)
             source_root = _source_checkout_root()
-            for relative_path in _SOURCE_ASSETS:
-                packaged = staging / relative_path
+            for source_path, destination_path in _SOURCE_ASSETS:
+                packaged = staging / destination_path
                 if packaged.is_file():
                     continue
-                if source_root is None or not (source_root / relative_path).is_file():
+                if source_root is None or not (source_root / source_path).is_file():
                     raise ProjectScaffoldError(
-                        f"Installed package is missing starter asset: {relative_path}"
+                        f"Installed package is missing starter asset: {destination_path}"
                     )
                 packaged.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source_root / relative_path, packaged)
+                shutil.copy2(source_root / source_path, packaged)
             _render_distribution_version(staging / "Dockerfile")
             if not (staging / "infra" / "main.tf").is_file():
                 if source_root is None:

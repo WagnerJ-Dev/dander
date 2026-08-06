@@ -217,11 +217,12 @@ credential or employee row is stored in this repository.
 
 ### Enterprise authentication templates
 
-`connectors/salesforce_jwt.example.yaml` is a complete read-only Accounts QueryAll slice: OAuth2
-JWT bearer authentication, Salesforce's distinct authorization-server audience, a short assertion,
-server-filtered SOQL, bounded streaming Bulk API 2.0 result pages, a declared raw schema, and
-soft-delete visibility. Hosted replays use an inclusive `SystemModstamp` watermark and idempotent
-SCD1 publication. Dander 0.5 supports the independently installed first-party
+`connectors/salesforce_jwt.example.yaml` is a complete read-only CRM slice for Accounts, Contacts,
+Opportunities, and Users: OAuth2 JWT authentication, bounded streaming Bulk API 2.0 result pages,
+declared raw schemas, and independent inclusive `SystemModstamp` watermarks. QueryAll retains
+Account, Contact, and Opportunity tombstones; User deactivation is represented by `IsActive`.
+Contact Email and Phone are personal data enabled by default. Dander supports the independently
+installed first-party
 [`dander-connector-salesforce`](https://github.com/harrisonoconnorhover/dander-connector-salesforce)
 plugin; an exact manifest pin takes precedence over the deprecated built-in fallback. See
 [`docs/salesforce.md`](docs/salesforce.md).

@@ -14,6 +14,8 @@
 !graphs/**
 !models/
 !models/**
+!examples/
+!examples/**
 !infra/
 !infra/**
 infra/.DS_Store

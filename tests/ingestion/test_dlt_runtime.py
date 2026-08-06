@@ -187,6 +187,12 @@ def test_salesforce_template_maps_bulk2_query_schema_and_jwt_contract() -> None:
         "default_expires_in": 300,
     }
     assert config.engine is IngestionEngine.SALESFORCE_BULK2
+    assert [endpoint.name for endpoint in config.endpoints] == [
+        "accounts",
+        "contacts",
+        "opportunities",
+        "users",
+    ]
     endpoint = config.endpoints[0]
     assert endpoint.path == "/jobs/query"
     assert endpoint.incremental_cursor == "SystemModstamp"
@@ -200,9 +206,16 @@ def test_salesforce_template_maps_bulk2_query_schema_and_jwt_contract() -> None:
         "attributes",
         "Id",
         "Name",
+        "OwnerId",
         "SystemModstamp",
         "IsDeleted",
     }
+    assert [endpoint.request_body["operation"] for endpoint in config.endpoints] == [
+        "queryAll",
+        "queryAll",
+        "queryAll",
+        "query",
+    ]
 
 
 class _FakeDltSource:
