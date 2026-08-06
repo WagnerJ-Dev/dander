@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from dander.catalog import MetadataSpine, SemanticRegistryPublisher
 from dander.runtime import PipelineRunResult
-from dander.state import LeaseHeartbeat, RunStage, RunStatus
+from dander.state import LeaseHeartbeat, RunStage, RunStatus, classify_failure
 from dander.transform import TransformProject, TransformRunResult
 
 if TYPE_CHECKING:
@@ -135,6 +135,10 @@ class PipelineExecutor:
                     )
                 heartbeat = LeaseHeartbeat(self._leases, lease)
                 heartbeat.__enter__()
+                self._history.reconcile_interrupted(
+                    self._pipeline_id,
+                    current_run_id=run_id,
+                )
             ingestion_result = self._ingestion.run(
                 run_id=run_id,
                 ownership=heartbeat,
@@ -221,7 +225,8 @@ class PipelineExecutor:
                 assertions=assertions,
                 assets=assets,
             )
-        except Exception:
+        except Exception as error:
+            failure = classify_failure(error, stage=stage, run_id=run_id)
             try:
                 self._history.finish(
                     run_id,
@@ -233,6 +238,8 @@ class PipelineExecutor:
                     assertions=assertions,
                     assets=assets,
                     failure_stage=stage,
+                    failure_code=failure.code,
+                    failure_summary=failure.summary,
                 )
             except Exception:
                 _LOGGER.exception(

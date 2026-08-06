@@ -1399,10 +1399,11 @@ def metadata_runs(
         local=local,
         state_path=state_path,
     )
+    records = history.recent(limit=limit, pipeline_id=pipeline)
     table = Table(title="Dander pipeline runs")
     for column in ("Run", "Pipeline", "Status", "Stage", "Rows", "Models", "Tests", "Assets"):
         table.add_column(column)
-    for record in history.recent(limit=limit, pipeline_id=pipeline):
+    for record in records:
         table.add_row(
             record.run_id,
             record.pipeline_id,
@@ -1414,6 +1415,13 @@ def metadata_runs(
             str(record.assets),
         )
     console.print(table)
+    failures = [record for record in records if record.failure_code or record.failure_summary]
+    if failures:
+        console.print("[bold red]Failures[/bold red]")
+        for record in failures:
+            code = record.failure_code or "failed"
+            summary = record.failure_summary or "Inspect the run logs for details."
+            console.print(f"[red]{record.run_id} · {code}[/red]: {summary}")
 
 
 def _metadata_snapshots(

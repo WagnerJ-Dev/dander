@@ -448,4 +448,6 @@ def _run_record(record: RunRecord) -> dict[str, object]:
         "assertions": record.assertions,
         "assets": record.assets,
         "failure_stage": record.failure_stage.value if record.failure_stage is not None else None,
+        "failure_code": record.failure_code,
+        "failure_summary": record.failure_summary,
     }

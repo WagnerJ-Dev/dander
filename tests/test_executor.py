@@ -72,6 +72,8 @@ class _History(RunHistoryStore):
         self.started: tuple[str, str, str] | None = None
         self.checkpoints: list[RunStage] = []
         self.finished: tuple[RunStatus, RunStage | None, int, int, int] | None = None
+        self.failure: tuple[str | None, str | None] | None = None
+        self.reconciled: tuple[str, str] | None = None
 
     def start(self, run_id: str, source: str, *, pipeline_id: str | None = None) -> None:
         assert pipeline_id is not None
@@ -98,9 +100,15 @@ class _History(RunHistoryStore):
         assertions: int = 0,
         assets: int = 0,
         failure_stage: RunStage | None = None,
+        failure_code: str | None = None,
+        failure_summary: str | None = None,
     ) -> None:
         assert self.started is not None and run_id == self.started[0]
         self.finished = (status, failure_stage, models, assertions, assets)
+        self.failure = (failure_code, failure_summary)
+
+    def reconcile_interrupted(self, pipeline_id: str, *, current_run_id: str) -> None:
+        self.reconciled = (pipeline_id, current_run_id)
 
 
 class _Metadata(MetadataStore):
@@ -247,6 +255,9 @@ def test_executor_marks_transform_failure_without_claiming_ingestion_only_succes
 
     assert history.checkpoints == [RunStage.TRANSFORM]
     assert history.finished == (RunStatus.FAILED, RunStage.TRANSFORM, 0, 0, 0)
+    assert history.failure is not None
+    assert history.failure[0] == "transform_failed"
+    assert "Inspect logs for run" in (history.failure[1] or "")
 
 
 def test_executor_records_active_overlap_as_skipped_without_running_pipeline(
@@ -266,6 +277,7 @@ def test_executor_records_active_overlap_as_skipped_without_running_pipeline(
     assert result.ingestion.endpoints == ()
     assert history.checkpoints == []
     assert history.finished == (RunStatus.SKIPPED, None, 0, 0, 0)
+    assert history.reconciled is None
 
 
 def test_executor_fails_closed_before_transform_when_heartbeat_is_lost(
@@ -285,4 +297,6 @@ def test_executor_fails_closed_before_transform_when_heartbeat_is_lost(
 
     assert history.checkpoints == [RunStage.TRANSFORM]
     assert history.finished == (RunStatus.FAILED, RunStage.TRANSFORM, 0, 0, 0)
+    assert history.failure is not None and history.failure[0] == "lease_failed"
+    assert history.reconciled is not None
     assert leases.released

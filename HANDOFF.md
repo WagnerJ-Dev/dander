@@ -2,42 +2,39 @@
 
 ## Finished
 
-- Isolated the work on `codex/thin-init-cli`; the original `main` checkout remains untouched.
-- Replaced the 232-line `dander init` orchestration body with a typed options object and delegate.
-- Split manifest resolution, safety decisions, stage-zero sequencing, image publication, platform
-  configuration, and Terraform composition into `init_command.py`.
-- Preserved the command signature, output, bootstrap monkeypatch points, and private helper aliases.
-- Kept runtime behavior, package metadata, Terraform, and deployed resources unchanged.
+- Added sanitized `failure_code` and `failure_summary` fields to local and BigQuery run history.
+- Displayed failed-run guidance in `dander metadata runs` and the graph-service run response.
+- Reconciled older `running` rows only after a new execution successfully acquires the lease.
+- Preserved additive storage compatibility and existing lease, cursor, and execution behavior.
 
 ## Try It
 
 ```bash
-uv run dander init --help
-uv run pytest tests/cli/test_init_cli.py
+uv run pytest tests/state/test_failure.py tests/state/test_run_history.py tests/test_executor.py
+uv run dander metadata runs --local --state-path .dander/state.db
 ```
 
 ## Checks
 
-- Focused init suite passed: `9 passed`; full suite passed: `748 passed`.
+- Focused run-history, executor, CLI, and graph tests passed: `23 passed`.
+- Full test suite passed: `754 passed`.
 - Repository-wide Ruff, formatting, and strict mypy passed.
-- `dander init --help` matched `main` byte-for-byte.
-- Dependency audit, platform Terraform, stage-zero Terraform, and generated Terraform passed.
-- Wheel/sdist inspection and external installs passed; the container built and its runtime contract
-  passed.
+- `git diff --check` passed.
 
 ## Decisions
 
-- Keep Typer option declarations in `main.py`; the new module never imports `main.py`.
-- Inject existing bootstrap symbols from `main.py` to retain current test and development seams.
-- Add no duplicate tests because the existing init suite already covers the extracted wiring.
+- Persist fixed operator-safe summaries rather than unrestricted exception messages.
+- Repair stale active history only after lease acquisition proves no older runner still owns it.
+- Keep the new BigQuery and SQLite columns nullable and add them in place.
 
 ## Remaining
 
-- Protected GitHub CI must repeat Linux package/container checks and security scans.
-- Merge only after review; no deployment, release, Terraform apply, or GCP mutation is in scope.
+- Protected GitHub CI must repeat Linux package, Terraform, container, and security checks.
+- Later sequential PRs cover staging expiration, plan-first installation, and deep Salesforce.
+- No package publication, Terraform apply, scheduler change, or live-resource mutation occurred.
 
 ## Review First
 
-- `src/dander/cli/init_command.py`
-- `src/dander/cli/main.py`
-- `tests/cli/test_init_cli.py`
+- `src/dander/state/failure.py`
+- `src/dander/state/run_history.py`
+- `src/dander/executor.py`
