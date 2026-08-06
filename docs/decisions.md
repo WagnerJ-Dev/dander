@@ -473,3 +473,26 @@
   subset; Druff edits the same `OperationSpec` objects stored in `PipelineGraph`.
 - Rename/drop remain edge mappings. Deduplication, arbitrary SQL hooks, deleted feeds, and provider
   write-back require separate product decisions rather than entering through this slice.
+
+## 2026-08-05 — `teammate/main` (Harrison's fork) becomes the trunk; local main resets onto it
+
+- `WagnerJ-Dev/dander@main` was previously synced from the fork by squash-copying a snapshot
+  (`23ef62a`), not merging, so git recorded no shared history past that point. The two lines then
+  diverged for real: the fork advanced through 0.3.0–0.5.1 (this file's entries above), while local
+  `main` gained one further squashed commit (`574d2f0`) independently building the same two seams
+  — a connector capability adapter and a pipeline-operation framework — under different names and
+  with broader scope (write-back, `get_deleted`, SQL hooks, deduplicate).
+- Rather than attempt a mechanical merge across unrelated history, local `main` is reset directly
+  onto `teammate/main` (`e87b03b`) and adopts it as the trunk going forward. The prior local line is
+  preserved at `backup/local-main-pre-reconcile` (`574d2f0`), not deleted.
+- The fork had already reconciled the safe, read-only/schema-preserving subset of `574d2f0` on its
+  own initiative (see the two entries directly above) — confirmed by cross-reading
+  `src/dander/ingestion/capabilities.py` and `src/dander/pipeline/operations.py` against
+  `tickets/DANDER-64..76`. Tickets `64/65/67/68/69/71` are satisfied by the fork's
+  `SourceCapabilities`/`operations.py` implementations (reconciliation notes added to each ticket)
+  and need no further code. Tickets `66` (`get_deleted`), `70` (SQL hooks), `72` (narrowed to
+  `deduplicate`), and `73..76` (write-back `create`/`update`/`upsert`/`delete`) remain genuinely
+  open — the fork explicitly deferred them pending separate cursor/retry/authorization/destination
+  design, which is the actual next step, not a mechanical port.
+- `origin/main` (this repo's own remote) has not been force-updated to match; that is a separate,
+  explicit decision given force-pushing shared history requires direct confirmation.
