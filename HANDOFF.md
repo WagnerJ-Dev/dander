@@ -21,6 +21,7 @@ Run `uv run dander validate`, then inspect the combined optional capabilities wi
 - Platform and stage-zero Terraform validation passed with backends disabled.
 - Wheel/sdist inspection, external install, source-free generation, and validation passed.
 - The combined Linux container image built successfully.
+- Josh's five GitHub CI jobs passed on the cross-fork draft PR.
 
 ## Decisions
 
@@ -31,7 +32,6 @@ Run `uv run dander validate`, then inspect the combined optional capabilities wi
 ## Remaining
 
 - Josh must review the cross-fork draft PR; it must not merge automatically.
-- GitHub CI must repeat Linux tests, packaging, Terraform, container, and secret checks.
 - Release publication, live acceptance, retained-project changes, and schedules remain untouched.
 
 ## Review First
