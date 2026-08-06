@@ -455,6 +455,13 @@ class BigQueryReplaceWriter(WritePattern):
         staging_id = _staging_id(target)
         written = 0
         try:
+            if declared:
+                _create_declared_target(
+                    self._client,
+                    staging_id,
+                    declared,
+                    expires=_staging_expiration(),
+                )
             batch = first_batch
             first = True
             while batch:
@@ -471,9 +478,11 @@ class BigQueryReplaceWriter(WritePattern):
                 self._client.load_table_from_json(
                     batch,
                     staging_id,
-                    job_config=_load_config(disposition, declared, expire=first),
+                    job_config=_load_config(disposition, declared),
                 ).result()
                 if first:
+                    if not declared:
+                        self._client.query(_expire_staging_sql(staging_id)).result()
                     first = False
                 written += len(batch)
                 batch = [dict(record) for record in islice(record_iterator, self._max_batch_rows)]
@@ -757,20 +766,12 @@ def _deduplicate_keyed(
 def _load_config(
     write_disposition: str,
     schema: Sequence[WriteField] = (),
-    *,
-    expire: bool = False,
 ) -> bigquery.LoadJobConfig:
-    properties: dict[str, object] = {"load": {}}
-    if expire:
-        load = cast("dict[str, object]", properties["load"])
-        load["destinationExpirationTime"] = _staging_expiration().isoformat().replace("+00:00", "Z")
-    config = cast(
-        "bigquery.LoadJobConfig",
-        bigquery.LoadJobConfig.from_api_repr(properties),
+    config = bigquery.LoadJobConfig(
+        autodetect=not schema,
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        write_disposition=write_disposition,
     )
-    config.autodetect = not schema
-    config.source_format = bigquery.SourceFormat.NEWLINE_DELIMITED_JSON
-    config.write_disposition = write_disposition
     if schema:
         config.schema = _bigquery_schema(schema)
     return config
@@ -792,6 +793,13 @@ def _load_rows_in_chunks(
     schema: Sequence[WriteField] = (),
 ) -> None:
     """Bound each load request while preserving one logical truncate-then-append batch."""
+    if expire and schema:
+        _create_declared_target(
+            client,
+            destination,
+            schema,
+            expires=_staging_expiration(),
+        )
     for offset in range(0, len(rows), max_batch_rows):
         disposition = (
             bigquery.WriteDisposition.WRITE_TRUNCATE
@@ -804,9 +812,13 @@ def _load_rows_in_chunks(
             job_config=_load_config(
                 disposition,
                 schema,
-                expire=expire and offset == 0,
             ),
         ).result()
+        if offset == 0 and expire and not schema:
+            # Legacy schema-inferred writes cannot be precreated safely. Expire them
+            # immediately after the first successful load without using unsupported
+            # load-job properties.
+            client.query(_expire_staging_sql(destination)).result()
 
 
 def _json_load_row(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -828,6 +840,13 @@ def _json_load_value(value: object) -> object:
 
 def _staging_expiration() -> datetime:
     return datetime.now(UTC) + _STAGING_TTL
+
+
+def _expire_staging_sql(staging_id: str) -> str:
+    return (
+        f"ALTER TABLE `{staging_id}` SET OPTIONS "
+        "(expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 1 DAY))"
+    )
 
 
 def _quoted_columns(columns: Sequence[str], *, alias: str | None = None) -> str:

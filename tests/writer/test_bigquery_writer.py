@@ -179,12 +179,21 @@ def _fenced_target() -> WriteTarget:
     )
 
 
-def _assert_creation_time_expiration(config: bigquery.LoadJobConfig) -> None:
-    value = config.to_api_repr()["load"].get("destinationExpirationTime")
-    assert isinstance(value, str)
-    expires = datetime.fromisoformat(value.replace("Z", "+00:00"))
+def _assert_supported_load_config(config: bigquery.LoadJobConfig) -> None:
+    assert "destinationExpirationTime" not in config.to_api_repr()["load"]
+
+
+def _assert_staging_precreated_with_expiration(client: _Client) -> None:
+    staging = next(table for table in client.created if "._dander_stage_" in table)
+    expires = client.created_expirations[staging]
+    assert expires is not None
     remaining = expires - datetime.now(UTC)
     assert timedelta(hours=23, minutes=59) < remaining <= timedelta(days=1)
+
+
+def _assert_inferred_staging_expired_after_load(client: _Client) -> None:
+    _assert_supported_load_config(client.load_configs[0])
+    assert client.queries[0].startswith(f"ALTER TABLE `{client.destination}` SET OPTIONS")
 
 
 def test_scd1_deduplicates_last_record_and_builds_explicit_merge() -> None:
@@ -205,11 +214,11 @@ def test_scd1_deduplicates_last_record_and_builds_explicit_merge() -> None:
         {"id": "one", "label": "new"},
         {"id": "two", "label": "other"},
     ]
-    _assert_creation_time_expiration(client.load_configs[0])
-    assert client.queries[0].startswith(
+    _assert_inferred_staging_expired_after_load(client)
+    assert client.queries[1].startswith(
         "CREATE TABLE IF NOT EXISTS `unit-project.raw.example_widgets`"
     )
-    merge = client.queries[1]
+    merge = client.queries[2]
     assert "ON target.`id` = source.`id`" in merge
     assert "target.`label` = source.`label`" in merge
     assert "SELECT *" not in merge
@@ -268,6 +277,8 @@ def test_scd1_encodes_typed_scalars_for_bigquery_json_load() -> None:
             },
         }
     ]
+    _assert_supported_load_config(client.load_configs[0])
+    _assert_staging_precreated_with_expiration(client)
 
 
 def test_scd1_finalizer_dml_touches_matching_lease_inside_transaction() -> None:
@@ -343,11 +354,19 @@ def test_writer_rejects_inconsistent_shape_before_network() -> None:
 def test_staging_table_is_cleaned_after_load_failure() -> None:
     client = _Client(load_error=RuntimeError("synthetic load failure"))
     writer = BigQueryScd1Writer(project="unit-project", client=client)
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        business_key=("id",),
+        schema=(WriteField(name="id", data_type="STRING", mode="REQUIRED"),),
+    )
 
     with pytest.raises(RuntimeError, match="synthetic load failure"):
-        writer.write([{"id": "one"}], _target())
+        writer.write([{"id": "one"}], target)
 
-    _assert_creation_time_expiration(client.load_configs[0])
+    _assert_supported_load_config(client.load_configs[0])
+    _assert_staging_precreated_with_expiration(client)
     assert client.deleted == [client.destination]
 
 
@@ -360,8 +379,7 @@ def test_replace_writer_stages_then_atomically_replaces_target() -> None:
     assert affected == 2
     assert client.destination.startswith("unit-project.raw._dander_stage_example_widgets_")
     assert client.write_disposition == "WRITE_TRUNCATE"
-    _assert_creation_time_expiration(client.load_configs[0])
-    assert client.queries == []
+    _assert_inferred_staging_expired_after_load(client)
     assert client.copies == [
         (
             client.destination,
@@ -415,6 +433,23 @@ def test_replace_writer_bootstraps_declared_schema_for_empty_snapshot() -> None:
     ]
 
 
+def test_replace_writer_precreates_declared_staging_with_expiration() -> None:
+    client = _Client()
+    writer = BigQueryReplaceWriter(project="unit-project", client=client)
+    target = WriteTarget(
+        project="unit-project",
+        dataset="raw",
+        table="example_widgets",
+        schema=(WriteField(name="id", data_type="INT64", mode="REQUIRED"),),
+    )
+
+    assert writer.write([{"id": 1}], target) == 1
+
+    _assert_supported_load_config(client.load_configs[0])
+    _assert_staging_precreated_with_expiration(client)
+    assert client.queries == []
+
+
 def test_replace_writer_bounds_load_requests_and_appends_after_first_chunk() -> None:
     client = _Client()
     writer = BigQueryReplaceWriter(
@@ -431,9 +466,9 @@ def test_replace_writer_bounds_load_requests_and_appends_after_first_chunk() -> 
     assert affected == 5
     assert [len(batch) for batch in client.loaded_batches] == [2, 2, 1]
     assert client.write_dispositions == ["WRITE_TRUNCATE", "WRITE_APPEND", "WRITE_APPEND"]
-    _assert_creation_time_expiration(client.load_configs[0])
-    assert "destinationExpirationTime" not in client.load_configs[1].to_api_repr()["load"]
-    assert "destinationExpirationTime" not in client.load_configs[2].to_api_repr()["load"]
+    _assert_inferred_staging_expired_after_load(client)
+    for config in client.load_configs:
+        _assert_supported_load_config(config)
     assert client.copies == [
         (
             client.destination,
@@ -774,7 +809,7 @@ def test_incremental_writer_requires_cursor_and_reuses_idempotent_merge() -> Non
 
     assert writer.mode is WriteMode.INCREMENTAL
     assert affected == 2
-    assert client.queries[1].startswith("MERGE")
+    assert client.queries[2].startswith("MERGE")
 
     with pytest.raises(BigQueryWriteError, match="Cursor column"):
         writer.write([{"id": "two"}], _target())
@@ -802,9 +837,9 @@ def test_snapshot_writer_partitions_and_suppresses_exact_reruns() -> None:
     )
 
     assert affected == 1
-    _assert_creation_time_expiration(client.load_configs[0])
-    assert "PARTITION BY DATE(`snapshot_at`)" in client.queries[0]
-    insert = client.queries[1]
+    _assert_inferred_staging_expired_after_load(client)
+    assert "PARTITION BY DATE(`snapshot_at`)" in client.queries[1]
+    insert = client.queries[2]
     assert insert.startswith("INSERT INTO")
     assert "WHERE NOT EXISTS" in insert
     assert "IS NOT DISTINCT FROM" in insert
@@ -858,16 +893,16 @@ def test_scd2_writer_builds_transactional_change_history() -> None:
     )
 
     assert affected == 2
-    _assert_creation_time_expiration(client.load_configs[0])
+    _assert_inferred_staging_expired_after_load(client)
     assert client.loaded_rows == [
         {"id": "one", "label": "new"},
         {"id": "two", "label": "other"},
     ]
-    create = client.queries[0]
+    create = client.queries[1]
     assert "valid_from" in create
     assert "valid_to" in create
     assert "is_current" in create
-    history = client.queries[1]
+    history = client.queries[2]
     assert "CREATE TEMP TABLE changed" in history
     assert "IS DISTINCT FROM" in history
     assert "BEGIN TRANSACTION" in history

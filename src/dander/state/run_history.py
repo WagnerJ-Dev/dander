@@ -325,7 +325,10 @@ class BigQueryRunHistoryStore(RunHistoryStore):
             "'complete', 'ingest')) AS stage, started_at, finished_at, endpoints, "
             "extracted, affected, COALESCE(models, 0) AS models, "
             "COALESCE(assertions, 0) AS assertions, COALESCE(assets, 0) AS assets, "
-            f"failure_stage, failure_code, failure_summary FROM `{self._table}`{where} "
+            "failure_stage, "
+            "JSON_VALUE(TO_JSON_STRING(history_row), '$.failure_code') AS failure_code, "
+            "JSON_VALUE(TO_JSON_STRING(history_row), '$.failure_summary') AS failure_summary "
+            f"FROM `{self._table}` AS history_row{where} "
             "ORDER BY started_at DESC LIMIT @limit",
             job_config=bigquery.QueryJobConfig(query_parameters=parameters),
         ).result()
