@@ -81,6 +81,44 @@ def test_sqlite_run_history_reads_active_run(tmp_path: Path) -> None:
     assert record.finished_at is None
 
 
+def test_sqlite_run_history_persists_sanitized_failure_details(tmp_path: Path) -> None:
+    store = SqliteRunHistoryStore(tmp_path / "state.db")
+    store.start("run-failed", "salesforce", pipeline_id="salesforce_crm")
+
+    store.finish(
+        "run-failed",
+        RunStatus.FAILED,
+        endpoints=0,
+        extracted=0,
+        affected=0,
+        failure_stage=RunStage.INGEST,
+        failure_code="authentication_failed",
+        failure_summary="Authentication failed. Verify the configured secret.",
+    )
+
+    record = store.recent(pipeline_id="salesforce_crm")[0]
+    assert record.failure_code == "authentication_failed"
+    assert record.failure_summary == "Authentication failed. Verify the configured secret."
+
+
+def test_sqlite_reconciles_only_older_active_runs_for_owned_pipeline(tmp_path: Path) -> None:
+    store = SqliteRunHistoryStore(tmp_path / "state.db")
+    store.start("old", "salesforce", pipeline_id="salesforce_crm")
+    store.checkpoint("old", RunStage.TRANSFORM, endpoints=4, extracted=12, affected=12)
+    store.start("current", "salesforce", pipeline_id="salesforce_crm")
+    store.start("other", "greenhouse", pipeline_id="greenhouse_jobs")
+
+    store.reconcile_interrupted("salesforce_crm", current_run_id="current")
+
+    records = {record.run_id: record for record in store.recent(limit=10)}
+    assert records["old"].status is RunStatus.FAILED
+    assert records["old"].failure_stage is RunStage.TRANSFORM
+    assert records["old"].failure_code == "interrupted_run"
+    assert records["old"].finished_at is not None
+    assert records["current"].status is RunStatus.RUNNING
+    assert records["other"].status is RunStatus.RUNNING
+
+
 class _QueryJob:
     def result(self) -> tuple[object, ...]:
         return ()
@@ -115,3 +153,20 @@ def test_bigquery_history_can_read_without_creating_or_altering_tables() -> None
     assert client.queries[0].startswith("SELECT ")
     assert "CREATE" not in client.queries[0]
     assert "ALTER" not in client.queries[0]
+
+
+def test_bigquery_reconciliation_is_bounded_to_owned_pipeline_and_excludes_current() -> None:
+    client = _BigQueryClient()
+    store = BigQueryRunHistoryStore(
+        project="proof-project",
+        dataset="dander_meta",
+        client=client,
+    )
+
+    store.reconcile_interrupted("salesforce_crm", current_run_id="current")
+
+    update = client.queries[-1]
+    assert "failure_code = 'interrupted_run'" in update
+    assert "status = 'running'" in update
+    assert "COALESCE(pipeline_id, source_name) = @pipeline_id" in update
+    assert "run_id != @current_run_id" in update

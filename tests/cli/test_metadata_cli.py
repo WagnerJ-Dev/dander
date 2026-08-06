@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from dander.catalog import SqliteMetadataStore
 from dander.cli.main import app
-from dander.state import RunStatus, SqliteRunHistoryStore
+from dander.state import RunStage, RunStatus, SqliteRunHistoryStore
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -113,3 +113,28 @@ def test_metadata_runs_renders_active_run(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "running" in result.stdout
+
+
+def test_metadata_runs_renders_safe_failure_summary(tmp_path: Path) -> None:
+    state = tmp_path / "state.db"
+    history = SqliteRunHistoryStore(state)
+    history.start("run-failed", "salesforce", pipeline_id="salesforce_crm")
+    history.finish(
+        "run-failed",
+        RunStatus.FAILED,
+        endpoints=0,
+        extracted=0,
+        affected=0,
+        failure_stage=RunStage.INGEST,
+        failure_code="authentication_failed",
+        failure_summary="Authentication failed. Verify the configured secret.",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["metadata", "runs", "--local", "--state-path", str(state)],
+    )
+
+    assert result.exit_code == 0
+    assert "authentication" in result.stdout
+    assert "configured" in result.stdout
