@@ -162,7 +162,9 @@ def test_platform_plan_resolves_complete_manifest_without_applying(
     assert result.exit_code == 0, result.output
     assert captured["apply"] is False
     assert captured["enable_runtime"] is True
-    assert set(captured["pipelines"]) == {
+    pipelines = captured["pipelines"]
+    assert isinstance(pipelines, dict)
+    assert set(pipelines) == {
         "greenhouse_jobs",
         "greenhouse_jobs_graph",
         "hubspot_companies",
