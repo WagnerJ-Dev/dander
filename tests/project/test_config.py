@@ -93,6 +93,14 @@ def test_repository_manifest_defines_five_additive_hosted_pipelines() -> None:
     }
     assert expanded["salesforce_accounts"]["job_name"] == "dander-salesforce-accounts"
     assert expanded["salesforce_accounts"]["paused"] is False
+    assert expanded["salesforce_accounts"]["models"] == [
+        "stg_salesforce__users",
+        "stg_salesforce__accounts",
+        "stg_salesforce__contacts",
+        "stg_salesforce__opportunities",
+        "fct_salesforce__opportunities",
+    ]
+    assert expanded["salesforce_accounts"]["publish_dataplex"] is True
     assert expanded["salesforce_accounts"]["secret_env"] == {
         "SALESFORCE_EXTERNAL_CLIENT_APP_ID": "salesforce-external-client-app-id",
         "SALESFORCE_EXTERNAL_CLIENT_APP_PRIVATE_KEY": (

@@ -39,7 +39,13 @@ pipelines:
 
   salesforce_accounts:
     source: salesforce
-    models: [stg_salesforce__accounts]
+    models:
+      - stg_salesforce__users
+      - stg_salesforce__accounts
+      - stg_salesforce__contacts
+      - stg_salesforce__opportunities
+      - fct_salesforce__opportunities
+    publish_dataplex: true
     schedule: "0 11 * * *"
     time_zone: America/New_York
     paused: false

@@ -92,6 +92,126 @@ def test_init_passes_optional_runtime_inputs(
     assert captured["live_cost_guard"] is False
 
 
+def test_image_publish_uses_bootstrap_identity_and_prints_platform_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_publish(self: object, **kwargs: object) -> str:
+        captured.update(kwargs)
+        return "us-central1-docker.pkg.dev/unit-project/dander/dander@sha256:" + "a" * 64
+
+    monkeypatch.setattr("dander.cli.main.RuntimeImagePublisher.publish", fake_publish)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "image-publish",
+            "--project",
+            "unit-project",
+            "--failure-alert-email",
+            "operator@example.invalid",
+            "--billing-account",
+            "ABCDEF-123456-ABCDEF",
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["region"] == "us-central1"
+    assert captured["impersonate_service_account"] == (
+        "dander-bootstrap@unit-project.iam.gserviceaccount.com"
+    )
+    assert captured["require_source_free"] is True
+    assert "init-platform-plan" in result.output
+    assert "Published immutable runtime image" in result.output
+    assert "operator@example.invalid" in result.output
+
+
+def test_platform_plan_resolves_complete_manifest_without_applying(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_execute(self: object, **kwargs: object) -> Path:
+        captured.update(kwargs)
+        return tmp_path / "dander-bootstrap.tfplan"
+
+    monkeypatch.setattr("dander.cli.main.TerraformBootstrap.execute", fake_execute)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init-platform-plan",
+            "--project",
+            "unit-project",
+            "--state-bucket",
+            "unit-state",
+            "--bootstrap-service-account",
+            "dander-bootstrap@unit-project.iam.gserviceaccount.com",
+            "--container-image",
+            f"example.invalid/dander@sha256:{'a' * 64}",
+            "--failure-alert-email",
+            "operator@example.invalid",
+            "--billing-account",
+            "ABCDEF-123456-ABCDEF",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["apply"] is False
+    assert captured["enable_runtime"] is True
+    pipelines = captured["pipelines"]
+    assert isinstance(pipelines, dict)
+    assert set(pipelines) == {
+        "greenhouse_jobs",
+        "greenhouse_jobs_graph",
+        "hubspot_companies",
+        "salesforce_accounts",
+        "servicenow_incidents",
+    }
+    assert "terraform -chdir=infra show -no-color" in result.output
+    assert "init-platform-apply" in result.output
+
+
+def test_admin_plan_runs_read_only_permission_preflight_before_terraform(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+
+    def fake_preflight(**kwargs: object) -> None:
+        events.append("preflight")
+        assert kwargs["project"] == "unit-project"
+
+    def fake_execute(self: object, **kwargs: object) -> Path:
+        events.append("terraform")
+        return tmp_path / "dander-admin-bootstrap.tfplan"
+
+    monkeypatch.setattr("dander.cli.main.require_stage_zero_permissions", fake_preflight)
+    monkeypatch.setattr("dander.cli.main.AdministrativeBootstrap.execute", fake_execute)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init-admin-plan",
+            "--project",
+            "unit-project",
+            "--state-bucket",
+            "unit-state",
+            "--admin-member",
+            "user:operator@example.invalid",
+            "--operator-artifact-dir",
+            str(tmp_path / "operator"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert events == ["preflight", "terraform"]
+    assert "init-admin-apply" in result.output
+
+
 def test_init_apply_requires_confirmation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

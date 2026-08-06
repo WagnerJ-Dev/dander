@@ -14,6 +14,7 @@ COPY src ./src
 COPY connectors ./connectors
 COPY graphs ./graphs
 COPY models ./models
+COPY examples ./examples
 COPY infra ./infra
 RUN uv sync --frozen --no-dev --no-editable
 

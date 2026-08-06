@@ -32,6 +32,7 @@ class _Runner(Protocol):
         check: bool,
         capture_output: bool = False,
         text: bool = False,
+        input: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Execute one argument-vector command."""
 
@@ -43,6 +44,7 @@ def _subprocess_runner(
     check: bool,
     capture_output: bool = False,
     text: bool = False,
+    input: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         args,
@@ -50,6 +52,7 @@ def _subprocess_runner(
         check=check,
         capture_output=capture_output,
         text=text,
+        input=input,
     )
 
 
@@ -149,21 +152,69 @@ class RuntimeImagePublisher:
         self._repository_dir = repository_dir.resolve()
         self._runner = runner or _subprocess_runner
 
-    def publish(self, *, project: str, region: str, tag_prefix: str = "init") -> str:
+    def publish(
+        self,
+        *,
+        project: str,
+        region: str,
+        tag_prefix: str = "init",
+        impersonate_service_account: str = "",
+        require_source_free: bool = False,
+    ) -> str:
         if not _PROJECT_ID.fullmatch(project) or not _REGION.fullmatch(region):
             raise ProjectBootstrapError("Invalid runtime image project or region")
         if not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", tag_prefix):
             raise ProjectBootstrapError("Invalid runtime image tag prefix")
+        if impersonate_service_account and not _ACCOUNT.fullmatch(impersonate_service_account):
+            raise ProjectBootstrapError("Invalid runtime image impersonation account")
+        if require_source_free and (self._repository_dir / "src").exists():
+            raise ProjectBootstrapError(
+                "image-publish requires a generated source-free project without a src directory"
+            )
         host = f"{region}-docker.pkg.dev"
         repository = f"{host}/{project}/dander/dander"
         tag = f"{tag_prefix}-{self._content_digest()[:12]}"
         tagged_image = f"{repository}:{tag}"
         try:
-            self._runner(
-                ("gcloud", "auth", "configure-docker", host, "--quiet"),
-                cwd=self._repository_dir,
-                check=True,
-            )
+            if impersonate_service_account:
+                token_result = self._runner(
+                    (
+                        "gcloud",
+                        "auth",
+                        "print-access-token",
+                        f"--impersonate-service-account={impersonate_service_account}",
+                        f"--project={project}",
+                    ),
+                    cwd=self._repository_dir,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                token = token_result.stdout.strip()
+                if not token:
+                    raise ProjectBootstrapError(
+                        "Bootstrap impersonation returned an empty Artifact Registry token"
+                    )
+                self._runner(
+                    (
+                        "docker",
+                        "login",
+                        host,
+                        "--username",
+                        "oauth2accesstoken",
+                        "--password-stdin",
+                    ),
+                    cwd=self._repository_dir,
+                    check=True,
+                    text=True,
+                    input=token,
+                )
+            else:
+                self._runner(
+                    ("gcloud", "auth", "configure-docker", host, "--quiet"),
+                    cwd=self._repository_dir,
+                    check=True,
+                )
             self._runner(
                 (
                     "docker",
@@ -179,16 +230,22 @@ class RuntimeImagePublisher:
                 cwd=self._repository_dir,
                 check=True,
             )
+            describe_command: tuple[str, ...] = (
+                "gcloud",
+                "artifacts",
+                "docker",
+                "images",
+                "describe",
+                tagged_image,
+                "--format=value(image_summary.digest)",
+            )
+            if impersonate_service_account:
+                describe_command = (
+                    *describe_command,
+                    f"--impersonate-service-account={impersonate_service_account}",
+                )
             described = self._runner(
-                (
-                    "gcloud",
-                    "artifacts",
-                    "docker",
-                    "images",
-                    "describe",
-                    tagged_image,
-                    "--format=value(image_summary.digest)",
-                ),
+                describe_command,
                 cwd=self._repository_dir,
                 check=True,
                 capture_output=True,

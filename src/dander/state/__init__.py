@@ -1,5 +1,6 @@
 """State module: watermark / control tracking for idempotent restarts."""
 
+from dander.state.failure import FailureDetails, classify_failure
 from dander.state.lease import (
     BigQueryLeaseStore,
     LeaseHandle,
@@ -26,6 +27,7 @@ __all__ = [
     "LeaseHeartbeat",
     "LeaseLostError",
     "LeaseStore",
+    "FailureDetails",
     "RunHistoryStore",
     "RunRecord",
     "RunStage",
@@ -34,4 +36,5 @@ __all__ = [
     "SqliteLeaseStore",
     "SqliteWatermarkStore",
     "WatermarkStore",
+    "classify_failure",
 ]

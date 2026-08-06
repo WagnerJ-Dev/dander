@@ -103,6 +103,7 @@ def test_storage_writer_uses_pending_backend_then_idempotent_merge() -> None:
     assert backend.rows == [{"id": "one", "count": 2}, {"id": "two", "count": 3}]
     assert backend.max_batch_rows == 2
     assert client.queries[0].startswith("CREATE TABLE `unit-project.raw._dander_stage_widgets_")
+    assert "OPTIONS (expiration_timestamp" in client.queries[0]
     assert client.queries[-1].startswith("MERGE `unit-project.raw.widgets`")
     assert backend.target is not None
     assert client.deleted == [

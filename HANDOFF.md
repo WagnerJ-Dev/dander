@@ -2,42 +2,42 @@
 
 ## Finished
 
-- Isolated the work on `codex/thin-init-cli`; the original `main` checkout remains untouched.
-- Replaced the 232-line `dander init` orchestration body with a typed options object and delegate.
-- Split manifest resolution, safety decisions, stage-zero sequencing, image publication, platform
-  configuration, and Terraform composition into `init_command.py`.
-- Preserved the command signature, output, bootstrap monkeypatch points, and private helper aliases.
-- Kept runtime behavior, package metadata, Terraform, and deployed resources unchanged.
+- Added a copyable Salesforce CRM project with Accounts, Contacts, Opportunities, and Users.
+- Added five governed staging/fact models with tests, metrics, relationships, and Dataplex publication.
+- Packaged the Salesforce project overlay in every generated source-free Dander project.
+- Updated Salesforce documentation for personal data, soft deletion, replay, and custom fields.
+- Corrected staging TTL publication and legacy run-history reads found by final review.
 
 ## Try It
 
-```bash
-uv run dander init --help
-uv run pytest tests/cli/test_init_cli.py
-```
+Generate a project, then copy `examples/salesforce/dander.yaml`, `connectors/`, and `models/`
+from the packaged Salesforce overlay into the project root. Install the exact plugin pin from the
+example manifest, validate, and run `dander run salesforce_crm --dry-run --project PROJECT_ID`.
 
 ## Checks
 
-- Focused init suite passed: `9 passed`; full suite passed: `748 passed`.
-- Repository-wide Ruff, formatting, and strict mypy passed.
-- `dander init --help` matched `main` byte-for-byte.
-- Dependency audit, platform Terraform, stage-zero Terraform, and generated Terraform passed.
-- Wheel/sdist inspection and external installs passed; the container built and its runtime contract
-  passed.
+- Full Dander suite passed: `764 passed`.
+- Ruff formatting/lint and strict mypy passed.
+- Main and stage-zero Terraform initialization and validation passed with backends disabled.
+- Local Linux container build passed with the packaged Salesforce example in its build context.
+- Wheel/sdist inspection and external, source-free scaffold generation passed.
+- Fresh Dander/plugin wheel installation, four-endpoint validation, and dry-run passed.
 
 ## Decisions
 
-- Keep Typer option declarations in `main.py`; the new module never imports `main.py`.
-- Inject existing bootstrap symbols from `main.py` to retain current test and development seams.
-- Add no duplicate tests because the existing init suite already covers the extracted wiring.
+- New examples use `salesforce_crm`; the retained project keeps its existing pipeline ID.
+- Contact email and phone remain enabled and are explicitly documented as personal data.
+- Beta classification remains gated on published-candidate live acceptance.
 
 ## Remaining
 
-- Protected GitHub CI must repeat Linux package/container checks and security scans.
-- Merge only after review; no deployment, release, Terraform apply, or GCP mutation is in scope.
+- Protected CI and review must pass before this PR merges.
+- Publish the Dander and Salesforce candidates only after explicit approval.
+- Run the fresh-project live proof before changing Alpha to Beta or publishing stable releases.
+- Retained-project deployment, schedule changes, and the seven-day soak remain separately gated.
 
 ## Review First
 
-- `src/dander/cli/init_command.py`
-- `src/dander/cli/main.py`
-- `tests/cli/test_init_cli.py`
+- `examples/salesforce/dander.yaml`
+- `models/marts/fct_salesforce__opportunities.sql`
+- `src/dander/project/scaffold.py`

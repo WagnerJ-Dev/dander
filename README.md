@@ -217,11 +217,12 @@ credential or employee row is stored in this repository.
 
 ### Enterprise authentication templates
 
-`connectors/salesforce_jwt.example.yaml` is a complete read-only Accounts QueryAll slice: OAuth2
-JWT bearer authentication, Salesforce's distinct authorization-server audience, a short assertion,
-server-filtered SOQL, bounded streaming Bulk API 2.0 result pages, a declared raw schema, and
-soft-delete visibility. Hosted replays use an inclusive `SystemModstamp` watermark and idempotent
-SCD1 publication. Dander 0.5 supports the independently installed first-party
+`connectors/salesforce_jwt.example.yaml` is a complete read-only CRM slice for Accounts, Contacts,
+Opportunities, and Users: OAuth2 JWT authentication, bounded streaming Bulk API 2.0 result pages,
+declared raw schemas, and independent inclusive `SystemModstamp` watermarks. QueryAll retains
+Account, Contact, and Opportunity tombstones; User deactivation is represented by `IsActive`.
+Contact Email and Phone are personal data enabled by default. Dander supports the independently
+installed first-party
 [`dander-connector-salesforce`](https://github.com/harrisonoconnorhover/dander-connector-salesforce)
 plugin; an exact manifest pin takes precedence over the deprecated built-in fallback. See
 [`docs/salesforce.md`](docs/salesforce.md).
@@ -321,11 +322,12 @@ New users may instead use the [$300/90-day Free Trial](https://docs.cloud.google
 While the account remains a Free Trial account, Google says usage is not charged to the payment
 method; manually upgrading makes overages beyond remaining credit and free allowances billable.
 
-`dander init` owns the complete two-stage bootstrap. It creates a hardened/versioned state bucket,
-adopts it into Terraform, creates the administrative identity and Artifact Registry, builds and
-pushes the current runtime, then applies datasets, per-pipeline IAM/jobs/schedules/secrets, and the
-safety policy from `dander.yaml`. Newly generated projects use the ordinary hosted path without the
-optional managed cost guard:
+`dander init` and `dander init --apply` remain compatible shortcuts. The documented installation
+path separates each mutation from its saved Terraform plan: create the state bucket once, run
+`init-admin-plan`, review and run `init-admin-apply`, publish an immutable source-free image with
+`image-publish`, then run `init-platform-plan`, review, and run `init-platform-apply`. See the
+[hosted quickstart](docs/getting-started.md) for copyable commands. Newly generated projects use the
+ordinary hosted path without the optional managed cost guard:
 
 ```yaml
 platform:
@@ -350,45 +352,37 @@ override flags take precedence only when explicitly supplied. The cost guard def
 when `require_guarded_free_tier` is true and disabled when it is false; explicit cost-guard flags can
 override that default when the combination is valid.
 
-```bash
-uv run dander init \
-  --project my-gcp-project \
-  --failure-alert-email operator@example.com \
-  --github-repository owner/repository \
-  --apply
-```
+The standard installer does not need Project Owner. The one-time stage-zero bundle is Service Usage
+Admin, Storage Admin, Artifact Registry Administrator, Service Account Admin, and Project IAM
+Admin. A cloud administrator can perform that step and grant the operator Service Account Token
+Creator only on Dander's bootstrap account; image publication and later platform plans then use
+that account through impersonation. GitHub WIF additionally requires Workload Identity Pool Admin.
+Terraform never receives secret values. Add each named value after bootstrap with
+`gcloud secrets versions add`, then execute a paused pipeline manually before enabling its schedule.
+`--failure-alert-email` is an operator input rather than a manifest field, so personal addresses
+stay out of public repositories; repeat it on later reconciliations to retain the email channel and
+per-pipeline Cloud Run failure policies.
 
-The state bucket defaults to `<project>-dander-state`; the active `gcloud` user becomes the
-approved administrator; operator-only stage-zero artifacts default to `~/.dander/<project>` and
-remain outside the repository. Terraform never receives secret values. Add each named value after
-bootstrap with `gcloud secrets versions add`, then execute a paused pipeline manually before
-enabling its schedule. `--failure-alert-email` is an operator input rather than a manifest field,
-so personal addresses stay out of public repositories; repeat it on later reconciliations to retain
-the email channel and per-pipeline Cloud Run failure policies. Plan-only mode remains available for
-established environments but requires an existing backend, bootstrap identity, and immutable
-`--container-image`.
-
-The granular `init-admin-*` and `init-platform-*` commands remain available for operators who need
-to review/apply each identity boundary separately. The normal path is the single command above.
-The approved administrative identity is deliberately separate from runtime identities; only it
-can provision project resources. Guarded installations additionally use it to delegate each
-runtime's read-only billing visibility.
+Every plan command prints its saved-plan location and exact apply command. Every apply command
+applies only that saved plan after confirmation. The approved administrative identity is separate
+from runtime identities; only it can provision project resources. Guarded installations
+additionally use it to delegate each runtime's read-only billing visibility.
 The default unguarded path does not request billing-account IAM or grant runtime billing/Pub/Sub
 guard permissions. Dander does not manage, limit, or prevent cloud spending in that configuration.
 To opt into the managed guard, set `require_guarded_free_tier: true` and pass
 `--billing-account ABCDEF-123456-ABCDEF`; the caller then needs the additional billing-account
 permissions required for the reviewed IAM and budget plan.
 
-For an established environment, the equivalent explicit plan is:
+For an established environment, produce the complete manifest-aware plan with:
 
 ```bash
-uv run dander init \
+uv run dander init-platform-plan \
   --project my-gcp-project \
   --state-bucket my-existing-tfstate-bucket \
   --bootstrap-service-account dander-bootstrap@my-gcp-project.iam.gserviceaccount.com \
   --container-image us-central1-docker.pkg.dev/my-gcp-project/dander/dander@sha256:DIGEST \
   --config dander.yaml \
-  --github-repository owner/repository
+  --failure-alert-email operator@example.com
 ```
 
 The image must use an immutable SHA-256 digest. `dander.yaml` declares every additive pipeline,

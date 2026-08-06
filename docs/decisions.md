@@ -528,3 +528,22 @@ Resolves the "separate product decisions" the two entries above deferred, unbloc
   where the result isn't a lazily-consumed iterator). No concrete source implements any of the
   five yet — this ships the mechanism and contract only, per the existing `ConnectorOperation`
   registry's Open/Closed extension pattern.
+
+## 2026-08-05 — Hosted installation is plan-first by default
+
+- The compatibility `dander init` path remains, while public installation and upgrades separate
+  stage-zero planning, saved-plan application, immutable image publication, and platform planning.
+- A read-only permission preflight tests the active identity before stage-zero Terraform. Optional
+  billing and Workload Identity permissions are checked only when those features are selected.
+- A cloud administrator may perform stage zero once; later image and platform operations use the
+  bootstrap account through operator-scoped impersonation rather than Project Owner.
+
+## 2026-08-06 — Salesforce becomes the first deep connector
+
+- Accounts, Contacts, Opportunities, and Users retain separate inclusive `SystemModstamp` cursors
+  behind the existing `salesforce_bulk2` engine and plugin API v1.
+- QueryAll retains visible CRM tombstones; Users retain inactive owners through `IsActive`.
+  Hard-deleted or purged records and provider write-back remain outside the contract.
+- The governed fact excludes deleted Opportunities and Accounts while retaining inactive owner
+  dimensions. Existing installations may keep the `salesforce_accounts` pipeline resource ID;
+  new examples use `salesforce_crm`.
