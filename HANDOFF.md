@@ -6,6 +6,7 @@
 - Added five governed staging/fact models with tests, metrics, relationships, and Dataplex publication.
 - Packaged the Salesforce project overlay in every generated source-free Dander project.
 - Updated Salesforce documentation for personal data, soft deletion, replay, and custom fields.
+- Corrected staging TTL publication and legacy run-history reads found by final review.
 
 ## Try It
 
@@ -15,7 +16,7 @@ example manifest, validate, and run `dander run salesforce_crm --dry-run --proje
 
 ## Checks
 
-- Full Dander suite passed: `763 passed`.
+- Full Dander suite passed: `764 passed`.
 - Ruff formatting/lint and strict mypy passed.
 - Main and stage-zero Terraform initialization and validation passed with backends disabled.
 - Local Linux container build passed with the packaged Salesforce example in its build context.

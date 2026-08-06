@@ -151,6 +151,9 @@ def test_bigquery_history_can_read_without_creating_or_altering_tables() -> None
     assert store.recent(limit=1, pipeline_id="graph_records") == ()
     assert len(client.queries) == 1
     assert client.queries[0].startswith("SELECT ")
+    assert "JSON_VALUE(TO_JSON_STRING(history_row), '$.failure_code')" in client.queries[0]
+    assert "JSON_VALUE(TO_JSON_STRING(history_row), '$.failure_summary')" in client.queries[0]
+    assert "AS history_row" in client.queries[0]
     assert "CREATE" not in client.queries[0]
     assert "ALTER" not in client.queries[0]
 
